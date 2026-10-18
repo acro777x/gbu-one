@@ -188,38 +188,23 @@ export function computeTimetableDiff(
   newTimetable: Timetable,
 ): TimetableDiffItem[] {
   const diffs: TimetableDiffItem[] = [];
-  const oldSlotMap = new Map<string, Slot>();
-  newTimetable.slots.forEach((s) => s.id);
 
-  oldTimetable.slots.forEach((s) => {
-    oldSlotMap.set(`${s.day}-${s.period}-${s.subjectCode}`, s);
-  });
+  const remainingOldSlots = [...oldTimetable.slots];
+  const remainingNewSlots = [...newTimetable.slots];
 
-  for (const newSlot of newTimetable.slots) {
-    const key = `${newSlot.day}-${newSlot.period}-${newSlot.subjectCode}`;
-    const oldSlot = oldSlotMap.get(key);
+  // 1. Match unchanged day & period for the same subject
+  for (let i = remainingNewSlots.length - 1; i >= 0; i--) {
+    const newSlot = remainingNewSlots[i];
+    const oldIdx = remainingOldSlots.findIndex((os) => {
+      const sameSubject =
+        os.subjectCode && newSlot.subjectCode
+          ? os.subjectCode.toUpperCase() === newSlot.subjectCode.toUpperCase()
+          : os.subject.toLowerCase() === newSlot.subject.toLowerCase();
+      return os.day === newSlot.day && os.period === newSlot.period && sameSubject;
+    });
 
-    if (!oldSlot) {
-      // Check if it was moved from another period
-      const movedFrom = oldTimetable.slots.find(
-        (os) => os.subjectCode === newSlot.subjectCode && (os.day !== newSlot.day || os.period !== newSlot.period),
-      );
-
-      if (movedFrom) {
-        diffs.push({
-          type: 'moved',
-          slot: newSlot,
-          oldSlot: movedFrom,
-          message: `${newSlot.subject} moved to Day ${newSlot.day} at ${newSlot.start} (${newSlot.room || ''})`,
-        });
-      } else {
-        diffs.push({
-          type: 'added',
-          slot: newSlot,
-          message: `New class added: ${newSlot.subject} at ${newSlot.start} (${newSlot.room || ''})`,
-        });
-      }
-    } else {
+    if (oldIdx !== -1) {
+      const oldSlot = remainingOldSlots[oldIdx];
       // Check room change
       if (oldSlot.room !== newSlot.room && newSlot.room) {
         diffs.push({
@@ -229,7 +214,50 @@ export function computeTimetableDiff(
           message: `${newSlot.subject} room changed to ${newSlot.room} (was ${oldSlot.room || 'TBD'})`,
         });
       }
+      remainingOldSlots.splice(oldIdx, 1);
+      remainingNewSlots.splice(i, 1);
     }
+  }
+
+  // 2. Match moved classes (same subject, different day or period)
+  for (let i = remainingNewSlots.length - 1; i >= 0; i--) {
+    const newSlot = remainingNewSlots[i];
+    const oldIdx = remainingOldSlots.findIndex((os) => {
+      return os.subjectCode && newSlot.subjectCode
+        ? os.subjectCode.toUpperCase() === newSlot.subjectCode.toUpperCase()
+        : os.subject.toLowerCase() === newSlot.subject.toLowerCase();
+    });
+
+    if (oldIdx !== -1) {
+      const oldSlot = remainingOldSlots[oldIdx];
+      diffs.push({
+        type: 'moved',
+        slot: newSlot,
+        oldSlot,
+        message: `${newSlot.subject} moved to Day ${newSlot.day} at ${newSlot.start} (${newSlot.room || 'Room TBD'})`,
+      });
+      remainingOldSlots.splice(oldIdx, 1);
+      remainingNewSlots.splice(i, 1);
+    }
+  }
+
+  // 3. Any remaining new slots are newly added
+  for (const newSlot of remainingNewSlots) {
+    diffs.push({
+      type: 'added',
+      slot: newSlot,
+      message: `New class added: ${newSlot.subject} at ${newSlot.start} (${newSlot.room || 'Room TBD'})`,
+    });
+  }
+
+  // 4. Any remaining old slots are cancelled / removed
+  for (const oldSlot of remainingOldSlots) {
+    diffs.push({
+      type: 'removed',
+      slot: oldSlot,
+      oldSlot,
+      message: `${oldSlot.subject} on Day ${oldSlot.day} at ${oldSlot.start} was cancelled/removed`,
+    });
   }
 
   return diffs;

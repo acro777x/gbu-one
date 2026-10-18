@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,31 +9,55 @@ import {
   RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
-import { Bell, AlertTriangle, Clock, ArrowRight, Download, Sparkles } from 'lucide-react-native';
+import { Bell, AlertTriangle, Clock, Download, Sparkles } from 'lucide-react-native';
 import { LogoMark } from '../../src/components/brand/LogoMark';
 import {
   HeroCarousel,
   NextClassCard,
   GlassCard,
-  Chip,
   Avatar,
-  PillButton,
 } from '../../src/components/ui';
-import { LetterRise } from '../../src/components/motion/LetterRise';
 import { CountUp } from '../../src/components/motion/CountUp';
 import { useAuthStore } from '../../src/store/useAuthStore';
+import { GBUTimetableProvider, Slot } from '../../src/features/timetable/timetableProvider';
 import { theme } from '../../src/lib/theme';
 
 export default function HomeScreen() {
   const { user, isGuest, classSelection } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
-  const [hasTimetableChange, setHasTimetableChange] = useState(true);
+  const [hasTimetableChange] = useState(true);
+  const [nextSlot, setNextSlot] = useState<Slot | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const provider = new GBUTimetableProvider();
+    const section = classSelection?.section || 'BCS-II B';
+    provider.getTimetable(section, '39').then((tt) => {
+      if (!mounted) return;
+      if (tt.slots.length > 0) {
+        const dayOfWeek = (new Date().getDay() || 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
+        const todaySlots = tt.slots.filter((s) => s.day === dayOfWeek);
+        const slot = todaySlots.length > 0 ? todaySlots[0] : tt.slots[0];
+        setNextSlot(slot);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [classSelection?.section]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => {
+    const provider = new GBUTimetableProvider();
+    const section = classSelection?.section || 'BCS-II B';
+    provider.getTimetable(section, '39').then((tt) => {
+      if (tt.slots.length > 0) {
+        const dayOfWeek = (new Date().getDay() || 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
+        const todaySlots = tt.slots.filter((s) => s.day === dayOfWeek);
+        setNextSlot(todaySlots.length > 0 ? todaySlots[0] : tt.slots[0]);
+      }
       setRefreshing(false);
-    }, 1200);
+    });
   };
 
   const heroSlides = [

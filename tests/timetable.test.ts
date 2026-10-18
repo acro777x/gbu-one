@@ -98,4 +98,129 @@ describe('GBU Timetable Provider & Diff Engine', () => {
     expect(diffs[0].type).toBe('moved');
     expect(diffs[0].message).toContain('09:30');
   });
+
+  it('detects removed or cancelled classes', () => {
+    const oldTimetable: Timetable = {
+      classKey: 'BCS-II B',
+      fetchedAt: '2026-10-18T08:00:00Z',
+      semesterSessionId: '39',
+      slots: [
+        {
+          id: '1',
+          day: 1,
+          period: 1,
+          start: '08:30',
+          end: '09:30',
+          subject: 'Operating System',
+          subjectCode: 'CSE209',
+          room: 'IL101',
+        },
+      ],
+    };
+
+    const newTimetable: Timetable = {
+      classKey: 'BCS-II B',
+      fetchedAt: '2026-10-18T08:30:00Z',
+      semesterSessionId: '39',
+      slots: [],
+    };
+
+    const diffs = computeTimetableDiff(oldTimetable, newTimetable);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].type).toBe('removed');
+    expect(diffs[0].message).toContain('cancelled/removed');
+  });
+
+  it('detects newly added classes', () => {
+    const oldTimetable: Timetable = {
+      classKey: 'BCS-II B',
+      fetchedAt: '2026-10-18T08:00:00Z',
+      semesterSessionId: '39',
+      slots: [],
+    };
+
+    const newTimetable: Timetable = {
+      classKey: 'BCS-II B',
+      fetchedAt: '2026-10-18T08:30:00Z',
+      semesterSessionId: '39',
+      slots: [
+        {
+          id: '10',
+          day: 2,
+          period: 3,
+          start: '10:30',
+          end: '11:30',
+          subject: 'Web Technologies',
+          subjectCode: 'CSE215',
+          room: 'Room 102',
+        },
+      ],
+    };
+
+    const diffs = computeTimetableDiff(oldTimetable, newTimetable);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].type).toBe('added');
+    expect(diffs[0].message).toContain('New class added');
+    expect(diffs[0].message).toContain('Web Technologies');
+  });
+
+  it('handles multi-slot subjects without false positive moves', () => {
+    const oldTimetable: Timetable = {
+      classKey: 'BCS-II B',
+      fetchedAt: '2026-10-18T08:00:00Z',
+      semesterSessionId: '39',
+      slots: [
+        {
+          id: '1',
+          day: 1,
+          period: 1,
+          start: '08:30',
+          end: '09:30',
+          subject: 'Operating System',
+          subjectCode: 'CSE209',
+          room: 'IL101',
+        },
+      ],
+    };
+
+    // A second lecture of CSE209 is added on Day 3 Period 2
+    const newTimetable: Timetable = {
+      classKey: 'BCS-II B',
+      fetchedAt: '2026-10-18T08:30:00Z',
+      semesterSessionId: '39',
+      slots: [
+        {
+          id: '1',
+          day: 1,
+          period: 1,
+          start: '08:30',
+          end: '09:30',
+          subject: 'Operating System',
+          subjectCode: 'CSE209',
+          room: 'IL101',
+        },
+        {
+          id: '2',
+          day: 3,
+          period: 2,
+          start: '09:30',
+          end: '10:30',
+          subject: 'Operating System',
+          subjectCode: 'CSE209',
+          room: 'IL101',
+        },
+      ],
+    };
+
+    const diffs = computeTimetableDiff(oldTimetable, newTimetable);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].type).toBe('added');
+    expect(diffs[0].message).toContain('New class added');
+  });
+
+  it('returns empty diff when timetables are identical or both empty', () => {
+    const empty1: Timetable = { classKey: 'BCS', fetchedAt: '', semesterSessionId: '39', slots: [] };
+    const empty2: Timetable = { classKey: 'BCS', fetchedAt: '', semesterSessionId: '39', slots: [] };
+    expect(computeTimetableDiff(empty1, empty2)).toEqual([]);
+  });
 });

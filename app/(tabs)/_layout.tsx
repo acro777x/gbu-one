@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Tabs, router } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { FloatingTabBar } from '../../src/components/ui/FloatingTabBar';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { theme } from '../../src/lib/theme';

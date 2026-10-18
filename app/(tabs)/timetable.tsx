@@ -8,11 +8,10 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
-import { MapPin, User, Clock, AlertTriangle, WifiOff, RefreshCw } from 'lucide-react-native';
+import { MapPin, User, WifiOff } from 'lucide-react-native';
 import { GlassCard, Chip, Skeleton, EmptyState } from '../../src/components/ui';
 import {
   GBUTimetableProvider,
-  Slot,
   Timetable,
 } from '../../src/features/timetable/timetableProvider';
 import { useAuthStore } from '../../src/store/useAuthStore';
@@ -84,6 +83,12 @@ export default function TimetableScreen() {
             <Text style={[styles.toggleText, viewMode === 'day' && styles.toggleTextActive]}>Day</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.toggleBtn, viewMode === 'week' && styles.toggleBtnActive]}
+            onPress={() => setViewMode('week')}
+          >
+            <Text style={[styles.toggleText, viewMode === 'week' && styles.toggleTextActive]}>Week</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.toggleBtn, viewMode === 'compact' && styles.toggleBtnActive]}
             onPress={() => setViewMode('compact')}
           >
@@ -100,20 +105,22 @@ export default function TimetableScreen() {
         </View>
       )}
 
-      {/* Day Selector Chips */}
-      <View style={styles.daySelector}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayScroll}>
-          {DAYS.map((d) => (
-            <Chip
-              key={d.id}
-              label={d.label}
-              selected={selectedDay === d.id}
-              onPress={() => setSelectedDay(d.id)}
-              style={styles.dayChip}
-            />
-          ))}
-        </ScrollView>
-      </View>
+      {/* Day Selector Chips (shown in Day & Compact mode) */}
+      {viewMode !== 'week' && (
+        <View style={styles.daySelector}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayScroll}>
+            {DAYS.map((d) => (
+              <Chip
+                key={d.id}
+                label={d.label}
+                selected={selectedDay === d.id}
+                onPress={() => setSelectedDay(d.id)}
+                style={styles.dayChip}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -130,6 +137,42 @@ export default function TimetableScreen() {
             <Skeleton height={80} borderRadius={16} style={{ marginBottom: 12 }} />
             <Skeleton height={80} borderRadius={16} style={{ marginBottom: 12 }} />
             <Skeleton height={80} borderRadius={16} style={{ marginBottom: 12 }} />
+          </View>
+        ) : viewMode === 'week' ? (
+          <View style={styles.weekContainer}>
+            {DAYS.map((d) => {
+              const slotsForDay = (timetable?.slots || []).filter((s) => s.day === d.id);
+              return (
+                <View key={d.id} style={styles.weekDaySection}>
+                  <View style={styles.weekDayHeader}>
+                    <Text style={styles.weekDayTitle}>{d.label}</Text>
+                    <Text style={styles.weekDayCount}>
+                      {slotsForDay.length} {slotsForDay.length === 1 ? 'class' : 'classes'}
+                    </Text>
+                  </View>
+                  {slotsForDay.length === 0 ? (
+                    <Text style={styles.weekDayEmpty}>No scheduled classes</Text>
+                  ) : (
+                    slotsForDay.map((slot) => (
+                      <GlassCard key={slot.id} style={styles.weekSlotCard}>
+                        <View style={styles.compactRow}>
+                          <Text style={styles.compactTime}>{slot.start}</Text>
+                          <View style={styles.compactDivider} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.compactSubject} numberOfLines={1}>
+                              {slot.subject}
+                            </Text>
+                            <Text style={styles.compactRoom}>
+                              {slot.room || 'TBD'} • {slot.faculty || 'Faculty'}
+                            </Text>
+                          </View>
+                        </View>
+                      </GlassCard>
+                    ))
+                  )}
+                </View>
+              );
+            })}
           </View>
         ) : daySlots.length === 0 ? (
           <EmptyState
@@ -411,5 +454,39 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 11,
     color: theme.colors.textSecondary,
+  },
+  weekContainer: {
+    paddingBottom: 24,
+  },
+  weekDaySection: {
+    marginBottom: 20,
+  },
+  weekDayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  weekDayTitle: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 15,
+    color: theme.colors.accent,
+  },
+  weekDayCount: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+  },
+  weekDayEmpty: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.3)',
+    fontStyle: 'italic',
+    paddingLeft: 4,
+  },
+  weekSlotCard: {
+    marginBottom: 8,
+    padding: 10,
   },
 });

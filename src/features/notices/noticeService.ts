@@ -122,9 +122,9 @@ export function classifyNotice(title: string): NoticeItem['category'] {
   if (lower.includes('hostel') || lower.includes('mess')) return 'hostel';
   if (lower.includes('scholarship')) return 'scholarship';
   if (lower.includes('fee') || lower.includes('dues')) return 'fees';
-  if (lower.includes('admission') || lower.includes('counselling')) return 'admission';
-  if (lower.includes('event') || lower.includes('fest') || lower.includes('hackathon') || lower.includes('sports')) return 'event';
+  if (lower.includes('admission') || lower.includes('counselling') || lower.includes('seat allotment')) return 'admission';
+  if (lower.includes('event') || lower.includes('fest') || lower.includes('hackathon') || lower.includes('sports') || lower.includes('competition')) return 'event';
   if (lower.includes('placement') || lower.includes('internship') || lower.includes('recruitment')) return 'placement';
-  if (lower.includes('academic') || lower.includes('calendar') || lower.includes('holiday')) return 'academic';
+  if (lower.includes('academic') || lower.includes('calendar') || lower.includes('holiday') || lower.includes('vacation')) return 'academic';
   return 'other';
 }
