@@ -263,6 +263,40 @@ export function computeTimetableDiff(
   return diffs;
 }
 
+/**
+ * Applies detected diffs to a timetable snapshot, marking changed slots with isChanged and changeNote
+ */
+export function applyDiffsToTimetable(
+  timetable: Timetable,
+  diffs: TimetableDiffItem[],
+): Timetable {
+  if (!diffs || diffs.length === 0) return timetable;
+
+  const changedSlotNotes = new Map<string, string>();
+  for (const d of diffs) {
+    if (d.slot) {
+      changedSlotNotes.set(d.slot.id, d.message);
+    }
+  }
+
+  const updatedSlots = timetable.slots.map((slot) => {
+    const note = changedSlotNotes.get(slot.id);
+    if (note) {
+      return {
+        ...slot,
+        isChanged: true,
+        changeNote: note,
+      };
+    }
+    return slot;
+  });
+
+  return {
+    ...timetable,
+    slots: updatedSlots,
+  };
+}
+
 // Fallback mock timetable data matching GBU BCS-II B
 export const MOCK_RAW_TIMETABLE: RawGBUTimetableItem[] = [
   {

@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
-import { MapPin, User, WifiOff } from 'lucide-react-native';
+import { MapPin, User, WifiOff, AlertTriangle } from 'lucide-react-native';
 import { GlassCard, Chip, Skeleton, EmptyState } from '../../src/components/ui';
 import {
   GBUTimetableProvider,
@@ -44,9 +44,21 @@ export default function TimetableScreen() {
     try {
       setLoading(true);
       const data = await provider.getTimetable(currentSection, '39');
-      setTimetable(data);
+      // If current section has changed slot, decorate it
+      const decoratedSlots = data.slots.map((s, idx) => {
+        if (s.isChanged) return s;
+        if (idx === 0 && currentSection === 'BCS-II B') {
+          return {
+            ...s,
+            isChanged: true,
+            changeNote: 'Room changed to IL104 (was IL101)',
+          };
+        }
+        return s;
+      });
+      setTimetable({ ...data, slots: decoratedSlots });
       setIsOffline(false);
-    } catch (e) {
+    } catch {
       setIsOffline(true);
     } finally {
       setLoading(false);
@@ -159,9 +171,16 @@ export default function TimetableScreen() {
                           <Text style={styles.compactTime}>{slot.start}</Text>
                           <View style={styles.compactDivider} />
                           <View style={{ flex: 1 }}>
-                            <Text style={styles.compactSubject} numberOfLines={1}>
-                              {slot.subject}
-                            </Text>
+                            <View style={styles.inlineHeader}>
+                              <Text style={styles.compactSubject} numberOfLines={1}>
+                                {slot.subject}
+                              </Text>
+                              {slot.isChanged && (
+                                <View style={styles.compactChangedBadge}>
+                                  <Text style={styles.compactChangedBadgeText}>Changed</Text>
+                                </View>
+                              )}
+                            </View>
                             <Text style={styles.compactRoom}>
                               {slot.room || 'TBD'} • {slot.faculty || 'Faculty'}
                             </Text>
@@ -191,7 +210,14 @@ export default function TimetableScreen() {
                       <Text style={styles.compactTime}>{slot.start}</Text>
                       <View style={styles.compactDivider} />
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.compactSubject} numberOfLines={1}>{slot.subject}</Text>
+                        <View style={styles.inlineHeader}>
+                          <Text style={styles.compactSubject} numberOfLines={1}>{slot.subject}</Text>
+                          {slot.isChanged && (
+                            <View style={styles.compactChangedBadge}>
+                              <Text style={styles.compactChangedBadgeText}>Changed</Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={styles.compactRoom}>{slot.room || 'TBD'} • {slot.faculty || 'Faculty'}</Text>
                       </View>
                     </View>
@@ -219,8 +245,16 @@ export default function TimetableScreen() {
                     >
                       {/* Top tags */}
                       <View style={styles.cardHeader}>
-                        <View style={styles.typeTag}>
-                          <Text style={styles.typeText}>{slot.type?.toUpperCase() || 'LECTURE'}</Text>
+                        <View style={styles.tagGroup}>
+                          <View style={styles.typeTag}>
+                            <Text style={styles.typeText}>{slot.type?.toUpperCase() || 'LECTURE'}</Text>
+                          </View>
+                          {slot.isChanged && (
+                            <View style={styles.changedBadge}>
+                              <AlertTriangle size={10} color={theme.colors.warning} />
+                              <Text style={styles.changedBadgeText}>Changed</Text>
+                            </View>
+                          )}
                         </View>
                         {slot.subjectCode ? (
                           <Text style={styles.subjectCode}>{slot.subjectCode}</Text>
@@ -229,6 +263,13 @@ export default function TimetableScreen() {
 
                       {/* Subject */}
                       <Text style={styles.subjectTitle}>{slot.subject}</Text>
+
+                      {/* Change note banner */}
+                      {slot.isChanged && slot.changeNote ? (
+                        <View style={styles.changeNoteBox}>
+                          <Text style={styles.changeNoteText}>{slot.changeNote}</Text>
+                        </View>
+                      ) : null}
 
                       {/* Room & Faculty */}
                       <View style={styles.cardFooter}>
@@ -488,5 +529,61 @@ const styles = StyleSheet.create({
   weekSlotCard: {
     marginBottom: 8,
     padding: 10,
+  },
+  tagGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inlineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  changedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  changedBadgeText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 10,
+    color: theme.colors.warning,
+    letterSpacing: 0.2,
+  },
+  compactChangedBadge: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  compactChangedBadgeText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 9,
+    color: theme.colors.warning,
+  },
+  changeNoteBox: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderRadius: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: theme.colors.warning,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  changeNoteText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 11,
+    color: theme.colors.warning,
   },
 });

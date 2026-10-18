@@ -27,9 +27,9 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Timetable screen (day/week/compact), skeleton/empty/error/offline
 - [x] Next-class card with countdown + progress bar on Home
 - [x] Snapshot + diff engine with unit tests
-- [ ] Worker job to poll classes and write `timetable_changes`
-- [ ] Push for timetable changes; "Changed" chips in UI
-- [ ] Real provider (after owner supplies API details)
+- [x] Worker job to poll classes and write `timetable_changes`
+- [x] Push for timetable changes; "Changed" chips in UI
+- [x] Real provider (after owner supplies API details)
 
 ## Phase 3 — Notices
 - [ ] Worker: fetch + parse main notices and exams portal, idempotent inserts
