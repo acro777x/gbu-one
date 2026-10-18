@@ -55,8 +55,8 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Manual attendance tracker (local)
 
 ## Phase 6 — Polish and release
-- [ ] Performance pass (cold start, list virtualisation), accessibility pass
-- [ ] Error reporting without PII, privacy policy page, About/disclaimer
+- [x] Performance pass (cold start, list virtualisation), accessibility pass
+- [x] Error reporting without PII, privacy policy page, About/disclaimer
 - [ ] Android release build (EAS), internal testing with 10 students
 - [ ] Student survey results reviewed; update priorities
 

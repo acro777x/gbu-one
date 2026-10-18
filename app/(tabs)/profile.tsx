@@ -290,13 +290,17 @@ export default function ProfileScreen() {
         </GlassCard>
 
         {/* About & Disclaimer */}
-        <View style={styles.aboutSection}>
+        <TouchableOpacity
+          style={styles.aboutSection}
+          onPress={() => router.push('/about')}
+          accessibilityLabel="About GBU One, University Disclaimer & Privacy Policy"
+        >
           <OfficialSeal />
           <Text style={styles.aboutVersion}>GBU One v1.0.0</Text>
           <Text style={styles.aboutDisclaimer}>
-            Official student app of Gautam Buddha University, Greater Noida (subject to university approval before release). Notices and timetables are mirrored from university public sources.
+            Official student app of Gautam Buddha University, Greater Noida (subject to university approval before release). Tap to view full university disclaimer, privacy commitments, and contacts.
           </Text>
-        </View>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
