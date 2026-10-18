@@ -4,35 +4,78 @@ import {
   View,
   Text,
   ScrollView,
-  SafeAreaView,
   TouchableOpacity,
   RefreshControl,
+  Modal,
+  Platform,
 } from 'react-native';
-import { MapPin, User, WifiOff, AlertTriangle } from 'lucide-react-native';
-import { GlassCard, Chip, Skeleton, EmptyState } from '../../src/components/ui';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  MapPin,
+  User,
+  WifiOff,
+  AlertTriangle,
+  Clock,
+  Sparkles,
+  Bell,
+  CheckCircle,
+  XCircle,
+  X,
+} from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import { GlassCard, Skeleton, EmptyState } from '../../src/components/ui';
 import {
   GBUTimetableProvider,
   Timetable,
-  computeTimetableDiff,
-  applyDiffsToTimetable,
+  Slot,
 } from '../../src/features/timetable/timetableProvider';
 import { useAuthStore } from '../../src/store/useAuthStore';
+import { useAttendanceStore } from '../../src/features/attendance/attendanceStore';
 import { theme } from '../../src/lib/theme';
 
 const DAYS = [
-  { id: 1, label: 'Mon' },
-  { id: 2, label: 'Tue' },
-  { id: 3, label: 'Wed' },
-  { id: 4, label: 'Thu' },
-  { id: 5, label: 'Fri' },
-  { id: 6, label: 'Sat' },
+  { id: 1, label: 'Mon', dateNum: '19' },
+  { id: 2, label: 'Tue', dateNum: '20' },
+  { id: 3, label: 'Wed', dateNum: '21' },
+  { id: 4, label: 'Thu', dateNum: '22' },
+  { id: 5, label: 'Fri', dateNum: '23' },
+  { id: 6, label: 'Sat', dateNum: '24' },
 ];
+
+const FACULTY_COLORS = [
+  '#FF6A2B',
+  '#3DD68C',
+  '#8B5CF6',
+  '#06B6D4',
+  '#F5B83D',
+  '#EC4899',
+];
+
+function getFacultyInitials(name?: string): string {
+  if (!name) return 'FA';
+  const clean = name.replace(/^(Prof\.|Dr\.|Mr\.|Ms\.)\s*/i, '').trim();
+  const parts = clean.split(' ');
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return clean.slice(0, 2).toUpperCase();
+}
+
+function getFacultyColor(name?: string): string {
+  if (!name) return FACULTY_COLORS[0];
+  let sum = 0;
+  for (let i = 0; i < name.length; i++) {
+    sum += name.charCodeAt(i);
+  }
+  return FACULTY_COLORS[sum % FACULTY_COLORS.length];
+}
 
 const provider = new GBUTimetableProvider();
 
 export default function TimetableScreen() {
   const { classSelection } = useAuthStore();
   const currentSection = classSelection?.section || 'BCS-II B';
+  const { markAttended, markMissed } = useAttendanceStore();
 
   // State
   const [selectedDay, setSelectedDay] = useState<number>(1);
@@ -42,20 +85,31 @@ export default function TimetableScreen() {
   const [timetable, setTimetable] = useState<Timetable | null>(null);
   const [isOffline, setIsOffline] = useState(false);
 
+  // Slot Detail Modal
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2500);
+  };
+
   const loadTimetable = async () => {
     try {
       setLoading(true);
       const data = await provider.getTimetable(currentSection, '39');
-      // Detect real diffs if an updated schedule variant exists
-      const modifiedBaseline: Timetable = {
-        ...data,
-        slots: data.slots.map((s, idx) =>
-          idx === 0 ? { ...s, room: 'IL104' } : s,
-        ),
-      };
-      const diffs = computeTimetableDiff(data, modifiedBaseline);
-      const decorated = applyDiffsToTimetable(modifiedBaseline, diffs);
-      setTimetable(decorated);
+      // Highlight change only on the specific first slot if applicable
+      const decoratedSlots = data.slots.map((s, idx) => {
+        if (idx === 0) {
+          return {
+            ...s,
+            isChanged: true,
+            changeNote: `${s.subject} shifted to ${s.room || 'IL104'} for today's lecture`,
+          };
+        }
+        return s;
+      });
+      setTimetable({ ...data, slots: decoratedSlots });
       setIsOffline(false);
     } catch {
       setIsOffline(true);
@@ -76,13 +130,34 @@ export default function TimetableScreen() {
 
   const daySlots = (timetable?.slots || []).filter((s) => s.day === selectedDay);
 
+  const getSlotStatus = (index: number) => {
+    if (index === 0) {
+      return { label: 'LIVE NOW', color: '#FF6A2B', isLive: true };
+    }
+    if (index === 1) {
+      return { label: 'UP NEXT', color: '#F5B83D', isLive: false };
+    }
+    return { label: 'SCHEDULED', color: theme.colors.textSecondary, isLive: false };
+  };
+
+  const handleOpenSlot = (slot: Slot) => {
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch (e) {
+        // ignore
+      }
+    }
+    setSelectedSlot(slot);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Top Bar */}
+      {/* Top Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Timetable</Text>
-          <Text style={styles.headerSub}>{currentSection} • Semester 39</Text>
+          <Text style={styles.headerTitle}>Class Schedule</Text>
+          <Text style={styles.headerSub}>{currentSection} • Semester 39 (Autumn)</Text>
         </View>
 
         {/* View Mode Toggle: Day / Week / Compact */}
@@ -116,25 +191,58 @@ export default function TimetableScreen() {
         </View>
       )}
 
-      {/* Day Selector Chips (shown in Day & Compact mode) */}
+      {/* Elevated Animated Day Selector Chips */}
       {viewMode !== 'week' && (
-        <View style={styles.daySelector}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayScroll}>
-            {DAYS.map((d) => (
-              <Chip
-                key={d.id}
-                label={d.label}
-                selected={selectedDay === d.id}
-                onPress={() => setSelectedDay(d.id)}
-                style={styles.dayChip}
-              />
-            ))}
+        <View style={styles.daySelectorWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.dayScroll}
+          >
+            {DAYS.map((d) => {
+              const isSelected = selectedDay === d.id;
+              const slotsCount = (timetable?.slots || []).filter((s) => s.day === d.id).length;
+
+              return (
+                <TouchableOpacity
+                  key={d.id}
+                  style={[
+                    styles.dayCard,
+                    isSelected && styles.dayCardActive,
+                  ]}
+                  onPress={() => {
+                    if (Platform.OS !== 'web') {
+                      try {
+                        Haptics.selectionAsync();
+                      } catch (e) {
+                        // ignore
+                      }
+                    }
+                    setSelectedDay(d.id);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dayLabel, isSelected && styles.dayLabelActive]}>
+                    {d.label}
+                  </Text>
+                  <Text style={[styles.dayNum, isSelected && styles.dayNumActive]}>
+                    {d.dateNum}
+                  </Text>
+                  {slotsCount > 0 ? (
+                    <View style={[styles.dayDot, isSelected && styles.dayDotActive]} />
+                  ) : (
+                    <View style={styles.dayDotEmpty} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
       )}
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -145,9 +253,9 @@ export default function TimetableScreen() {
       >
         {loading ? (
           <View style={styles.loadingContainer}>
-            <Skeleton height={80} borderRadius={16} style={{ marginBottom: 12 }} />
-            <Skeleton height={80} borderRadius={16} style={{ marginBottom: 12 }} />
-            <Skeleton height={80} borderRadius={16} style={{ marginBottom: 12 }} />
+            <Skeleton height={90} borderRadius={20} style={{ marginBottom: 12 }} />
+            <Skeleton height={90} borderRadius={20} style={{ marginBottom: 12 }} />
+            <Skeleton height={90} borderRadius={20} style={{ marginBottom: 12 }} />
           </View>
         ) : viewMode === 'week' ? (
           <View style={styles.weekContainer}>
@@ -156,7 +264,10 @@ export default function TimetableScreen() {
               return (
                 <View key={d.id} style={styles.weekDaySection}>
                   <View style={styles.weekDayHeader}>
-                    <Text style={styles.weekDayTitle}>{d.label}</Text>
+                    <View style={styles.weekDayTitleRow}>
+                      <Text style={styles.weekDayTitle}>{d.label}</Text>
+                      <Text style={styles.weekDayDate}>Oct {d.dateNum}</Text>
+                    </View>
                     <Text style={styles.weekDayCount}>
                       {slotsForDay.length} {slotsForDay.length === 1 ? 'class' : 'classes'}
                     </Text>
@@ -165,9 +276,15 @@ export default function TimetableScreen() {
                     <Text style={styles.weekDayEmpty}>No scheduled classes</Text>
                   ) : (
                     slotsForDay.map((slot) => (
-                      <GlassCard key={slot.id} style={styles.weekSlotCard}>
+                      <GlassCard
+                        key={slot.id}
+                        style={styles.weekSlotCard}
+                        onPress={() => handleOpenSlot(slot)}
+                      >
                         <View style={styles.compactRow}>
-                          <Text style={styles.compactTime}>{slot.start}</Text>
+                          <View style={styles.timeTag}>
+                            <Text style={styles.compactTime}>{slot.start}</Text>
+                          </View>
                           <View style={styles.compactDivider} />
                           <View style={{ flex: 1 }}>
                             <View style={styles.inlineHeader}>
@@ -200,24 +317,37 @@ export default function TimetableScreen() {
         ) : (
           <View style={styles.timelineList}>
             {daySlots.map((slot, index) => {
-              const isFirst = index === 0;
+              const status = getSlotStatus(index);
+              const facultyInitials = getFacultyInitials(slot.faculty);
+              const facultyColor = getFacultyColor(slot.faculty);
 
               if (viewMode === 'compact') {
                 return (
-                  <GlassCard key={slot.id} style={styles.compactCard}>
+                  <GlassCard
+                    key={slot.id}
+                    style={styles.compactCard}
+                    onPress={() => handleOpenSlot(slot)}
+                    accentBorder={status.isLive}
+                  >
                     <View style={styles.compactRow}>
-                      <Text style={styles.compactTime}>{slot.start}</Text>
+                      <View style={styles.timeTag}>
+                        <Text style={styles.compactTime}>{slot.start}</Text>
+                      </View>
                       <View style={styles.compactDivider} />
                       <View style={{ flex: 1 }}>
                         <View style={styles.inlineHeader}>
-                          <Text style={styles.compactSubject} numberOfLines={1}>{slot.subject}</Text>
+                          <Text style={styles.compactSubject} numberOfLines={1}>
+                            {slot.subject}
+                          </Text>
                           {slot.isChanged && (
                             <View style={styles.compactChangedBadge}>
                               <Text style={styles.compactChangedBadgeText}>Changed</Text>
                             </View>
                           )}
                         </View>
-                        <Text style={styles.compactRoom}>{slot.room || 'TBD'} • {slot.faculty || 'Faculty'}</Text>
+                        <Text style={styles.compactRoom}>
+                          {slot.room || 'TBD'} • {slot.faculty || 'Faculty'}
+                        </Text>
                       </View>
                     </View>
                   </GlassCard>
@@ -230,24 +360,40 @@ export default function TimetableScreen() {
                   <View style={styles.timeRail}>
                     <Text style={styles.startTime}>{slot.start}</Text>
                     <Text style={styles.endTime}>{slot.end}</Text>
+                    <View style={styles.railPeriodPill}>
+                      <Text style={styles.railPeriodText}>P{index + 1}</Text>
+                    </View>
                     <View style={styles.railLine} />
                   </View>
 
-                  {/* Class Card */}
+                  {/* Interactive Class Card */}
                   <View style={styles.cardCol}>
                     <GlassCard
                       style={[
                         styles.classCard,
-                        isFirst && styles.activeClassCard,
+                        status.isLive && styles.activeClassCard,
                       ]}
-                      accentBorder={isFirst}
+                      accentBorder={status.isLive || !!slot.isChanged}
+                      glow={status.isLive}
+                      onPress={() => handleOpenSlot(slot)}
                     >
-                      {/* Top tags */}
+                      {/* Top Header Tags */}
                       <View style={styles.cardHeader}>
                         <View style={styles.tagGroup}>
-                          <View style={styles.typeTag}>
-                            <Text style={styles.typeText}>{slot.type?.toUpperCase() || 'LECTURE'}</Text>
+                          {/* Status Chip */}
+                          <View
+                            style={[
+                              styles.statusChip,
+                              { backgroundColor: `${status.color}20`, borderColor: status.color },
+                            ]}
+                          >
+                            {status.isLive && <View style={styles.livePulseDot} />}
+                            <Text style={[styles.statusChipText, { color: status.color }]}>
+                              {status.label}
+                            </Text>
                           </View>
+
+                          {/* Changed Badge */}
                           {slot.isChanged && (
                             <View style={styles.changedBadge}>
                               <AlertTriangle size={10} color={theme.colors.warning} />
@@ -255,33 +401,46 @@ export default function TimetableScreen() {
                             </View>
                           )}
                         </View>
+
                         {slot.subjectCode ? (
-                          <Text style={styles.subjectCode}>{slot.subjectCode}</Text>
+                          <View style={styles.codeTag}>
+                            <Text style={styles.subjectCode}>{slot.subjectCode}</Text>
+                          </View>
                         ) : null}
                       </View>
 
-                      {/* Subject */}
+                      {/* Subject Title */}
                       <Text style={styles.subjectTitle}>{slot.subject}</Text>
 
-                      {/* Change note banner */}
+                      {/* Changed Notice Banner */}
                       {slot.isChanged && slot.changeNote ? (
                         <View style={styles.changeNoteBox}>
                           <Text style={styles.changeNoteText}>{slot.changeNote}</Text>
                         </View>
                       ) : null}
 
-                      {/* Room & Faculty */}
+                      {/* Room & Professor Footprint */}
                       <View style={styles.cardFooter}>
-                        {slot.room && (
-                          <View style={styles.metaItem}>
-                            <MapPin size={13} color={theme.colors.accent} />
-                            <Text style={styles.metaValue}>{slot.room}</Text>
+                        {/* Professor Squircle Avatar & Name */}
+                        <View style={styles.professorRow}>
+                          <View
+                            style={[
+                              styles.professorSquircle,
+                              { backgroundColor: facultyColor },
+                            ]}
+                          >
+                            <Text style={styles.professorInitials}>{facultyInitials}</Text>
                           </View>
-                        )}
-                        {slot.faculty && (
-                          <View style={styles.metaItem}>
-                            <User size={13} color={theme.colors.textSecondary} />
-                            <Text style={styles.metaValue}>{slot.faculty}</Text>
+                          <Text style={styles.professorName} numberOfLines={1}>
+                            {slot.faculty || 'Department Faculty'}
+                          </Text>
+                        </View>
+
+                        {/* Room Badge */}
+                        {slot.room && (
+                          <View style={styles.roomBadge}>
+                            <MapPin size={11} color={theme.colors.accent} />
+                            <Text style={styles.roomBadgeText}>{slot.room}</Text>
                           </View>
                         )}
                       </View>
@@ -293,6 +452,150 @@ export default function TimetableScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Period Details Modal */}
+      {selectedSlot && (
+        <Modal
+          visible={!!selectedSlot}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setSelectedSlot(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              {/* Modal Drag Handle */}
+              <View style={styles.dragHandle} />
+
+              {/* Close Button */}
+              <View style={styles.modalTopRow}>
+                <View style={styles.typeBadgePill}>
+                  <Text style={styles.typeBadgePillText}>
+                    {selectedSlot.type?.toUpperCase() || 'CORE LECTURE'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.closeBtn}
+                  onPress={() => setSelectedSlot(null)}
+                >
+                  <X size={18} color={theme.colors.ivory} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Subject Title */}
+              <Text style={styles.modalSubject}>{selectedSlot.subject}</Text>
+              {selectedSlot.subjectCode && (
+                <Text style={styles.modalCode}>Course Code: {selectedSlot.subjectCode}</Text>
+              )}
+
+              {/* Details Cards */}
+              <View style={styles.modalGrid}>
+                {/* Time & Duration */}
+                <View style={styles.gridItem}>
+                  <Clock size={16} color={theme.colors.accent} />
+                  <View style={{ marginLeft: 10 }}>
+                    <Text style={styles.gridLabel}>Period Timing</Text>
+                    <Text style={styles.gridValue}>
+                      {selectedSlot.start} - {selectedSlot.end} (60 min)
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Location */}
+                <View style={styles.gridItem}>
+                  <MapPin size={16} color={theme.colors.accent} />
+                  <View style={{ marginLeft: 10 }}>
+                    <Text style={styles.gridLabel}>Lecture Room</Text>
+                    <Text style={styles.gridValue}>
+                      {selectedSlot.room || 'TBD'} • {classSelection?.school || 'SOICT'} Building
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Faculty */}
+                <View style={styles.gridItem}>
+                  <User size={16} color={theme.colors.accent} />
+                  <View style={{ marginLeft: 10 }}>
+                    <Text style={styles.gridLabel}>Instructor</Text>
+                    <Text style={styles.gridValue}>
+                      {selectedSlot.faculty || 'Department Faculty'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Quick Attendance Actions */}
+              <View style={styles.actionSection}>
+                <Text style={styles.actionHeader}>Quick Attendance Logging</Text>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.presentBtn]}
+                    onPress={() => {
+                      markAttended(selectedSlot.subjectCode || selectedSlot.subject);
+                      if (Platform.OS !== 'web') {
+                        try {
+                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        } catch (e) {
+                          // ignore
+                        }
+                      }
+                      showToast('Marked Present (+1 class attended)');
+                    }}
+                  >
+                    <CheckCircle size={16} color="#3DD68C" />
+                    <Text style={styles.presentBtnText}>+ Present</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.absentBtn]}
+                    onPress={() => {
+                      markMissed(selectedSlot.subjectCode || selectedSlot.subject);
+                      if (Platform.OS !== 'web') {
+                        try {
+                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                        } catch (e) {
+                          // ignore
+                        }
+                      }
+                      showToast('Marked Absent');
+                    }}
+                  >
+                    <XCircle size={16} color="#FF5C5C" />
+                    <Text style={styles.absentBtnText}>+ Absent</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Reminder Button */}
+              <TouchableOpacity
+                style={styles.reminderBtn}
+                onPress={() => {
+                  if (Platform.OS !== 'web') {
+                    try {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    } catch (e) {
+                      // ignore
+                    }
+                  }
+                  showToast(`Reminder scheduled 10m before ${selectedSlot.start}`);
+                }}
+              >
+                <Bell size={16} color={theme.colors.ivory} />
+                <Text style={styles.reminderBtnText}>Set Class Reminder Notification</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Floating Toast Notice */}
+      {toastMessage && (
+        <View style={styles.toastContainer} pointerEvents="none">
+          <View style={styles.toastPill}>
+            <Sparkles size={15} color={theme.colors.accent} />
+            <Text style={styles.toastText}>{toastMessage}</Text>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -359,17 +662,68 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: theme.colors.warning,
   },
-  daySelector: {
-    paddingVertical: theme.spacing.sm,
+  daySelectorWrapper: {
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.05)',
   },
   dayScroll: {
     paddingHorizontal: theme.spacing.lg,
+    gap: 8,
   },
-  dayChip: {
-    marginRight: 8,
-    marginBottom: 0,
+  dayCard: {
+    width: 52,
+    height: 64,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  dayCardActive: {
+    backgroundColor: 'rgba(255, 106, 43, 0.18)',
+    borderColor: theme.colors.accent,
+    shadowColor: theme.colors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  dayLabel: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 11,
+    color: theme.colors.textSecondary,
+  },
+  dayLabelActive: {
+    color: theme.colors.accent,
+    fontFamily: 'Inter-SemiBold',
+  },
+  dayNum: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 16,
+    color: theme.colors.ivory,
+    marginVertical: 1,
+  },
+  dayNumActive: {
+    color: '#FFF',
+  },
+  dayDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.textSecondary,
+  },
+  dayDotActive: {
+    backgroundColor: theme.colors.accent,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  dayDotEmpty: {
+    width: 4,
+    height: 4,
   },
   scrollContent: {
     padding: theme.spacing.lg,
@@ -383,12 +737,12 @@ const styles = StyleSheet.create({
   },
   timelineRow: {
     flexDirection: 'row',
-    marginBottom: theme.spacing.md,
+    marginBottom: 14,
   },
   timeRail: {
-    width: 60,
+    width: 62,
     alignItems: 'flex-start',
-    paddingTop: 6,
+    paddingTop: 4,
     position: 'relative',
   },
   startTime: {
@@ -402,9 +756,21 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     marginTop: 2,
   },
+  railPeriodPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    marginTop: 6,
+  },
+  railPeriodText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 9,
+    color: theme.colors.textSecondary,
+  },
   railLine: {
     position: 'absolute',
-    top: 38,
+    top: 50,
     bottom: -16,
     left: 20,
     width: 1,
@@ -412,58 +778,108 @@ const styles = StyleSheet.create({
   },
   cardCol: {
     flex: 1,
-    marginLeft: 8,
+    marginLeft: 6,
   },
   classCard: {
-    padding: theme.spacing.md,
+    padding: 14,
   },
   activeClassCard: {
-    backgroundColor: 'rgba(255, 106, 43, 0.08)',
+    borderColor: 'rgba(255, 106, 43, 0.55)',
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  typeTag: {
+  tagGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: theme.radius.chip,
+    borderWidth: 1,
+    gap: 4,
+  },
+  livePulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FF6A2B',
+  },
+  statusChipText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 9,
+    letterSpacing: 0.5,
+  },
+  codeTag: {
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  typeText: {
-    fontFamily: 'Inter-SemiBold',
-    fontSize: 9,
-    color: theme.colors.accent,
-    letterSpacing: 0.5,
-  },
   subjectCode: {
     fontFamily: 'Inter-Medium',
-    fontSize: 11,
+    fontSize: 10,
     color: theme.colors.textSecondary,
   },
   subjectTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
     color: theme.colors.ivory,
-    lineHeight: 20,
-    marginBottom: 8,
+    lineHeight: 21,
+    marginBottom: 10,
   },
   cardFooter: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
   },
-  metaItem: {
+  professorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    flex: 1,
+    marginRight: 8,
   },
-  metaValue: {
+  professorSquircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  professorInitials: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 10,
+    color: '#FFF',
+  },
+  professorName: {
     fontFamily: 'Inter-Medium',
     fontSize: 12,
-    color: theme.colors.textSecondary,
+    color: theme.colors.textPrimary,
+    flexShrink: 1,
+  },
+  roomBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 106, 43, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 106, 43, 0.25)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: theme.radius.chip,
+    gap: 4,
+  },
+  roomBadgeText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 11,
+    color: theme.colors.accent,
   },
   compactCard: {
     marginBottom: 8,
@@ -473,11 +889,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  timeTag: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
   compactTime: {
     fontFamily: 'Inter-SemiBold',
-    fontSize: 13,
-    color: theme.colors.accent,
-    width: 50,
+    fontSize: 12,
+    color: theme.colors.ivory,
   },
   compactDivider: {
     width: 1,
@@ -494,6 +915,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 11,
     color: theme.colors.textSecondary,
+    marginTop: 2,
   },
   weekContainer: {
     paddingBottom: 24,
@@ -508,10 +930,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: 4,
   },
+  weekDayTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   weekDayTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
     color: theme.colors.accent,
+  },
+  weekDayDate: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    color: theme.colors.textSecondary,
   },
   weekDayCount: {
     fontFamily: 'Inter-Medium',
@@ -528,11 +960,6 @@ const styles = StyleSheet.create({
   weekSlotCard: {
     marginBottom: 8,
     padding: 10,
-  },
-  tagGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
   },
   inlineHeader: {
     flexDirection: 'row',
@@ -584,5 +1011,175 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     fontSize: 11,
     color: theme.colors.warning,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#161618',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderWidth: 1,
+    borderColor: theme.colors.borderGlass,
+    padding: theme.spacing.lg,
+    paddingBottom: 36,
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  modalTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  typeBadgePill: {
+    backgroundColor: 'rgba(255, 106, 43, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: theme.radius.chip,
+  },
+  typeBadgePillText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 10,
+    color: theme.colors.accent,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalSubject: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 20,
+    color: theme.colors.ivory,
+    lineHeight: 26,
+    marginBottom: 4,
+  },
+  modalCode: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    marginBottom: 16,
+  },
+  modalGrid: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 12,
+    gap: 12,
+    marginBottom: 18,
+  },
+  gridItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  gridLabel: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    color: theme.colors.textSecondary,
+  },
+  gridValue: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
+    color: theme.colors.ivory,
+    marginTop: 1,
+  },
+  actionSection: {
+    marginBottom: 14,
+  },
+  actionHeader: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    marginBottom: 8,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    gap: 6,
+  },
+  presentBtn: {
+    backgroundColor: 'rgba(61, 214, 140, 0.12)',
+    borderColor: 'rgba(61, 214, 140, 0.3)',
+  },
+  presentBtnText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
+    color: '#3DD68C',
+  },
+  absentBtn: {
+    backgroundColor: 'rgba(255, 92, 92, 0.12)',
+    borderColor: 'rgba(255, 92, 92, 0.3)',
+  },
+  absentBtnText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
+    color: '#FF5C5C',
+  },
+  reminderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: theme.colors.borderGlass,
+    borderRadius: theme.radius.pill,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  reminderBtnText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
+    color: theme.colors.ivory,
+  },
+  toastContainer: {
+    position: 'absolute',
+    bottom: 24,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  toastPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(22, 22, 24, 0.95)',
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+    shadowColor: theme.colors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  toastText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 13,
+    color: theme.colors.ivory,
   },
 });

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, TextStyle, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, TextStyle, ViewStyle } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -88,23 +88,36 @@ export const LetterRise: React.FC<LetterRiseProps> = ({
   reduceMotion = false,
   onDone,
 }) => {
-  const letters = Array.from(text);
+  const words = (text || '').split(' ');
+  let runningIndex = 0;
+  const totalLetters = (text || '').replace(/\s+/g, '').length;
 
   return (
     <View style={[styles.container, containerStyle]} accessible accessibilityLabel={text}>
-      {letters.map((char, idx) => (
-        <AnimatedLetter
-          key={`${char}-${idx}`}
-          char={char}
-          index={idx}
-          delay={delay}
-          stagger={stagger}
-          style={style}
-          reduceMotion={reduceMotion}
-          isLast={idx === letters.length - 1}
-          onDone={onDone}
-        />
-      ))}
+      {words.map((word, wIdx) => {
+        const letters = Array.from(word);
+        return (
+          <View key={`w-${wIdx}-${word}`} style={styles.wordWrapper}>
+            {letters.map((char, lIdx) => {
+              const currentIdx = runningIndex++;
+              return (
+                <AnimatedLetter
+                  key={`c-${wIdx}-${lIdx}-${char}`}
+                  char={char}
+                  index={currentIdx}
+                  delay={delay}
+                  stagger={stagger}
+                  style={style}
+                  reduceMotion={reduceMotion}
+                  isLast={currentIdx === totalLetters - 1}
+                  onDone={onDone}
+                />
+              );
+            })}
+            {wIdx < words.length - 1 && <Text style={[styles.char, style]}>{' '}</Text>}
+          </View>
+        );
+      })}
     </View>
   );
 };
@@ -112,8 +125,12 @@ export const LetterRise: React.FC<LetterRiseProps> = ({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    overflow: 'hidden',
+  },
+  wordWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   charContainer: {
     overflow: 'hidden',
@@ -121,7 +138,7 @@ const styles = StyleSheet.create({
   char: {
     color: theme.colors.textPrimary,
     fontFamily: 'Poppins-Bold',
-    fontSize: 28,
+    fontSize: 22,
   },
 });
 

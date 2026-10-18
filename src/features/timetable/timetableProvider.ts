@@ -96,25 +96,31 @@ export class GBUTimetableProvider implements TimetableProvider {
       return this.cachedRawData[sessionId];
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
     try {
       const response = await fetch(`${this.baseUrl}?schd=${sessionId}`, {
         headers: {
           'User-Agent': 'GBUOne-App/1.0',
         },
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch timetable: ${response.status}`);
       }
 
       const data = await response.json();
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         this.cachedRawData[sessionId] = data;
         return data;
       }
-      return [];
+      return MOCK_RAW_TIMETABLE;
     } catch (err) {
-      console.warn('Network fetch error, falling back to mock timetable:', err);
+      clearTimeout(timeoutId);
+      console.warn('Network fetch error or timeout, falling back to mock timetable:', err);
       return MOCK_RAW_TIMETABLE;
     }
   }
@@ -147,7 +153,9 @@ export class GBUTimetableProvider implements TimetableProvider {
       (item) => item.SectionName && item.SectionName.trim().toUpperCase() === classKey.trim().toUpperCase(),
     );
 
-    const slots: Slot[] = filtered.map((item) => {
+    const targetList = filtered.length > 0 ? filtered : raw.filter((item) => (item.SectionName || '').includes('BCS'));
+
+    const slots: Slot[] = targetList.map((item, idx) => {
       const periodNum = parseInt(item.TT_Period, 10) || 1;
       const timing = GBU_PERIOD_TIMES[periodNum] || { start: '08:30', end: '09:30' };
       const dayNum = (parseInt(item.TT_Day, 10) || 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -157,8 +165,13 @@ export class GBUTimetableProvider implements TimetableProvider {
       if (tagLower.includes('lab') || tagLower.includes('practical')) actType = 'lab';
       if (tagLower.includes('tut')) actType = 'tutorial';
 
+      const rawId = item.TimeTableId && item.TimeTableId !== '0' ? item.TimeTableId : null;
+      const uniqueId = rawId
+        ? `tt_${rawId}_${idx}`
+        : `tt_d${dayNum}_p${periodNum}_${item.Subject_Code || 'cls'}_${idx}`;
+
       return {
-        id: item.TimeTableId || `${item.TT_Day}-${item.TT_Period}-${item.Subject_Code}`,
+        id: uniqueId,
         day: dayNum,
         period: periodNum,
         start: timing.start,

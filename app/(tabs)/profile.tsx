@@ -4,10 +4,10 @@ import {
   View,
   Text,
   ScrollView,
-  SafeAreaView,
   TouchableOpacity,
   Switch,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
   User,
@@ -19,6 +19,7 @@ import {
   Sparkles,
   Calendar,
   Award,
+  Mail,
 } from 'lucide-react-native';
 import { Avatar, GlassCard, PillButton } from '../../src/components/ui';
 import { CountUp } from '../../src/components/motion/CountUp';
@@ -180,6 +181,22 @@ export default function ProfileScreen() {
             <View style={styles.settingTextCol}>
               <Text style={styles.settingTitle}>Academic Calendar & Holidays</Text>
               <Text style={styles.settingValue}>2026-27 semester milestones, exams & vacations</Text>
+            </View>
+            <ChevronRight size={18} color={theme.colors.textSecondary} />
+          </TouchableOpacity>
+
+          <View style={styles.settingDivider} />
+
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => router.push('/mail')}
+          >
+            <View style={styles.settingIconCol}>
+              <Mail size={20} color={theme.colors.accent} />
+            </View>
+            <View style={styles.settingTextCol}>
+              <Text style={styles.settingTitle}>GBU Webmail & Dispatch</Text>
+              <Text style={styles.settingValue}>Official student mailbox, deans & placement circulars</Text>
             </View>
             <ChevronRight size={18} color={theme.colors.textSecondary} />
           </TouchableOpacity>

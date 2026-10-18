@@ -38,6 +38,9 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
         runOnJS(onFinish)();
       }
     });
+    setTimeout(() => {
+      onFinish();
+    }, 280);
   };
 
   useEffect(() => {

@@ -156,5 +156,18 @@ describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
       expect(afterMiss?.attended).toBe(initialAttended + 1);
       expect(afterMiss?.total).toBe(initialTotal + 2);
     });
+
+    it('calculates aggregate attendance battery percentage and safety margins', () => {
+      const subjects = useAttendanceStore.getState().subjects;
+      const totalAttended = subjects.reduce((acc, s) => acc + s.attended, 0);
+      const totalClasses = subjects.reduce((acc, s) => acc + s.total, 0);
+      const status = calculateAttendanceStatus(totalAttended, totalClasses, 75);
+
+      expect(status.percentage).toBeGreaterThan(0);
+      expect(status.percentage).toBeLessThanOrEqual(100);
+      expect(typeof status.isShortage).toBe('boolean');
+      expect(typeof status.canBunkMargin).toBe('number');
+      expect(typeof status.classesNeededFor75).toBe('number');
+    });
   });
 });
