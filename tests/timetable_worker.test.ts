@@ -8,7 +8,11 @@ import {
   buildTimetableFromRawItems,
   formatTimetableChangeNotification,
 } from '../worker/timetableJob';
-import { RawGBUTimetableItem, Slot } from '../src/features/timetable/timetableProvider';
+import {
+  RawGBUTimetableItem,
+  Slot,
+  applyDiffsToTimetable,
+} from '../src/features/timetable/timetableProvider';
 
 describe('Timetable Worker Job & Diff Pipeline', () => {
   const sampleRawItems: RawGBUTimetableItem[] = [
@@ -151,5 +155,27 @@ describe('Timetable Worker Job & Diff Pipeline', () => {
     expect(change.classKey).toBe('BCS-II B');
     expect(change.diffCount).toBe(2); // 1 room change + 1 added
     expect(change.notificationMessage).toContain('BCS-II B: 2 schedule updates on Monday');
+  });
+
+  it('marks cancelled slots as isCancelled and isChanged when applying diffs', () => {
+    const tOld = buildTimetableFromRawItems('BCS-II B', sampleRawItems, '39');
+    // Drop the second slot (simulating class cancellation)
+    const tNew = buildTimetableFromRawItems('BCS-II B', [sampleRawItems[0]], '39');
+
+    const diffs = [
+      {
+        type: 'removed' as const,
+        slot: tOld.slots[1],
+        oldSlot: tOld.slots[1],
+        message: 'Data Structures & Algorithms was cancelled',
+      },
+    ];
+
+    const decorated = applyDiffsToTimetable(tNew, diffs);
+    expect(decorated.slots).toHaveLength(2);
+    const cancelledSlot = decorated.slots.find((s: Slot) => s.isCancelled);
+    expect(cancelledSlot).toBeDefined();
+    expect(cancelledSlot?.isChanged).toBe(true);
+    expect(cancelledSlot?.changeNote).toContain('Data Structures & Algorithms was cancelled');
   });
 });

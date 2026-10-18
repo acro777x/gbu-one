@@ -27,7 +27,7 @@ export function cleanOcrText(text: string): string {
  */
 export function extractDeadlinesFromText(rawText: string): string[] {
   const matches: string[] = [];
-  const regex = /(?:last\s+date|deadline|extended\s+to|till|before|submission\s+date)[\s:]*([0-3]?[0-9](?:st|nd|rd|th)?[\s/.-]+(?:[A-Za-z]+|[0-1]?[0-9])[\s/.-]+(?:[2-9][0-9]{3})?)/gi;
+  const regex = /(?:last\s+date|deadline|extended\s+to|till|before|submission\s+date)[\s:]*([0-3]?[0-9](?:st|nd|rd|th)?[\s/.-]+(?:[A-Za-z]+|[0-1]?[0-9])(?:[\s/.-]+[2-9][0-9]{3})?)/gi;
   let m: RegExpExecArray | null;
 
   while ((m = regex.exec(rawText)) !== null) {

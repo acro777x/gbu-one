@@ -25,6 +25,7 @@ export type Slot = {
   type?: 'lecture' | 'lab' | 'tutorial';
   isChanged?: boolean;
   changeNote?: string;
+  isCancelled?: boolean;
 };
 
 export interface Timetable {
@@ -205,13 +206,14 @@ export function computeTimetableDiff(
 
     if (oldIdx !== -1) {
       const oldSlot = remainingOldSlots[oldIdx];
-      // Check room change
-      if (oldSlot.room !== newSlot.room && newSlot.room) {
+      const oldRoom = (oldSlot.room || '').trim();
+      const newRoom = (newSlot.room || '').trim();
+      if (oldRoom !== newRoom && (oldRoom || newRoom)) {
         diffs.push({
           type: 'room_changed',
           slot: newSlot,
           oldSlot,
-          message: `${newSlot.subject} room changed to ${newSlot.room} (was ${oldSlot.room || 'TBD'})`,
+          message: `${newSlot.subject} room changed to ${newRoom || 'Room TBD'} (was ${oldRoom || 'TBD'})`,
         });
       }
       remainingOldSlots.splice(oldIdx, 1);
@@ -273,8 +275,18 @@ export function applyDiffsToTimetable(
   if (!diffs || diffs.length === 0) return timetable;
 
   const changedSlotNotes = new Map<string, string>();
+  const removedSlots: Slot[] = [];
+
   for (const d of diffs) {
-    if (d.slot) {
+    if (d.type === 'removed' && d.slot) {
+      removedSlots.push({
+        ...d.slot,
+        id: `cancelled_${d.slot.id}`,
+        isChanged: true,
+        isCancelled: true,
+        changeNote: d.message,
+      });
+    } else if (d.slot) {
       changedSlotNotes.set(d.slot.id, d.message);
     }
   }
@@ -293,7 +305,7 @@ export function applyDiffsToTimetable(
 
   return {
     ...timetable,
-    slots: updatedSlots,
+    slots: [...updatedSlots, ...removedSlots],
   };
 }
 

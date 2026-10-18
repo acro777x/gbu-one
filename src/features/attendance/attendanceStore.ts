@@ -24,7 +24,10 @@ export function calculateAttendanceStatus(
   total: number,
   targetPercent: number = 75,
 ): AttendanceStatus {
-  if (total <= 0) {
+  const safeTotal = Math.max(0, total);
+  const safeAttended = Math.max(0, Math.min(attended, safeTotal));
+
+  if (safeTotal <= 0) {
     return {
       percentage: 100,
       isShortage: false,
@@ -33,16 +36,30 @@ export function calculateAttendanceStatus(
     };
   }
 
-  const percentage = (attended / total) * 100;
+  const percentage = (safeAttended / safeTotal) * 100;
+
+  if (targetPercent <= 0) {
+    return {
+      percentage,
+      isShortage: false,
+      classesNeededFor75: 0,
+      canBunkMargin: safeTotal,
+    };
+  }
+
   const isShortage = percentage < targetPercent;
 
   if (isShortage) {
-    // Equation: (attended + x) / (total + x) >= target / 100
-    // attended + x >= (target/100)*total + (target/100)*x
-    // x * (1 - target/100) >= (target/100)*total - attended
-    // x = ceil(((target/100)*total - attended) / (1 - target/100))
+    if (targetPercent >= 100) {
+      return {
+        percentage,
+        isShortage: true,
+        classesNeededFor75: 999,
+        canBunkMargin: 0,
+      };
+    }
     const p = targetPercent / 100;
-    const needed = Math.ceil((p * total - attended) / (1 - p));
+    const needed = Math.ceil((p * safeTotal - safeAttended) / (1 - p));
     return {
       percentage,
       isShortage: true,
@@ -50,11 +67,8 @@ export function calculateAttendanceStatus(
       canBunkMargin: 0,
     };
   } else {
-    // Can bunk: attended / (total + y) >= target / 100
-    // total + y <= attended / (target/100)
-    // y <= (attended / (target/100)) - total
     const p = targetPercent / 100;
-    const margin = Math.floor(attended / p - total);
+    const margin = Math.floor(safeAttended / p - safeTotal);
     return {
       percentage,
       isShortage: false,

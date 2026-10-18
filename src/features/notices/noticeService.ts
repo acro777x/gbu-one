@@ -331,7 +331,7 @@ export function groupNoticeThreads(notices: NoticeItem[]): NoticeItem[] {
     // Normalise topic key: remove dates, edition numbers, and punctuation
     const key = notice.cleanTitle
       .toLowerCase()
-      .replace(/(?:extended|revision|revised|list\s*\d+|final|schedule|notice)/g, '')
+      .replace(/(?:extension|extended|revision|revised|corrigendum|amendment|postponed|rescheduled|allotment|list\s*\d+|final|schedule|notice)/g, '')
       .replace(/[^a-z0-9]/g, '')
       .slice(0, 24);
 
@@ -343,7 +343,7 @@ export function groupNoticeThreads(notices: NoticeItem[]): NoticeItem[] {
   return notices.map((notice) => {
     const key = notice.cleanTitle
       .toLowerCase()
-      .replace(/(?:extended|revision|revised|list\s*\d+|final|schedule|notice)/g, '')
+      .replace(/(?:extension|extended|revision|revised|corrigendum|amendment|postponed|rescheduled|allotment|list\s*\d+|final|schedule|notice)/g, '')
       .replace(/[^a-z0-9]/g, '')
       .slice(0, 24);
 

@@ -33,6 +33,19 @@ describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
       expect(res2?.studentName).toBe('Priya Verma');
       expect(res2?.sgpa).toBe(9.1);
 
+      // Malformed roll numbers with spaces around delimiters
+      const resSpaced = searchRollNumberResult('22 / ICS / 042');
+      expect(resSpaced).not.toBeNull();
+      expect(resSpaced?.studentName).toBe('Aarav Sharma');
+
+      const resHyphenSpaced = searchRollNumberResult('22 - ics - 015');
+      expect(resHyphenSpaced).not.toBeNull();
+      expect(resHyphenSpaced?.studentName).toBe('Priya Verma');
+
+      const resMultiSpace = searchRollNumberResult('  22   ICS   042  ');
+      expect(resMultiSpace).not.toBeNull();
+      expect(resMultiSpace?.studentName).toBe('Aarav Sharma');
+
       // Non-existent roll number
       const res3 = searchRollNumberResult('99/UNKNOWN/999');
       expect(res3).toBeNull();
@@ -94,6 +107,31 @@ describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
       expect(status.classesNeededFor75).toBe(0);
       // 28 / (30 + y) >= 0.75 => 30 + y <= 37.33 => y <= 7
       expect(status.canBunkMargin).toBe(7);
+    });
+
+    it('handles boundary and edge conditions safely without division by zero', () => {
+      // 0 total classes
+      const zeroTotal = calculateAttendanceStatus(0, 0, 75);
+      expect(zeroTotal.percentage).toBe(100);
+      expect(zeroTotal.isShortage).toBe(false);
+      expect(zeroTotal.classesNeededFor75).toBe(0);
+      expect(zeroTotal.canBunkMargin).toBe(0);
+
+      // Target 100% when classes already missed
+      const target100 = calculateAttendanceStatus(10, 12, 100);
+      expect(target100.isShortage).toBe(true);
+      expect(target100.classesNeededFor75).toBeGreaterThan(0);
+      expect(isFinite(target100.classesNeededFor75)).toBe(true);
+
+      // Target 0%
+      const targetZero = calculateAttendanceStatus(5, 10, 0);
+      expect(targetZero.isShortage).toBe(false);
+      expect(targetZero.canBunkMargin).toBe(10);
+
+      // Attended > total (clamped)
+      const overflow = calculateAttendanceStatus(15, 10, 75);
+      expect(overflow.percentage).toBe(100);
+      expect(overflow.isShortage).toBe(false);
     });
 
     it('updates attendance store state when marking classes', () => {

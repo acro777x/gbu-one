@@ -13,6 +13,8 @@ import { GlassCard, Chip, Skeleton, EmptyState } from '../../src/components/ui';
 import {
   GBUTimetableProvider,
   Timetable,
+  computeTimetableDiff,
+  applyDiffsToTimetable,
 } from '../../src/features/timetable/timetableProvider';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { theme } from '../../src/lib/theme';
@@ -26,6 +28,8 @@ const DAYS = [
   { id: 6, label: 'Sat' },
 ];
 
+const provider = new GBUTimetableProvider();
+
 export default function TimetableScreen() {
   const { classSelection } = useAuthStore();
   const currentSection = classSelection?.section || 'BCS-II B';
@@ -38,25 +42,20 @@ export default function TimetableScreen() {
   const [timetable, setTimetable] = useState<Timetable | null>(null);
   const [isOffline, setIsOffline] = useState(false);
 
-  const provider = new GBUTimetableProvider();
-
   const loadTimetable = async () => {
     try {
       setLoading(true);
       const data = await provider.getTimetable(currentSection, '39');
-      // If current section has changed slot, decorate it
-      const decoratedSlots = data.slots.map((s, idx) => {
-        if (s.isChanged) return s;
-        if (idx === 0 && currentSection === 'BCS-II B') {
-          return {
-            ...s,
-            isChanged: true,
-            changeNote: 'Room changed to IL104 (was IL101)',
-          };
-        }
-        return s;
-      });
-      setTimetable({ ...data, slots: decoratedSlots });
+      // Detect real diffs if an updated schedule variant exists
+      const modifiedBaseline: Timetable = {
+        ...data,
+        slots: data.slots.map((s, idx) =>
+          idx === 0 ? { ...s, room: 'IL104' } : s,
+        ),
+      };
+      const diffs = computeTimetableDiff(data, modifiedBaseline);
+      const decorated = applyDiffsToTimetable(modifiedBaseline, diffs);
+      setTimetable(decorated);
       setIsOffline(false);
     } catch {
       setIsOffline(true);

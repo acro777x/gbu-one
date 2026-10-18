@@ -57,8 +57,8 @@ export function parseMainNoticesHtml(html: string): ScrapedRawNotice[] {
     const rowContent = rowMatch[1];
     // Find link
     const linkMatch = rowContent.match(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
-    // Find date (e.g. DD/MM/YYYY or DD-MM-YYYY)
-    const dateMatch = rowContent.match(/(?:<td[^>]*>)?\s*([0-3]?[0-9][/-][0-1]?[0-9][/-][2-9][0-9]{3})\s*(?:<\/td>)?/i);
+    // Find date (e.g. DD/MM/YYYY, DD-MM-YYYY, or DD.MM.YYYY)
+    const dateMatch = rowContent.match(/(?:<td[^>]*>)?\s*([0-3]?[0-9][/.-][0-1]?[0-9][/.-][2-9][0-9]{3})\s*(?:<\/td>)?/i);
 
     if (linkMatch) {
       let href = linkMatch[1].trim();
@@ -120,12 +120,21 @@ export function enrichScrapedNotice(raw: ScrapedRawNotice): NoticeItem {
 
   // Normalise posted date
   let postedAt = new Date().toISOString();
-  if (raw.dateStr.includes('/') || raw.dateStr.includes('-')) {
-    const parts = raw.dateStr.split(/[/-]/);
+  if (raw.dateStr) {
+    const parts = raw.dateStr.split(/[/.-]/);
     if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
+      let day: number, month: number, year: number;
+      if (parts[0].length === 4) {
+        // YYYY-MM-DD
+        year = parseInt(parts[0], 10);
+        month = parseInt(parts[1], 10) - 1;
+        day = parseInt(parts[2], 10);
+      } else {
+        // DD-MM-YYYY or DD/MM/YYYY
+        day = parseInt(parts[0], 10);
+        month = parseInt(parts[1], 10) - 1;
+        year = parseInt(parts[2], 10);
+      }
       try {
         postedAt = new Date(Date.UTC(year, month, day, 6, 0, 0)).toISOString();
       } catch {

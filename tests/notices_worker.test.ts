@@ -10,6 +10,7 @@ import {
   enrichScrapedNotice,
   NoticesWorkerJob,
 } from '../worker/noticesJob';
+import { extractDeadlinesFromText } from '../worker/ocrService';
 import {
   cleanNoticeTitle,
   detectNoticeAudience,
@@ -85,6 +86,29 @@ describe('Notices Scraper & Parser Worker', () => {
     expect(enriched.cleanTitle).toBe('Final Extension of Fee Submission Date till 31st Oct');
     expect(enriched.category).toBe('fees');
     expect(enriched.fileType).toBe('pdf');
+    expect(new Date(enriched.postedAt).getUTCFullYear()).toBe(2026);
+
+    // Test ISO YYYY-MM-DD dateStr (from exams scraper fallback)
+    const enrichedIso = enrichScrapedNotice({
+      source: 'exams',
+      rawTitle: 'Special Back Paper Notice',
+      url: 'https://exams.gbu.ac.in/notice.pdf',
+      dateStr: '2026-10-18',
+    });
+    const parsedIsoDate = new Date(enrichedIso.postedAt);
+    expect(parsedIsoDate.getUTCFullYear()).toBe(2026);
+    expect(parsedIsoDate.getUTCMonth()).toBe(9); // October
+    expect(parsedIsoDate.getUTCDate()).toBe(18);
+  });
+
+  it('extracts OCR deadlines from raw text both with and without explicit year', () => {
+    const withYear = extractDeadlinesFromText('Payment notice: submission date 31/10/2026 to accounts');
+    expect(withYear).toHaveLength(1);
+    expect(withYear[0]).toContain('31/10/2026');
+
+    const withoutYear = extractDeadlinesFromText('Important circular: last date 31st October for hostel fee');
+    expect(withoutYear).toHaveLength(1);
+    expect(withoutYear[0]).toContain('31st October');
   });
 
   it('cleans formal administrative prefixes from notice titles', () => {

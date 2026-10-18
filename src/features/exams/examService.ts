@@ -126,6 +126,14 @@ export const MOCK_STUDENT_RESULTS: StudentResultRecord[] = [
   },
 ];
 
+export function normalizeRollNumber(val: string): string {
+  return val
+    .trim()
+    .toUpperCase()
+    .replace(/[\s.\-_/]+/g, '/')
+    .replace(/^\/|\/$/g, '');
+}
+
 /**
  * On-device roll number search engine
  * Per docs/ARCHITECTURE.md section 5:
@@ -135,9 +143,10 @@ export function searchRollNumberResult(
   rollNo: string,
   records: StudentResultRecord[] = MOCK_STUDENT_RESULTS,
 ): StudentResultRecord | null {
-  const cleanRoll = rollNo.trim().toUpperCase().replace(/[\s.-]/g, '/');
+  const cleanRoll = normalizeRollNumber(rollNo);
+  if (!cleanRoll) return null;
   const match = records.find(
-    (r) => r.rollNo.toUpperCase().replace(/[\s.-]/g, '/') === cleanRoll,
+    (r) => normalizeRollNumber(r.rollNo) === cleanRoll,
   );
   return match || null;
 }
