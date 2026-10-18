@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "GBU One",
+    "slug": "gbu-one",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/brand/icon-1024.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/brand/splash-mark.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0B0C"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "in.gbu.one"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/brand/android-adaptive-foreground.png",
+        "backgroundColor": "#0B0B0C"
+      },
+      "package": "in.gbu.one"
+    },
+    "web": {
+      "favicon": "./assets/brand/favicon-32.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0B0B0C",
+          "image": "./assets/brand/splash-mark.png",
+          "imageWidth": 200
+        }
+      ]
+    ],
+    "scheme": "gbuone"
+  }
+}

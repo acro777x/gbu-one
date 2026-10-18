@@ -1,0 +1,9 @@
+node_modules/
+.env
+/ref/
+.expo/
+*.apk
+*.zip
+dist/
+web-build/
+tools/*.png
