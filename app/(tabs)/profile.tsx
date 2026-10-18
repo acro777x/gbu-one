@@ -7,24 +7,18 @@ import {
   SafeAreaView,
   TouchableOpacity,
   Switch,
-  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import {
   User,
   GraduationCap,
-  Bell,
-  BookMarked,
-  ShieldAlert,
   LogOut,
   ChevronRight,
-  Info,
-  CheckCircle,
   Plus,
   Minus,
   Sparkles,
 } from 'lucide-react-native';
-import { Avatar, GlassCard, PillButton, Chip } from '../../src/components/ui';
+import { Avatar, GlassCard, PillButton } from '../../src/components/ui';
 import { CountUp } from '../../src/components/motion/CountUp';
 import { OfficialSeal } from '../../src/components/brand/OfficialSeal';
 import { useAuthStore } from '../../src/store/useAuthStore';
@@ -201,7 +195,7 @@ export default function ProfileScreen() {
         <GlassCard style={styles.card}>
           <TouchableOpacity
             style={styles.settingRow}
-            onPress={() => router.push('/dev/motion' as any)}
+            onPress={() => router.push('/dev/motion' as never)}
           >
             <View style={styles.settingIconCol}>
               <Sparkles size={20} color={theme.colors.accent} />

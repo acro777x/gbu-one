@@ -30,7 +30,7 @@ export const ScrambleText: React.FC<ScrambleTextProps> = ({
       return;
     }
 
-    let intervalId: any;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
     const timeoutId = setTimeout(() => {
       const length = text.length;
       let frame = 0;

@@ -10,10 +10,9 @@ import {
   ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
-import { Eye, EyeOff, User, Lock, ArrowRight } from 'lucide-react-native';
+import { Eye, EyeOff, User, Lock } from 'lucide-react-native';
 import { LogoMark } from '../src/components/brand/LogoMark';
 import { OfficialSeal } from '../src/components/brand/OfficialSeal';
-import { LetterRise } from '../src/components/motion/LetterRise';
 import { PillButton } from '../src/components/ui/PillButton';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { theme } from '../src/lib/theme';

@@ -10,7 +10,7 @@ import {
   RefreshControl,
   Share,
 } from 'react-native';
-import { Search, Filter, Share2, BellRing, ExternalLink, X } from 'lucide-react-native';
+import { Search, Share2, BellRing, X } from 'lucide-react-native';
 import { NoticeCard, Chip, BottomSheet, PillButton, EmptyState } from '../../src/components/ui';
 import { MOCK_NOTICES, NoticeItem } from '../../src/features/notices/noticeService';
 import { theme } from '../../src/lib/theme';

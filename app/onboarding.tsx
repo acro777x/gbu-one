@@ -7,11 +7,12 @@ import {
   Dimensions,
   FlatList,
   Pressable,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Bell, Calendar, BookOpen, ChevronRight } from 'lucide-react-native';
 import { WordReveal } from '../src/components/motion/WordReveal';
-import { ScrambleText } from '../src/components/motion/ScrambleText';
 import { PillButton } from '../src/components/ui/PillButton';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { theme } from '../src/lib/theme';
@@ -72,7 +73,7 @@ export default function OnboardingScreen() {
     router.replace('/login');
   };
 
-  const onMomentumScrollEnd = (e: any) => {
+  const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
     const newIdx = Math.round(x / SCREEN_WIDTH);
     setCurrentIndex(newIdx);

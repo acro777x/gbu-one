@@ -221,13 +221,13 @@ export default function HomeScreen() {
           {/* Trending PYQs */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Trending PYQs</Text>
-            <TouchableOpacity onPress={() => router.push('/pyq' as any)}>
+            <TouchableOpacity onPress={() => router.push('/pyq' as never)}>
               <Text style={styles.seeAllText}>Browse all</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.pyqGrid}>
-            <GlassCard style={styles.pyqCard} onPress={() => router.push('/pyq' as any)}>
+            <GlassCard style={styles.pyqCard} onPress={() => router.push('/pyq' as never)}>
               <View style={styles.pyqBadge}>
                 <Text style={styles.pyqBadgeText}>CSE205</Text>
               </View>
@@ -241,7 +241,7 @@ export default function HomeScreen() {
               </View>
             </GlassCard>
 
-            <GlassCard style={styles.pyqCard} onPress={() => router.push('/pyq' as any)}>
+            <GlassCard style={styles.pyqCard} onPress={() => router.push('/pyq' as never)}>
               <View style={styles.pyqBadge}>
                 <Text style={styles.pyqBadgeText}>CSE209</Text>
               </View>
@@ -259,7 +259,7 @@ export default function HomeScreen() {
           {/* Motion Playground Shortcut in dev */}
           <TouchableOpacity
             style={styles.devLink}
-            onPress={() => router.push('/dev/motion' as any)}
+            onPress={() => router.push('/dev/motion' as never)}
           >
             <Sparkles size={14} color={theme.colors.accent} />
             <Text style={styles.devLinkText}>Motion Playground (/dev/motion)</Text>

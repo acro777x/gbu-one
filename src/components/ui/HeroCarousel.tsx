@@ -5,13 +5,9 @@ import {
   Text,
   Dimensions,
   FlatList,
-  Pressable,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { PillButton } from './PillButton';
 import { LetterRise } from '../motion/LetterRise';
@@ -57,7 +53,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
     return () => clearInterval(timer);
   }, [slides.length, autoAdvanceInterval]);
 
-  const onMomentumScrollEnd = (e: any) => {
+  const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
     const newIdx = Math.round(x / SCREEN_WIDTH);
     setActiveIndex(newIdx);

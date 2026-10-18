@@ -1,4 +1,4 @@
-import React from 'react';
+import { StyleProp, ViewStyle } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Path } from 'react-native-svg';
 import { LOGO_PATHS } from './logoPaths';
 
@@ -6,7 +6,7 @@ export interface LogoMarkProps {
   size?: number;
   mono?: boolean;
   monoColor?: string;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }
 
 export const LogoMark: React.FC<LogoMarkProps> = ({

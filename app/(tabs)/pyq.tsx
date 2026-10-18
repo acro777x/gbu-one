@@ -8,8 +8,8 @@ import {
   TouchableOpacity,
   TextInput,
 } from 'react-native';
-import { Search, Download, UploadCloud, CheckCircle2, FileText, Plus } from 'lucide-react-native';
-import { GlassCard, PillButton, Toast, BottomSheet, EmptyState } from '../../src/components/ui';
+import { Search, Download, UploadCloud, CheckCircle2 } from 'lucide-react-native';
+import { GlassCard, PillButton, Toast, BottomSheet } from '../../src/components/ui';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { theme } from '../../src/lib/theme';
 
@@ -171,6 +171,31 @@ export default function PYQScreen() {
             variant="dark"
             size="sm"
             style={{ marginTop: 8 }}
+          />
+        </View>
+      </BottomSheet>
+
+      {/* Upload Bottom Sheet */}
+      <BottomSheet
+        visible={uploadSheetVisible}
+        onClose={() => setUploadSheetVisible(false)}
+        title="Upload Paper"
+      >
+        <View style={styles.sheetContent}>
+          <Text style={styles.gateTitle}>Contribute a Question Paper</Text>
+          <Text style={styles.gateSubtitle}>
+            Select your PDF or scanned paper. Uploaded papers undergo quick moderation before appearing for all students.
+          </Text>
+          <PillButton
+            label="Select PDF file (max 20MB)"
+            onPress={() => {
+              setUploadSheetVisible(false);
+              setToastMessage('Paper submitted for student review');
+              setToastVisible(true);
+            }}
+            variant="primary"
+            size="md"
+            style={{ marginTop: 16 }}
           />
         </View>
       </BottomSheet>

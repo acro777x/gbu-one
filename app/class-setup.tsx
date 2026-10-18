@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
-import { ArrowLeft, Check, BookOpen } from 'lucide-react-native';
+import { ArrowLeft } from 'lucide-react-native';
 import { Chip, PillButton, GlassCard } from '../src/components/ui';
 import { useAuthStore, ClassSelection } from '../src/store/useAuthStore';
 import { theme } from '../src/lib/theme';
@@ -100,7 +100,7 @@ export default function ClassSetupScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.topHeader}>
         <TouchableOpacity
-          onPress={() => (step > 1 ? setStep((s) => (s - 1) as any) : router.back())}
+          onPress={() => (step > 1 ? setStep(((step - 1) as 1 | 2 | 3 | 4)) : router.back())}
           style={styles.backBtn}
         >
           <ArrowLeft size={22} color={theme.colors.ivory} />

@@ -4,7 +4,6 @@ import {
   View,
   Text,
   Modal,
-  Pressable,
   TouchableWithoutFeedback,
   Dimensions,
 } from 'react-native';

@@ -68,7 +68,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
     );
   }, [activeIndex, tabWidth]);
 
-  const handlePress = (tabKey: string, index: number) => {
+  const handlePress = (tabKey: string, _index: number) => {
     if (Platform.OS !== 'web') {
       try {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

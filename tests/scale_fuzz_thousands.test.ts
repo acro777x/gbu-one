@@ -3,7 +3,6 @@ import {
   Timetable,
   Slot,
   GBU_PERIOD_TIMES,
-  RawGBUTimetableItem,
 } from '../src/features/timetable/timetableProvider';
 import { classifyNotice, NoticeItem } from '../src/features/notices/noticeService';
 import { useAuthStore } from '../src/store/useAuthStore';
@@ -56,7 +55,7 @@ describe('Thousands of Test Case Scenarios (Scale, Fuzzing & Property-Based Veri
             const subjectCode = `CS${day}${period}${variant}`;
             const oldSlot: Slot = {
               id: `old-${day}-${period}-${variant}`,
-              day: day as any,
+              day: day as 1 | 2 | 3 | 4 | 5,
               period,
               start: GBU_PERIOD_TIMES[period]?.start || '08:30',
               end: GBU_PERIOD_TIMES[period]?.end || '09:30',
@@ -131,7 +130,7 @@ describe('Thousands of Test Case Scenarios (Scale, Fuzzing & Property-Based Veri
         const currentProfile = useAuthStore.getState().user;
         expect(currentProfile?.rollNo).toBe(roll);
         // CRITICAL SECURITY RULE CHECK: Profile must NEVER have password field
-        expect((currentProfile as any).password).toBeUndefined();
+        expect((currentProfile as unknown as Record<string, unknown>).password).toBeUndefined();
         expect(JSON.stringify(currentProfile)).not.toContain(pass);
       }
     });
