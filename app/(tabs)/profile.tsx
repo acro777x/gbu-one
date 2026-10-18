@@ -17,11 +17,17 @@ import {
   Plus,
   Minus,
   Sparkles,
+  Calendar,
+  Award,
 } from 'lucide-react-native';
 import { Avatar, GlassCard, PillButton } from '../../src/components/ui';
 import { CountUp } from '../../src/components/motion/CountUp';
 import { OfficialSeal } from '../../src/components/brand/OfficialSeal';
 import { useAuthStore } from '../../src/store/useAuthStore';
+import {
+  useAttendanceStore,
+  calculateAttendanceStatus,
+} from '../../src/features/attendance/attendanceStore';
 import { theme } from '../../src/lib/theme';
 
 export default function ProfileScreen() {
@@ -33,11 +39,11 @@ export default function ProfileScreen() {
   const [notifyExams, setNotifyExams] = useState(true);
   const [notifyDeadlines, setNotifyDeadlines] = useState(true);
 
-  // Manual Attendance Tracker state (local)
-  const [attendedClasses, setAttendedClasses] = useState(38);
-  const [totalClasses, setTotalClasses] = useState(44);
-
-  const attendancePercent = totalClasses > 0 ? (attendedClasses / totalClasses) * 100 : 0;
+  // Connected local attendance store
+  const { subjects, markAttended, markMissed } = useAttendanceStore();
+  const totalAttended = subjects.reduce((acc, s) => acc + s.attended, 0);
+  const totalClasses = subjects.reduce((acc, s) => acc + s.total, 0);
+  const overallStatus = calculateAttendanceStatus(totalAttended, totalClasses, 75);
 
   const handleLogout = () => {
     logout();
@@ -100,35 +106,83 @@ export default function ProfileScreen() {
 
           <View style={styles.attendanceRow}>
             <View style={styles.attendancePercentCol}>
-              <CountUp value={attendancePercent} decimals={1} suffix="%" style={styles.attendanceNum} />
+              <CountUp value={overallStatus.percentage} decimals={1} suffix="%" style={styles.attendanceNum} />
               <Text style={styles.attendanceRatio}>
-                {attendedClasses} / {totalClasses} classes attended
+                {totalAttended} / {totalClasses} classes attended
+              </Text>
+              <Text style={[styles.attendanceProjection, overallStatus.isShortage ? styles.shortageText : styles.safeText]}>
+                {overallStatus.isShortage
+                  ? `Shortage: Attend next ${overallStatus.classesNeededFor75} classes to hit 75%`
+                  : `Safe: Can miss ${overallStatus.canBunkMargin} classes and stay >= 75%`}
               </Text>
             </View>
-
-            <View style={styles.attendanceButtons}>
-              <TouchableOpacity
-                style={styles.attendBtn}
-                onPress={() => {
-                  setAttendedClasses((a) => a + 1);
-                  setTotalClasses((t) => t + 1);
-                }}
-              >
-                <Plus size={16} color={theme.colors.success} />
-                <Text style={styles.attendBtnText}>Present</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.attendBtn, styles.absentBtn]}
-                onPress={() => {
-                  setTotalClasses((t) => t + 1);
-                }}
-              >
-                <Minus size={16} color={theme.colors.danger} />
-                <Text style={[styles.attendBtnText, { color: theme.colors.danger }]}>Absent</Text>
-              </TouchableOpacity>
-            </View>
           </View>
+
+          {/* Subject-wise Quick Adjusters */}
+          <View style={styles.subjectList}>
+            {subjects.map((sub) => {
+              const subStatus = calculateAttendanceStatus(sub.attended, sub.total, 75);
+              return (
+                <View key={sub.subjectCode} style={styles.subjectRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.subjectName}>{sub.subjectCode} • {sub.subjectName}</Text>
+                    <Text style={styles.subjectSub}>
+                      {sub.attended}/{sub.total} ({subStatus.percentage.toFixed(0)}%)
+                    </Text>
+                  </View>
+                  <View style={styles.subjectBtns}>
+                    <TouchableOpacity
+                      style={styles.subBtn}
+                      onPress={() => markAttended(sub.subjectCode)}
+                      hitSlop={6}
+                    >
+                      <Plus size={14} color={theme.colors.success} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.subBtn, styles.subBtnAbsent]}
+                      onPress={() => markMissed(sub.subjectCode)}
+                      hitSlop={6}
+                    >
+                      <Minus size={14} color={theme.colors.danger} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </GlassCard>
+
+        {/* Academic Hubs Links */}
+        <GlassCard style={styles.card}>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => router.push('/exams')}
+          >
+            <View style={styles.settingIconCol}>
+              <Award size={20} color={theme.colors.accent} />
+            </View>
+            <View style={styles.settingTextCol}>
+              <Text style={styles.settingTitle}>Examination Hub & Results</Text>
+              <Text style={styles.settingValue}>Date sheet, admit card alerts, on-device roll finder</Text>
+            </View>
+            <ChevronRight size={18} color={theme.colors.textSecondary} />
+          </TouchableOpacity>
+
+          <View style={styles.settingDivider} />
+
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => router.push('/calendar')}
+          >
+            <View style={styles.settingIconCol}>
+              <Calendar size={20} color={theme.colors.accent} />
+            </View>
+            <View style={styles.settingTextCol}>
+              <Text style={styles.settingTitle}>Academic Calendar & Holidays</Text>
+              <Text style={styles.settingValue}>2026-27 semester milestones, exams & vacations</Text>
+            </View>
+            <ChevronRight size={18} color={theme.colors.textSecondary} />
+          </TouchableOpacity>
         </GlassCard>
 
         {/* My Class Settings */}
@@ -344,26 +398,60 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     marginTop: 2,
   },
-  attendanceButtons: {
-    flexDirection: 'row',
+  attendanceProjection: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 11,
+    marginTop: 4,
+  },
+  shortageText: {
+    color: theme.colors.danger,
+  },
+  safeText: {
+    color: theme.colors.success,
+  },
+  subjectList: {
+    marginTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    paddingTop: 10,
     gap: 8,
   },
-  attendBtn: {
+  subjectRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(61, 214, 140, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 4,
+    justifyContent: 'space-between',
+    paddingVertical: 4,
   },
-  absentBtn: {
-    backgroundColor: 'rgba(255, 92, 92, 0.12)',
-  },
-  attendBtnText: {
-    fontFamily: 'Inter-Medium',
+  subjectName: {
+    fontFamily: 'Inter-SemiBold',
     fontSize: 12,
-    color: theme.colors.success,
+    color: theme.colors.ivory,
+  },
+  subjectSub: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    color: theme.colors.textSecondary,
+    marginTop: 1,
+  },
+  subjectBtns: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  subBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: 'rgba(61, 214, 140, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  subBtnAbsent: {
+    backgroundColor: 'rgba(255, 92, 92, 0.15)',
+  },
+  settingDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    marginVertical: 10,
   },
   settingRow: {
     flexDirection: 'row',

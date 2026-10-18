@@ -161,9 +161,12 @@ export default function HomeScreen() {
           {/* Deadlines Section */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Active Deadlines</Text>
+            <TouchableOpacity onPress={() => router.push('/calendar' as never)}>
+              <Text style={styles.seeAllText}>Academic Calendar</Text>
+            </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.deadlineRow}>
-            <GlassCard style={styles.deadlineCard}>
+            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notices' as never)}>
               <View style={styles.deadlineBadge}>
                 <Clock size={12} color={theme.colors.warning} />
                 <Text style={styles.deadlineBadgeText}>2 days left</Text>
@@ -172,7 +175,7 @@ export default function HomeScreen() {
               <Text style={styles.deadlineCardDate}>Due 31 Oct 2026</Text>
             </GlassCard>
 
-            <GlassCard style={styles.deadlineCard}>
+            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notices' as never)}>
               <View style={styles.deadlineBadge}>
                 <Clock size={12} color={theme.colors.warning} />
                 <Text style={styles.deadlineBadgeText}>12 days left</Text>
@@ -181,7 +184,7 @@ export default function HomeScreen() {
               <Text style={styles.deadlineCardDate}>Due 10 Nov 2026</Text>
             </GlassCard>
 
-            <GlassCard style={styles.deadlineCard}>
+            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notices' as never)}>
               <View style={styles.deadlineBadge}>
                 <Clock size={12} color={theme.colors.success} />
                 <Text style={styles.deadlineBadgeText}>18 days left</Text>
@@ -192,12 +195,12 @@ export default function HomeScreen() {
           </ScrollView>
 
           {/* Exam Countdown Card */}
-          <GlassCard style={styles.examCard}>
+          <GlassCard style={styles.examCard} onPress={() => router.push('/exams' as never)}>
             <View style={styles.examCardRow}>
               <View>
                 <Text style={styles.examSubtitle}>AUTUMN 2026</Text>
                 <Text style={styles.examTitle}>Mid Semester Examinations</Text>
-                <Text style={styles.examDate}>Starts Monday, 3 Nov 2026</Text>
+                <Text style={styles.examDate}>Starts Monday, 3 Nov 2026 • Tap for Date Sheet</Text>
               </View>
               <View style={styles.countdownBox}>
                 <CountUp value={14} style={styles.countdownNumber} />

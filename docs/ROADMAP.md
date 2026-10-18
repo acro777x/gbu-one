@@ -48,11 +48,11 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Report button, copyright/takedown note, Trending row
 
 ## Phase 5 — Exams, results, deadlines, calendar
-- [ ] Exam hub: date sheet for my programme, revision alerts, countdown, admit card reminder
-- [ ] Result finder (on-device PDF text search for roll number)
-- [ ] Deadline tracker with local reminders
-- [ ] Academic calendar + holidays parsed into a calendar view
-- [ ] Manual attendance tracker (local)
+- [x] Exam hub: date sheet for my programme, revision alerts, countdown, admit card reminder
+- [x] Result finder (on-device PDF text search for roll number)
+- [x] Deadline tracker with local reminders
+- [x] Academic calendar + holidays parsed into a calendar view
+- [x] Manual attendance tracker (local)
 
 ## Phase 6 — Polish and release
 - [ ] Performance pass (cold start, list virtualisation), accessibility pass
