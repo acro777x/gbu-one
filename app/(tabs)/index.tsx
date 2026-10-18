@@ -66,21 +66,21 @@ export default function HomeScreen() {
       category: 'Exam Alert',
       title: 'Mid Sem Exam Datesheet Released',
       meta: 'Autumn 2026 • 6 Days Left',
-      onPress: () => router.push('/notices' as any),
+      onPress: () => router.push('/notices' as never),
     },
     {
       id: 'h2',
       category: 'Fee Deadline',
       title: 'Monsoon Fee Submission Extended',
       meta: 'Extended to Oct 31 • Final Call',
-      onPress: () => router.push('/notices' as any),
+      onPress: () => router.push('/notices' as never),
     },
     {
       id: 'h3',
       category: 'Scholarship',
       title: 'UP Post-Matric Scholarship Forms',
       meta: 'All Schools • Closes Nov 10',
-      onPress: () => router.push('/notices' as any),
+      onPress: () => router.push('/notices' as never),
     },
   ];
 
@@ -99,7 +99,7 @@ export default function HomeScreen() {
         <View style={styles.headerRight}>
           <TouchableOpacity
             style={styles.bellButton}
-            onPress={() => router.push('/notices' as any)}
+            onPress={() => router.push('/notices' as never)}
             accessibilityLabel="Notifications"
           >
             <Bell size={20} color={theme.colors.ivory} />
@@ -107,7 +107,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => router.push('/profile' as any)}
+            onPress={() => router.push('/profile' as never)}
             accessibilityLabel="Profile"
           >
             <Avatar
@@ -138,24 +138,24 @@ export default function HomeScreen() {
           {/* Next Class Card (Continue Watching style) */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Up Next</Text>
-            <TouchableOpacity onPress={() => router.push('/timetable' as any)}>
+            <TouchableOpacity onPress={() => router.push('/timetable' as never)}>
               <Text style={styles.seeAllText}>Full Schedule</Text>
             </TouchableOpacity>
           </View>
 
           <NextClassCard
-            subject="Operating Systems"
-            room="IL101 • SOICT"
-            time="08:30 - 09:30 AM"
-            timeLeftBadge="45m left"
-            progressPercent={65}
-            faculty="Prof. Prashant Gaurav"
-            onPress={() => router.push('/timetable' as any)}
+            subject={nextSlot?.subject || 'Operating Systems'}
+            room={nextSlot?.room ? `${nextSlot.room} • ${classSelection?.school || 'SOICT'}` : 'IL101 • SOICT'}
+            time={nextSlot ? `${nextSlot.start} - ${nextSlot.end}` : '08:30 - 09:30 AM'}
+            timeLeftBadge="Starts 08:30"
+            progressPercent={nextSlot ? 65 : 0}
+            faculty={nextSlot?.faculty || 'Prof. Prashant Gaurav'}
+            onPress={() => router.push('/timetable' as never)}
           />
 
           {/* Timetable Changed Banner */}
           {hasTimetableChange && (
-            <GlassCard style={styles.changeBanner} accentBorder onPress={() => router.push('/timetable' as any)}>
+            <GlassCard style={styles.changeBanner} accentBorder onPress={() => router.push('/timetable' as never)}>
               <View style={styles.changeRow}>
                 <View style={styles.changeIconCircle}>
                   <AlertTriangle size={18} color={theme.colors.accent} />
