@@ -9,8 +9,9 @@ import {
   TouchableOpacity,
   RefreshControl,
   Share,
+  Linking,
 } from 'react-native';
-import { Search, Share2, BellRing, X } from 'lucide-react-native';
+import { Search, Share2, BellRing, X, ExternalLink } from 'lucide-react-native';
 import { NoticeCard, Chip, BottomSheet, PillButton, EmptyState } from '../../src/components/ui';
 import { MOCK_NOTICES, NoticeItem } from '../../src/features/notices/noticeService';
 import { theme } from '../../src/lib/theme';
@@ -168,19 +169,31 @@ export default function NoticesScreen() {
             {/* Actions */}
             <View style={styles.sheetActions}>
               <PillButton
-                label="Share Notice"
-                onPress={handleShare}
+                label="View Original"
+                onPress={() => {
+                  if (activeNotice?.fileUrl) {
+                    Linking.openURL(activeNotice.fileUrl).catch(() => {});
+                  }
+                }}
                 variant="white"
                 size="sm"
-                icon={<Share2 size={16} color="#0B0B0C" style={{ marginRight: 6 }} />}
-                style={{ flex: 1, marginRight: 8 }}
+                icon={<ExternalLink size={15} color="#0B0B0C" style={{ marginRight: 6 }} />}
+                style={{ flex: 1, marginRight: 6 }}
               />
               <PillButton
-                label="Set Reminder"
+                label="Share"
+                onPress={handleShare}
+                variant="outline"
+                size="sm"
+                icon={<Share2 size={15} color={theme.colors.ivory} style={{ marginRight: 6 }} />}
+                style={{ flex: 1, marginRight: 6 }}
+              />
+              <PillButton
+                label="Remind"
                 onPress={() => setSheetVisible(false)}
                 variant="primary"
                 size="sm"
-                icon={<BellRing size={16} color={theme.colors.ivory} style={{ marginRight: 6 }} />}
+                icon={<BellRing size={15} color={theme.colors.ivory} style={{ marginRight: 6 }} />}
                 style={{ flex: 1 }}
               />
             </View>

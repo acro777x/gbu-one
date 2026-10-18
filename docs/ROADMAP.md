@@ -32,13 +32,13 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Real provider (after owner supplies API details)
 
 ## Phase 3 — Notices
-- [ ] Worker: fetch + parse main notices and exams portal, idempotent inserts
-- [ ] Attachment download, OCR for images and scanned PDFs, store raw text
-- [ ] Classifier, audience tagging, importance score (tests with real titles)
-- [ ] Deadline extraction and thread grouping
-- [ ] Notices screen: search, removable chips, bottom-sheet detail, original viewer
-- [ ] Hero carousel on Home from top notices
-- [ ] Push pipeline + notification preferences
+- [x] Worker: fetch + parse main notices and exams portal, idempotent inserts
+- [x] Attachment download, OCR for images and scanned PDFs, store raw text
+- [x] Classifier, audience tagging, importance score (tests with real titles)
+- [x] Deadline extraction and thread grouping
+- [x] Notices screen: search, removable chips, bottom-sheet detail, original viewer
+- [x] Hero carousel on Home from top notices
+- [x] Push pipeline + notification preferences
 
 ## Phase 4 — PYQ
 - [ ] Tables, RLS, Storage buckets

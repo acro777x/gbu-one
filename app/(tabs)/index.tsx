@@ -20,6 +20,7 @@ import {
 import { CountUp } from '../../src/components/motion/CountUp';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { GBUTimetableProvider, Slot } from '../../src/features/timetable/timetableProvider';
+import { MOCK_NOTICES } from '../../src/features/notices/noticeService';
 import { theme } from '../../src/lib/theme';
 
 export default function HomeScreen() {
@@ -60,29 +61,16 @@ export default function HomeScreen() {
     });
   };
 
-  const heroSlides = [
-    {
-      id: 'h1',
-      category: 'Exam Alert',
-      title: 'Mid Sem Exam Datesheet Released',
-      meta: 'Autumn 2026 • 6 Days Left',
-      onPress: () => router.push('/notices' as never),
-    },
-    {
-      id: 'h2',
-      category: 'Fee Deadline',
-      title: 'Monsoon Fee Submission Extended',
-      meta: 'Extended to Oct 31 • Final Call',
-      onPress: () => router.push('/notices' as never),
-    },
-    {
-      id: 'h3',
-      category: 'Scholarship',
-      title: 'UP Post-Matric Scholarship Forms',
-      meta: 'All Schools • Closes Nov 10',
-      onPress: () => router.push('/notices' as never),
-    },
-  ];
+  const topNotices = MOCK_NOTICES.filter((n) => n.importance >= 3).slice(0, 4);
+  const heroSlides = topNotices.map((n) => ({
+    id: n.id,
+    category: n.category === 'datesheet' ? 'Exam Alert' : n.category.toUpperCase(),
+    title: n.cleanTitle,
+    meta: n.deadlineAt
+      ? `Deadline: ${new Date(n.deadlineAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+      : `${n.source.toUpperCase()} • Official Notice`,
+    onPress: () => router.push('/notices' as never),
+  }));
 
   return (
     <SafeAreaView style={styles.safeArea}>
