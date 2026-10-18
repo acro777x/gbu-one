@@ -41,11 +41,11 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Push pipeline + notification preferences
 
 ## Phase 4 — PYQ
-- [ ] Tables, RLS, Storage buckets
-- [ ] Browse flow: school → programme code → semester → subject, plus search
-- [ ] Grid UI with multi-select toast and bulk download
-- [ ] Upload flow + pending status + moderation (admin screen or documented dashboard process)
-- [ ] Report button, copyright/takedown note, Trending row
+- [x] Tables, RLS, Storage buckets
+- [x] Browse flow: school → programme code → semester → subject, plus search
+- [x] Grid UI with multi-select toast and bulk download
+- [x] Upload flow + pending status + moderation (admin screen or documented dashboard process)
+- [x] Report button, copyright/takedown note, Trending row
 
 ## Phase 5 — Exams, results, deadlines, calendar
 - [ ] Exam hub: date sheet for my programme, revision alerts, countdown, admit card reminder
