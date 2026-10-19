@@ -1,7 +1,9 @@
+import React from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 import { Clock } from 'lucide-react-native';
 import { GlassCard } from './GlassCard';
-import { theme } from '../../lib/theme';
+import { useAppTheme } from '../../lib/ThemeContext';
+import { spacing, radius } from '../../lib/theme';
 
 export interface NoticeCardProps {
   id: string;
@@ -25,38 +27,40 @@ export const NoticeCard: React.FC<NoticeCardProps> = ({
   threadUpdateCount,
   onPress,
 }) => {
+  const { colors, isDark } = useAppTheme();
+
   return (
     <GlassCard style={styles.card} onPress={onPress}>
       {/* Top row: Category, Importance Dot, Deadline */}
       <View style={styles.topRow}>
         <View style={styles.categoryRow}>
-          <View style={styles.categoryBadge}>
-            <Text style={styles.categoryText}>{category}</Text>
+          <View style={[styles.categoryBadge, { backgroundColor: `${colors.accent}15` }]}>
+            <Text style={[styles.categoryText, { color: colors.accent }]}>{category}</Text>
           </View>
           {importance > 1 && (
-            <View style={styles.importanceDot} />
+            <View style={[styles.importanceDot, { backgroundColor: colors.accent }]} />
           )}
         </View>
 
         {deadlineBadge && (
-          <View style={styles.deadlineBadge}>
-            <Clock size={12} color={theme.colors.warning} />
-            <Text style={styles.deadlineText}>{deadlineBadge}</Text>
+          <View style={[styles.deadlineBadge, { backgroundColor: isDark ? 'rgba(245, 184, 61, 0.16)' : 'rgba(245, 184, 61, 0.12)' }]}>
+            <Clock size={12} color={colors.warning} />
+            <Text style={[styles.deadlineText, { color: colors.warning }]}>{deadlineBadge}</Text>
           </View>
         )}
       </View>
 
       {/* Title */}
-      <Text style={styles.title} numberOfLines={2}>
+      <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={2}>
         {title}
       </Text>
 
       {/* Bottom meta row: Source, Date, Thread count */}
       <View style={styles.bottomRow}>
-        <Text style={styles.metaText}>{source} • {date}</Text>
+        <Text style={[styles.metaText, { color: colors.textSecondary }]}>{source} • {date}</Text>
         {threadUpdateCount && threadUpdateCount > 1 ? (
-          <View style={styles.threadBadge}>
-            <Text style={styles.threadText}>Updated {threadUpdateCount} times</Text>
+          <View style={[styles.threadBadge, { backgroundColor: colors.accentSoft }]}>
+            <Text style={[styles.threadText, { color: colors.accent }]}>Updated {threadUpdateCount} times</Text>
           </View>
         ) : null}
       </View>
@@ -66,27 +70,25 @@ export const NoticeCard: React.FC<NoticeCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.md,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
   },
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing.sm,
+    marginBottom: spacing.sm,
   },
   categoryRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   categoryBadge: {
-    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: theme.radius.chip,
+    borderRadius: radius.chip,
   },
   categoryText: {
-    color: theme.colors.accent,
     fontFamily: 'Inter-SemiBold',
     fontSize: 11,
     textTransform: 'uppercase',
@@ -95,19 +97,16 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: theme.colors.accent,
     marginLeft: 6,
   },
   deadlineBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 184, 61, 0.12)',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: theme.radius.chip,
+    borderRadius: radius.chip,
   },
   deadlineText: {
-    color: theme.colors.warning,
     fontFamily: 'Inter-Medium',
     fontSize: 11,
     marginLeft: 4,
@@ -116,8 +115,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     fontSize: 15,
     lineHeight: 21,
-    color: theme.colors.ivory,
-    marginBottom: theme.spacing.sm,
+    marginBottom: spacing.sm,
   },
   bottomRow: {
     flexDirection: 'row',
@@ -125,18 +123,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   metaText: {
-    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     fontSize: 12,
   },
   threadBadge: {
-    backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   threadText: {
-    color: theme.colors.accent,
     fontFamily: 'Inter-Medium',
     fontSize: 10,
   },

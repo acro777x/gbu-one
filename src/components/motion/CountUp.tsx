@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Text, TextStyle, StyleSheet, View } from 'react-native';
+import { Text, TextStyle, StyleSheet, View, StyleProp } from 'react-native';
 import { theme } from '../../lib/theme';
 
 export interface CountUpProps {
@@ -8,7 +8,7 @@ export interface CountUpProps {
   suffix?: string;
   prefix?: string;
   decimals?: number;
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
   reduceMotion?: boolean;
   onDone?: () => void;
 }

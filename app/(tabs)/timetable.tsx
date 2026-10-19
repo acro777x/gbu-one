@@ -113,18 +113,7 @@ export default function TimetableScreen() {
     try {
       setLoading(true);
       const data = await provider.getTimetable(currentSection, '39');
-      // Highlight change only on the specific first slot if applicable
-      const decoratedSlots = data.slots.map((s, idx) => {
-        if (idx === 0) {
-          return {
-            ...s,
-            isChanged: true,
-            changeNote: `${s.subject} shifted to ${s.room || 'IL104'} for today's lecture`,
-          };
-        }
-        return s;
-      });
-      setTimetable({ ...data, slots: decoratedSlots });
+      setTimetable(data);
       setIsOffline(false);
     } catch {
       setIsOffline(true);

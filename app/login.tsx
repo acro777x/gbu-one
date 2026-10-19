@@ -15,9 +15,11 @@ import { LogoMark } from '../src/components/brand/LogoMark';
 import { OfficialSeal } from '../src/components/brand/OfficialSeal';
 import { PillButton } from '../src/components/ui/PillButton';
 import { useAuthStore } from '../src/store/useAuthStore';
+import { useAppTheme } from '../src/lib/ThemeContext';
 import { theme } from '../src/lib/theme';
 
 export default function LoginScreen() {
+  const { colors, isDark } = useAppTheme();
   const [rollNo, setRollNo] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -48,32 +50,44 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.bg }]}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* Top Header */}
         <View style={styles.header}>
-          <LogoMark size={64} />
+          <LogoMark size={64} variant={isDark ? 'dark' : 'light'} />
           <View style={styles.wordmarkRow}>
-            <Text style={styles.brandGBU}>GBU </Text>
-            <Text style={styles.brandOne}>One</Text>
+            <Text style={[styles.brandGBU, { color: colors.textPrimary }]}>GBU </Text>
+            <Text style={[styles.brandOne, { color: colors.accent }]}>One</Text>
           </View>
-          <Text style={styles.subtitle}>Sign in to your GBU One account</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            Sign in to your GBU One account
+          </Text>
         </View>
 
         {/* Input Card */}
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
           {errorMessage && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{errorMessage}</Text>
+            <View style={[styles.errorBox, { backgroundColor: colors.dangerSoft, borderColor: `${colors.danger}40` }]}>
+              <Text style={[styles.errorText, { color: colors.danger }]}>{errorMessage}</Text>
             </View>
           )}
 
           {/* Roll Number Field */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Roll Number / Enrollment No.</Text>
-            <View style={styles.inputContainer}>
-              <User size={18} color={theme.colors.textSecondary} style={styles.inputIcon} />
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+              Roll Number / Enrollment No.
+            </Text>
+            <View
+              style={[
+                styles.inputContainer,
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderColor: colors.borderGlass,
+                },
+              ]}
+            >
+              <User size={18} color={colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 value={rollNo}
                 onChangeText={(text) => {
@@ -81,19 +95,29 @@ export default function LoginScreen() {
                   setErrorMessage(null);
                 }}
                 placeholder="e.g. 22/BCS/048"
-                placeholderTextColor={theme.colors.textTertiary}
+                placeholderTextColor={colors.textTertiary}
                 autoCapitalize="characters"
                 autoCorrect={false}
-                style={styles.textInput}
+                style={[styles.textInput, { color: colors.textPrimary }]}
               />
             </View>
           </View>
 
           {/* Password Field */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>App Password</Text>
-            <View style={styles.inputContainer}>
-              <Lock size={18} color={theme.colors.textSecondary} style={styles.inputIcon} />
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+              App Password
+            </Text>
+            <View
+              style={[
+                styles.inputContainer,
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderColor: colors.borderGlass,
+                },
+              ]}
+            >
+              <Lock size={18} color={colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 value={password}
                 onChangeText={(text) => {
@@ -101,9 +125,9 @@ export default function LoginScreen() {
                   setErrorMessage(null);
                 }}
                 placeholder="Enter password"
-                placeholderTextColor={theme.colors.textTertiary}
+                placeholderTextColor={colors.textTertiary}
                 secureTextEntry={!showPassword}
-                style={styles.textInput}
+                style={[styles.textInput, { color: colors.textPrimary }]}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword(!showPassword)}
@@ -111,9 +135,9 @@ export default function LoginScreen() {
                 style={styles.eyeBtn}
               >
                 {showPassword ? (
-                  <EyeOff size={18} color={theme.colors.textSecondary} />
+                  <EyeOff size={18} color={colors.textSecondary} />
                 ) : (
-                  <Eye size={18} color={theme.colors.textSecondary} />
+                  <Eye size={18} color={colors.textSecondary} />
                 )}
               </TouchableOpacity>
             </View>
@@ -131,16 +155,16 @@ export default function LoginScreen() {
 
           {/* Divider */}
           <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
+            <View style={[styles.dividerLine, { backgroundColor: colors.borderGlass }]} />
+            <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or</Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.borderGlass }]} />
           </View>
 
           {/* Continue as Guest Button */}
           <PillButton
             label="Continue as guest"
             onPress={handleGuest}
-            variant="dark"
+            variant={isDark ? 'dark' : 'white'}
             size="md"
             style={styles.guestBtn}
           />
@@ -148,7 +172,7 @@ export default function LoginScreen() {
 
         {/* Footer Note */}
         <View style={styles.footer}>
-          <Text style={styles.securityNote}>
+          <Text style={[styles.securityNote, { color: colors.textTertiary }]}>
             Security notice: We never ask for, collect, or store your official university portal password.
           </Text>
           <OfficialSeal />
@@ -161,7 +185,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
   scrollContent: {
     flexGrow: 1,
@@ -182,30 +205,23 @@ const styles = StyleSheet.create({
   brandGBU: {
     fontFamily: 'Poppins-Bold',
     fontSize: 26,
-    color: theme.colors.ivory,
   },
   brandOne: {
     fontFamily: 'Poppins-Bold',
     fontSize: 26,
-    color: theme.colors.accent,
   },
   subtitle: {
     fontFamily: 'Inter-Regular',
     fontSize: 14,
-    color: theme.colors.textSecondary,
     marginTop: 4,
   },
   card: {
-    backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.card,
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     padding: theme.spacing.xl,
   },
   errorBox: {
-    backgroundColor: 'rgba(255, 92, 92, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 92, 92, 0.3)',
     borderRadius: 8,
     padding: 10,
     marginBottom: theme.spacing.md,
@@ -213,7 +229,6 @@ const styles = StyleSheet.create({
   errorText: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
-    color: theme.colors.danger,
     textAlign: 'center',
   },
   fieldGroup: {
@@ -222,15 +237,12 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
-    color: theme.colors.textSecondary,
     marginBottom: 8,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 48,
@@ -240,7 +252,6 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    color: theme.colors.ivory,
     fontFamily: 'Inter-Regular',
     fontSize: 15,
     height: '100%',
@@ -259,17 +270,13 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(17, 24, 39, 0.08)',
   },
   dividerText: {
     paddingHorizontal: 12,
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
-  guestBtn: {
-    backgroundColor: theme.colors.surfaceMuted,
-  },
+  guestBtn: {},
   footer: {
     marginTop: theme.spacing.xxl,
     alignItems: 'center',
@@ -277,7 +284,6 @@ const styles = StyleSheet.create({
   securityNote: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textTertiary,
     textAlign: 'center',
     lineHeight: 18,
     maxWidth: 300,

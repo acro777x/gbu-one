@@ -8,8 +8,6 @@ import { useFonts } from 'expo-font';
 import { SplashScreenView } from '../src/components/brand/SplashScreenView';
 import { ThemeProvider, useAppTheme } from '../src/lib/ThemeContext';
 
-// Keep native splash active until root React tree is ready
-SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function AppShell() {
   const { colors, isDark } = useAppTheme();
@@ -46,21 +44,16 @@ function AppShell() {
     };
   }, []);
 
-  // Hide native splash screen as soon as fonts are resolved
-  const hideNativeSplash = useCallback(async () => {
-    try {
-      await SplashScreen.hideAsync();
-    } catch {
-      // ignore
-    }
+  // Hide native splash screen as soon as fonts are resolved or JS mounts
+  const hideNativeSplash = useCallback(() => {
+    SplashScreen.hideAsync().catch(() => {});
   }, []);
 
   useEffect(() => {
+    hideNativeSplash();
     if (fontsLoaded || fontError) {
       hideNativeSplash();
     }
-    const fallbackTimer = setTimeout(hideNativeSplash, 450);
-    return () => clearTimeout(fallbackTimer);
   }, [fontsLoaded, fontError, hideNativeSplash]);
 
   const handleSplashFinish = useCallback(() => {
@@ -81,7 +74,7 @@ function AppShell() {
   useEffect(() => {
     const safetyTimer = setTimeout(() => {
       handleSplashFinish();
-    }, 2400);
+    }, 3000);
     return () => clearTimeout(safetyTimer);
   }, [handleSplashFinish]);
 

@@ -20,9 +20,11 @@ import {
   ScrambleText,
 } from '../../src/components/motion';
 import { GlassCard, PillButton } from '../../src/components/ui';
+import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
 export default function MotionPlayground() {
+  const { colors, isDark } = useAppTheme();
   const [replayKey, setReplayKey] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [logoMode, setLogoMode] = useState<'intro' | 'loading' | 'static'>('intro');
@@ -33,45 +35,47 @@ export default function MotionPlayground() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
+      <View style={[styles.header, { borderBottomColor: colors.borderGlass }]}>
         <TouchableOpacity
           onPress={() => router.back()}
           style={styles.backButton}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Back"
         >
-          <ArrowLeft size={22} color={theme.colors.ivory} />
+          <ArrowLeft size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Motion Playground</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Motion Playground</Text>
         <TouchableOpacity
           onPress={handleReplay}
           style={styles.replayButton}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Replay animations"
         >
-          <RotateCcw size={20} color={theme.colors.accent} />
+          <RotateCcw size={20} color={colors.accent} />
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Global Controls */}
         <GlassCard style={styles.card}>
-          <Text style={styles.cardTitle}>Global Controls</Text>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Global Controls</Text>
           <View style={styles.controlRow}>
-            <Text style={styles.controlLabel}>Reduce Motion (OS toggle simulation)</Text>
+            <Text style={[styles.controlLabel, { color: colors.textPrimary }]}>Reduce Motion (OS toggle simulation)</Text>
             <Switch
               value={reduceMotion}
               onValueChange={setReduceMotion}
-              trackColor={{ false: '#333', true: theme.colors.accent }}
+              trackColor={{ false: colors.borderStrong, true: colors.accent }}
             />
           </View>
         </GlassCard>
 
         {/* 1. Animated Brand Logo */}
         <GlassCard style={styles.card}>
-          <Text style={styles.cardTitle}>1. Animated Logo</Text>
-          <Text style={styles.cardSub}>Traced vector mark, stroke-draw ribbons, dome rise, '1' scale, code glow</Text>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>1. Animated Logo</Text>
+          <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+            Traced mark from original source art, dome rise, &apos;1&apos; scale, authentic glow
+          </Text>
 
           <View style={styles.logoCenter}>
             <AnimatedLogo
@@ -79,6 +83,7 @@ export default function MotionPlayground() {
               size={130}
               mode={logoMode}
               glow={logoGlow}
+              variant={isDark ? 'dark' : 'light'}
               reduceMotion={reduceMotion}
             />
           </View>
@@ -87,53 +92,58 @@ export default function MotionPlayground() {
             <PillButton
               label="Intro Draw"
               size="sm"
-              variant={logoMode === 'intro' ? 'primary' : 'dark'}
+              variant={logoMode === 'intro' ? 'primary' : isDark ? 'dark' : 'white'}
               onPress={() => setLogoMode('intro')}
               style={styles.modeBtn}
             />
             <PillButton
               label="Loading Spin"
               size="sm"
-              variant={logoMode === 'loading' ? 'primary' : 'dark'}
+              variant={logoMode === 'loading' ? 'primary' : isDark ? 'dark' : 'white'}
               onPress={() => setLogoMode('loading')}
               style={styles.modeBtn}
             />
             <PillButton
               label="Static"
               size="sm"
-              variant={logoMode === 'static' ? 'primary' : 'dark'}
+              variant={logoMode === 'static' ? 'primary' : isDark ? 'dark' : 'white'}
               onPress={() => setLogoMode('static')}
               style={styles.modeBtn}
             />
           </View>
 
           <View style={[styles.controlRow, { marginTop: 12 }]}>
-            <Text style={styles.controlLabel}>Code Glow Layer</Text>
+            <Text style={[styles.controlLabel, { color: colors.textPrimary }]}>Glow Layer</Text>
             <Switch
               value={logoGlow}
               onValueChange={setLogoGlow}
-              trackColor={{ false: '#333', true: theme.colors.accent }}
+              trackColor={{ false: colors.borderStrong, true: colors.accent }}
             />
           </View>
         </GlassCard>
 
         {/* 2. LetterRise */}
         <GlassCard style={styles.card}>
-          <Text style={styles.cardTitle}>2. LetterRise</Text>
-          <Text style={styles.cardSub}>Used in logo wordmark & screen titles</Text>
-          <View style={styles.previewBox}>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>2. LetterRise (Wordmark)</Text>
+          <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+            Letters rise sequentially from below with snappy spring physics.
+          </Text>
+
+          <View style={[styles.previewBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
             <View style={styles.wordmarkRow}>
               <LetterRise
                 key={`lr-gbu-${replayKey}`}
                 text="GBU "
-                style={styles.wordmarkGBU}
+                style={{ ...styles.wordmarkGBU, color: colors.textPrimary }}
+                stagger={24}
                 reduceMotion={reduceMotion}
               />
               <LetterRise
                 key={`lr-one-${replayKey}`}
                 text="One"
-                style={styles.wordmarkOne}
-                delay={80}
+                style={{ ...styles.wordmarkOne, color: colors.accent }}
+                stagger={24}
+                delay={60}
                 reduceMotion={reduceMotion}
               />
             </View>
@@ -142,14 +152,17 @@ export default function MotionPlayground() {
 
         {/* 3. TypeWriter */}
         <GlassCard style={styles.card}>
-          <Text style={styles.cardTitle}>3. TypeWriter</Text>
-          <Text style={styles.cardSub}>Used in splash tagline & login subtitles</Text>
-          <View style={styles.previewBox}>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>3. TypeWriter (Tagline)</Text>
+          <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+            Character-by-character typewriter reveal with blinking amber cursor.
+          </Text>
+
+          <View style={[styles.previewBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
             <TypeWriter
               key={`tw-${replayKey}`}
               text="Everything GBU. One app."
-              speed={40}
-              style={styles.typeWriterText}
+              speed={34}
+              style={{ ...styles.typeWriterText, color: colors.accent }}
               reduceMotion={reduceMotion}
             />
           </View>
@@ -157,13 +170,17 @@ export default function MotionPlayground() {
 
         {/* 4. WordReveal */}
         <GlassCard style={styles.card}>
-          <Text style={styles.cardTitle}>4. WordReveal</Text>
-          <Text style={styles.cardSub}>Used in onboarding headlines & status loaders</Text>
-          <View style={styles.previewBox}>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>4. WordReveal (Headlines)</Text>
+          <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+            Word-by-word fade &amp; rise for headers and carousel titles.
+          </Text>
+
+          <View style={[styles.previewBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
             <WordReveal
               key={`wr-${replayKey}`}
-              text="Every GBU notice, sorted and filtered for your class."
-              style={styles.wordRevealText}
+              text="Next class: Data Structures at 09:30 AM in Room 208"
+              stagger={60}
+              style={{ ...styles.wordRevealText, color: colors.textPrimary }}
               reduceMotion={reduceMotion}
             />
           </View>
@@ -171,13 +188,16 @@ export default function MotionPlayground() {
 
         {/* 5. ShimmerText */}
         <GlassCard style={styles.card}>
-          <Text style={styles.cardTitle}>5. ShimmerText</Text>
-          <Text style={styles.cardSub}>Used for 'LIVE now', 'New', and accent pills</Text>
-          <View style={styles.previewBox}>
-            <View style={styles.badgePill}>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>5. ShimmerText (Live Badges)</Text>
+          <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+            Continuous subtle sheen sweep for active badges and countdowns.
+          </Text>
+
+          <View style={[styles.previewBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
+            <View style={[styles.badgePill, { backgroundColor: colors.accentSoft }]}>
               <ShimmerText
-                text="• LIVE NOW"
-                style={styles.shimmerStyle}
+                text="LIVE • Attendance 84%"
+                style={{ ...styles.shimmerStyle, color: colors.accent }}
                 reduceMotion={reduceMotion}
               />
             </View>
@@ -186,32 +206,43 @@ export default function MotionPlayground() {
 
         {/* 6. CountUp */}
         <GlassCard style={styles.card}>
-          <Text style={styles.cardTitle}>6. CountUp</Text>
-          <Text style={styles.cardSub}>Used in countdowns, attendance %, PYQ downloads</Text>
-          <View style={styles.previewBox}>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>6. CountUp (Numbers)</Text>
+          <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+            Smooth numerical tween for attendance %, exam countdown, and credits.
+          </Text>
+
+          <View style={[styles.previewBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
             <View style={styles.countUpRow}>
               <View style={styles.countUpItem}>
                 <CountUp
                   key={`cu-1-${replayKey}`}
-                  value={87.5}
-                  decimals={1}
+                  value={84}
                   suffix="%"
-                  style={styles.countUpNum}
+                  duration={900}
+                  style={{ ...styles.countUpNum, color: colors.accent }}
                   reduceMotion={reduceMotion}
                 />
-                <Text style={styles.countUpLabel}>Attendance</Text>
+                <Text style={[styles.countUpLabel, { color: colors.textSecondary }]}>Attendance</Text>
               </View>
-
               <View style={styles.countUpItem}>
                 <CountUp
                   key={`cu-2-${replayKey}`}
-                  value={142}
-                  prefix=""
-                  suffix=" papers"
-                  style={styles.countUpNum}
+                  value={14}
+                  duration={750}
+                  style={{ ...styles.countUpNum, color: colors.warning }}
                   reduceMotion={reduceMotion}
                 />
-                <Text style={styles.countUpLabel}>Available PYQs</Text>
+                <Text style={[styles.countUpLabel, { color: colors.textSecondary }]}>Days to Midsem</Text>
+              </View>
+              <View style={styles.countUpItem}>
+                <CountUp
+                  key={`cu-3-${replayKey}`}
+                  value={22}
+                  duration={600}
+                  style={{ ...styles.countUpNum, color: colors.success }}
+                  reduceMotion={reduceMotion}
+                />
+                <Text style={[styles.countUpLabel, { color: colors.textSecondary }]}>Credits</Text>
               </View>
             </View>
           </View>
@@ -219,14 +250,17 @@ export default function MotionPlayground() {
 
         {/* 7. ScrambleText */}
         <GlassCard style={styles.card}>
-          <Text style={styles.cardTitle}>7. ScrambleText</Text>
-          <Text style={styles.cardSub}>Used on onboarding highlight & 'Result Found' celebration</Text>
-          <View style={styles.previewBox}>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>7. ScrambleText (Room / Cipher)</Text>
+          <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+            Matrix-style cipher decryption effect for room changes and notices.
+          </Text>
+
+          <View style={[styles.previewBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
             <ScrambleText
-              key={`st-${replayKey}`}
-              text="RESULT FOUND: ROLL 22/BCS/048"
-              duration={900}
-              style={styles.scrambleText}
+              key={`sc-${replayKey}`}
+              text="ROOM 208 • SOICT"
+              duration={700}
+              style={{ ...styles.scrambleText, color: colors.accent }}
               reduceMotion={reduceMotion}
             />
           </View>
@@ -239,7 +273,6 @@ export default function MotionPlayground() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -248,7 +281,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(17, 24, 39, 0.08)',
   },
   backButton: {
     padding: 8,
@@ -256,7 +288,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: theme.colors.ivory,
   },
   replayButton: {
     padding: 8,
@@ -271,13 +302,11 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: theme.colors.ivory,
     marginBottom: 4,
   },
   cardSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginBottom: theme.spacing.md,
   },
   logoCenter: {
@@ -302,13 +331,10 @@ const styles = StyleSheet.create({
   controlLabel: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
-    color: theme.colors.textPrimary,
   },
   previewBox: {
-    backgroundColor: theme.colors.surfaceMuted,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.06)',
     padding: theme.spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
@@ -321,26 +347,21 @@ const styles = StyleSheet.create({
   wordmarkGBU: {
     fontFamily: 'Poppins-Bold',
     fontSize: 28,
-    color: theme.colors.ivory,
   },
   wordmarkOne: {
     fontFamily: 'Poppins-Bold',
     fontSize: 28,
-    color: theme.colors.accent,
   },
   typeWriterText: {
     fontFamily: 'Inter-Medium',
     fontSize: 16,
-    color: theme.colors.accent,
   },
   wordRevealText: {
     fontFamily: 'Inter-Medium',
     fontSize: 15,
-    color: theme.colors.ivory,
     textAlign: 'center',
   },
   badgePill: {
-    backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
@@ -348,7 +369,6 @@ const styles = StyleSheet.create({
   shimmerStyle: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 14,
-    color: theme.colors.accent,
   },
   countUpRow: {
     flexDirection: 'row',
@@ -361,18 +381,15 @@ const styles = StyleSheet.create({
   countUpNum: {
     fontFamily: 'Poppins-Bold',
     fontSize: 24,
-    color: theme.colors.accent,
   },
   countUpLabel: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   scrambleText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 14,
-    color: theme.colors.accent,
     textAlign: 'center',
   },
 });

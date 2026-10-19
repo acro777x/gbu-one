@@ -42,13 +42,14 @@ export const LogoMark: React.FC<LogoMarkProps> = ({
     );
   }
 
-  // Dark tile format with dark frame and glow (only in dark mode if tile requested)
-  if ((variant === 'tile' || variant === 'dark') && isDark) {
+  // Dark tile format with dark frame and glow (only for explicit 'tile' variant)
+  if (variant === 'tile') {
+    const tileSource = isDark ? TILE_DARK_IMAGE : MARK_LIGHT_IMAGE;
     return (
       <View style={[{ width: size, height: size }, styles.center, style]}>
         <Image
-          source={TILE_DARK_IMAGE}
-          style={{ width: size, height: size, borderRadius: size * 0.22 }}
+          source={tileSource}
+          style={{ width: size, height: size, borderRadius: isDark ? size * 0.22 : 0 }}
           resizeMode="contain"
           fadeDuration={0}
         />

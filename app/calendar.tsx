@@ -30,10 +30,12 @@ import {
   CalendarEvent,
 } from '../src/features/calendar/calendarService';
 import { theme } from '../src/lib/theme';
+import { useAppTheme } from '../src/lib/ThemeContext';
 
 const CATEGORIES = ['All', 'Holiday', 'Exam', 'Academic', 'Vacation'];
 
 export default function CalendarScreen() {
+  const { colors, isDark } = useAppTheme();
   const [selectedCategory, setSelectedCategory] = useState('All');
 
   const filteredEvents = filterCalendarEvents(MOCK_CALENDAR_EVENTS, selectedCategory);
@@ -41,55 +43,57 @@ export default function CalendarScreen() {
   const getCategoryIcon = (category: CalendarEvent['category']) => {
     switch (category) {
       case 'holiday':
-        return <Sparkles size={14} color={theme.colors.warning} />;
+        return <Sparkles size={14} color={colors.warning} />;
       case 'vacation':
-        return <Palmtree size={14} color={theme.colors.success} />;
+        return <Palmtree size={14} color={colors.success} />;
       case 'exam':
-        return <BookOpen size={14} color={theme.colors.accent} />;
+        return <BookOpen size={14} color={colors.accent} />;
       case 'academic':
-        return <GraduationCap size={14} color={theme.colors.ivory} />;
+        return <GraduationCap size={14} color={colors.textPrimary} />;
     }
   };
 
   const getCategoryBadgeStyle = (category: CalendarEvent['category']) => {
     switch (category) {
       case 'holiday':
-        return { backgroundColor: 'rgba(245, 158, 11, 0.15)', color: theme.colors.warning };
+        return { backgroundColor: 'rgba(245, 158, 11, 0.15)', color: colors.warning };
       case 'vacation':
-        return { backgroundColor: 'rgba(16, 185, 129, 0.15)', color: theme.colors.success };
+        return { backgroundColor: 'rgba(16, 185, 129, 0.15)', color: colors.success };
       case 'exam':
-        return { backgroundColor: theme.colors.accentSoft, color: theme.colors.accent };
+        return { backgroundColor: colors.accentSoft, color: colors.accent };
       case 'academic':
-        return { backgroundColor: 'rgba(17, 24, 39, 0.08)', color: theme.colors.ivory };
+        return { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.06)', color: colors.textPrimary };
     }
   };
 
   const openOfficialCalendarPdf = () => {
     Linking.openURL(
-      'https://exams.gbu.ac.in/uploads/imp_link/Academic%20Calendar%202026-27.pdf',
-    ).catch(() => {});
+      'https://exam.gbu.ac.in/uploads/imp_link/Academic%20Calendar%202026-27.pdf',
+    ).catch(() => {
+      Linking.openURL('https://gbu.ac.in').catch(() => {});
+    });
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Top Header */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: colors.surface }]}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Back"
         >
-          <ArrowLeft size={20} color={theme.colors.ivory} />
+          <ArrowLeft size={20} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerTextCol}>
-          <Text style={styles.headerTitle}>Academic Calendar</Text>
-          <Text style={styles.headerSub}>Session 2026-27 • Gautam Buddha University</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Academic Calendar</Text>
+          <Text style={[styles.headerSub, { color: colors.textSecondary }]}>Session 2026-27 • Gautam Buddha University</Text>
         </View>
 
-        <TouchableOpacity style={styles.pdfBtn} onPress={openOfficialCalendarPdf}>
-          <Download size={16} color={theme.colors.accent} />
-          <Text style={styles.pdfBtnText}>PDF</Text>
+        <TouchableOpacity style={[styles.pdfBtn, { backgroundColor: colors.accentSoft }]} onPress={openOfficialCalendarPdf}>
+          <Download size={16} color={colors.accent} />
+          <Text style={[styles.pdfBtnText, { color: colors.accent }]}>PDF</Text>
         </TouchableOpacity>
       </View>
 
@@ -130,13 +134,13 @@ export default function CalendarScreen() {
                       {event.category.toUpperCase()}
                     </Text>
                   </View>
-                  <Text style={styles.eventDateText}>{formattedDate}</Text>
+                  <Text style={[styles.eventDateText, { color: colors.textSecondary }]}>{formattedDate}</Text>
                 </View>
 
-                <Text style={styles.eventTitle}>{event.title}</Text>
+                <Text style={[styles.eventTitle, { color: colors.textPrimary }]}>{event.title}</Text>
 
                 {event.description && (
-                  <Text style={styles.eventDescription}>{event.description}</Text>
+                  <Text style={[styles.eventDescription, { color: colors.textSecondary }]}>{event.description}</Text>
                 )}
               </GlassCard>
             );
@@ -144,10 +148,13 @@ export default function CalendarScreen() {
         </View>
 
         {/* Official Source Callout */}
-        <View style={styles.sourceCallout}>
+        <View style={[styles.sourceCallout, {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.03)',
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.08)',
+        }]}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sourceTitle}>Official GBU Calendar 2026-27</Text>
-            <Text style={styles.sourceSub}>
+            <Text style={[styles.sourceTitle, { color: colors.textPrimary }]}>Official GBU Calendar 2026-27</Text>
+            <Text style={[styles.sourceSub, { color: colors.textSecondary }]}>
               Approved by the Academic Council. View the signed official PDF document.
             </Text>
           </View>
@@ -156,7 +163,7 @@ export default function CalendarScreen() {
             onPress={openOfficialCalendarPdf}
             variant="outline"
             size="sm"
-            icon={<ExternalLink size={14} color={theme.colors.accent} style={{ marginRight: 6 }} />}
+            icon={<ExternalLink size={14} color={colors.accent} style={{ marginRight: 6 }} />}
           />
         </View>
       </ScrollView>
@@ -167,7 +174,6 @@ export default function CalendarScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -181,7 +187,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: theme.colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -191,18 +196,15 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 20,
-    color: theme.colors.ivory,
   },
   headerSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
   pdfBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: theme.colors.accentSoft,
     borderWidth: 1,
     borderColor: 'rgba(255, 106, 43, 0.25)',
     paddingHorizontal: 10,
@@ -212,7 +214,6 @@ const styles = StyleSheet.create({
   pdfBtnText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 11,
-    color: theme.colors.accent,
   },
   filterSection: {
     paddingVertical: theme.spacing.sm,
@@ -256,28 +257,23 @@ const styles = StyleSheet.create({
   eventDateText: {
     fontFamily: 'Inter-Medium',
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
   eventTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
-    color: theme.colors.ivory,
     lineHeight: 20,
     marginBottom: 4,
   },
   eventDescription: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     lineHeight: 17,
   },
   sourceCallout: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(17, 24, 39, 0.03)',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.08)',
     padding: 14,
     marginTop: 20,
     gap: 12,
@@ -285,12 +281,10 @@ const styles = StyleSheet.create({
   sourceTitle: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
-    color: theme.colors.ivory,
   },
   sourceSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
     marginTop: 2,
     lineHeight: 15,
   },

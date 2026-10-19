@@ -40,16 +40,13 @@ export default function NoticeDetailScreen() {
   };
 
   const handleOpenDoc = async () => {
-    if (!notice.fileUrl) return;
+    const url = notice.fileUrl || 'https://exam.gbu.ac.in';
     try {
-      const canOpen = await Linking.canOpenURL(notice.fileUrl);
-      if (canOpen) {
-        await Linking.openURL(notice.fileUrl);
-      } else {
-        Alert.alert('Notice Link', notice.fileUrl);
-      }
+      await Linking.openURL(url);
     } catch {
-      Alert.alert('Notice Link', notice.fileUrl);
+      Linking.openURL('https://gbu.ac.in/notices').catch(() => {
+        Alert.alert('Official Portal', `Visit ${url} for the complete document.`);
+      });
     }
   };
 
@@ -104,6 +101,7 @@ export default function NoticeDetailScreen() {
       <View style={[styles.navBar, { borderBottomColor: colors.borderGlass }]}>
         <Pressable
           onPress={() => router.back()}
+          hitSlop={16}
           style={({ pressed }) => [
             styles.iconButton,
             { backgroundColor: colors.surfaceAlt, opacity: pressed ? 0.7 : 1 },

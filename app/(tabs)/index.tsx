@@ -91,7 +91,7 @@ export default function HomeScreen() {
     meta: n.deadlineAt
       ? `Deadline: ${new Date(n.deadlineAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
       : `${n.source.toUpperCase()} • Official Notice`,
-    onPress: () => router.push(`/notice/${n.id}` as never),
+    onPress: () => router.push({ pathname: '/notice/[id]', params: { id: n.id } } as never),
   }));
 
   return (
@@ -318,7 +318,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.deadlineRow}>
-            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notice/not_2' as never)}>
+            <GlassCard style={styles.deadlineCard} onPress={() => router.push({ pathname: '/notice/[id]', params: { id: 'not_2' } } as never)}>
               <View style={styles.deadlineBadge}>
                 <Clock size={12} color={colors.warning} />
                 <Text style={[styles.deadlineBadgeText, { color: colors.warning }]}>2 days left</Text>
@@ -327,7 +327,7 @@ export default function HomeScreen() {
               <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>Due 31 Oct 2026</Text>
             </GlassCard>
 
-            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notice/not_3' as never)}>
+            <GlassCard style={styles.deadlineCard} onPress={() => router.push({ pathname: '/notice/[id]', params: { id: 'not_3' } } as never)}>
               <View style={styles.deadlineBadge}>
                 <Clock size={12} color={colors.warning} />
                 <Text style={[styles.deadlineBadgeText, { color: colors.warning }]}>12 days left</Text>
@@ -336,7 +336,7 @@ export default function HomeScreen() {
               <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>Due 10 Nov 2026</Text>
             </GlassCard>
 
-            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notice/not_5' as never)}>
+            <GlassCard style={styles.deadlineCard} onPress={() => router.push({ pathname: '/notice/[id]', params: { id: 'not_5' } } as never)}>
               <View style={styles.deadlineBadge}>
                 <Clock size={12} color={colors.success} />
                 <Text style={[styles.deadlineBadgeText, { color: colors.success }]}>18 days left</Text>

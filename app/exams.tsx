@@ -36,9 +36,11 @@ import {
 } from '../src/features/exams/examService';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { theme } from '../src/lib/theme';
+import { useAppTheme } from '../src/lib/ThemeContext';
 
 export default function ExamsScreen() {
   const { user, classSelection } = useAuthStore();
+  const { colors, isDark } = useAppTheme();
   const [activeTab, setActiveTab] = useState<'datesheet' | 'results'>('datesheet');
   const [rollQuery, setRollQuery] = useState(user?.rollNo || '22/ICS/042');
   const [searchResult, setSearchResult] = useState<StudentResultRecord | null>(null);
@@ -62,41 +64,45 @@ export default function ExamsScreen() {
     setToastVisible(true);
   };
 
+  const subtleBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.06)';
+  const subtleBorder = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.10)';
+  const subtleDivider = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.05)';
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Top Bar */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: colors.surface }]}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Back"
         >
-          <ArrowLeft size={20} color={theme.colors.ivory} />
+          <ArrowLeft size={20} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerTextCol}>
-          <Text style={styles.headerTitle}>Examination Hub</Text>
-          <Text style={styles.headerSub}>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Examination Hub</Text>
+          <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
             {classSelection?.programmeCode || 'BCS'} • Semester {classSelection?.semester || 'II'}
           </Text>
         </View>
       </View>
 
       {/* Tabs Switcher: Datesheet / Results */}
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, { backgroundColor: colors.surface }]}>
         <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'datesheet' && styles.tabItemActive]}
+          style={[styles.tabItem, activeTab === 'datesheet' && [styles.tabItemActive, { backgroundColor: colors.accent }]]}
           onPress={() => setActiveTab('datesheet')}
         >
-          <Text style={[styles.tabText, activeTab === 'datesheet' && styles.tabTextActive]}>
+          <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'datesheet' && [styles.tabTextActive, { color: colors.onAccent }]]}>
             Date Sheet & Alerts
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'results' && styles.tabItemActive]}
+          style={[styles.tabItem, activeTab === 'results' && [styles.tabItemActive, { backgroundColor: colors.accent }]]}
           onPress={() => setActiveTab('results')}
         >
-          <Text style={[styles.tabText, activeTab === 'results' && styles.tabTextActive]}>
+          <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'results' && [styles.tabTextActive, { color: colors.onAccent }]]}>
             Results Finder
           </Text>
         </TouchableOpacity>
@@ -106,16 +112,16 @@ export default function ExamsScreen() {
         {activeTab === 'datesheet' ? (
           <>
             {/* Exam Countdown Card */}
-            <GlassCard style={styles.countdownCard} accentBorder>
+            <GlassCard style={[styles.countdownCard, { backgroundColor: colors.accentSoft }]} accentBorder>
               <View style={styles.countdownRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.countdownBadge}>AUTUMN SEMESTER 2026</Text>
-                  <Text style={styles.countdownTitle}>Mid Semester Exams</Text>
-                  <Text style={styles.countdownSub}>Starts Monday, 3 Nov 2026</Text>
+                  <Text style={[styles.countdownBadge, { color: colors.accent }]}>AUTUMN SEMESTER 2026</Text>
+                  <Text style={[styles.countdownTitle, { color: colors.textPrimary }]}>Mid Semester Exams</Text>
+                  <Text style={[styles.countdownSub, { color: colors.textSecondary }]}>Starts Monday, 3 Nov 2026</Text>
                 </View>
                 <View style={styles.countdownBox}>
-                  <CountUp value={countdownDays} style={styles.countdownNumber} />
-                  <Text style={styles.countdownLabel}>DAYS LEFT</Text>
+                  <CountUp value={countdownDays} style={[styles.countdownNumber, { color: colors.accent }]} />
+                  <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>DAYS LEFT</Text>
                 </View>
               </View>
             </GlassCard>
@@ -123,47 +129,47 @@ export default function ExamsScreen() {
             {/* Admit Card Reminder Alert */}
             <GlassCard style={styles.reminderCard}>
               <View style={styles.reminderRow}>
-                <View style={styles.reminderIconCircle}>
-                  <Bell size={18} color={theme.colors.accent} />
+                <View style={[styles.reminderIconCircle, { backgroundColor: colors.accentSoft }]}>
+                  <Bell size={18} color={colors.accent} />
                 </View>
                 <View style={styles.reminderTextCol}>
-                  <Text style={styles.reminderTitle}>Admit Card Reminder</Text>
-                  <Text style={styles.reminderSub}>
+                  <Text style={[styles.reminderTitle, { color: colors.textPrimary }]}>Admit Card Reminder</Text>
+                  <Text style={[styles.reminderSub, { color: colors.textSecondary }]}>
                     Receive notification 48 hours before exam to collect admit card from SOICT office
                   </Text>
                 </View>
                 <Switch
                   value={admitCardReminder}
                   onValueChange={handleToggleReminder}
-                  trackColor={{ false: '#333', true: theme.colors.accent }}
+                  trackColor={{ false: '#333', true: colors.accent }}
                 />
               </View>
             </GlassCard>
 
             {/* Datesheet Section */}
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Examination Schedule</Text>
-              <Text style={styles.sectionSub}>4 subjects scheduled</Text>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Examination Schedule</Text>
+              <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>4 subjects scheduled</Text>
             </View>
 
             <View style={styles.datesheetList}>
               {MOCK_DATESHEET.map((entry, _idx) => (
                 <GlassCard key={entry.id} style={styles.examEntryCard}>
                   <View style={styles.examEntryTop}>
-                    <View style={styles.examEntryCodeBadge}>
-                      <Text style={styles.examEntryCode}>{entry.subjectCode}</Text>
+                    <View style={[styles.examEntryCodeBadge, { backgroundColor: subtleBg }]}>
+                      <Text style={[styles.examEntryCode, { color: colors.accent }]}>{entry.subjectCode}</Text>
                     </View>
                     <View style={styles.examShiftBadge}>
-                      <Text style={styles.examShiftText}>{entry.shift.toUpperCase()}</Text>
+                      <Text style={[styles.examShiftText, { color: colors.warning }]}>{entry.shift.toUpperCase()}</Text>
                     </View>
                   </View>
 
-                  <Text style={styles.examSubjectTitle}>{entry.subjectName}</Text>
+                  <Text style={[styles.examSubjectTitle, { color: colors.textPrimary }]}>{entry.subjectName}</Text>
 
                   <View style={styles.examMetaGrid}>
                     <View style={styles.metaCol}>
-                      <Calendar size={13} color={theme.colors.accent} />
-                      <Text style={styles.metaLabel}>
+                      <Calendar size={13} color={colors.accent} />
+                      <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>
                         {new Date(entry.examDate).toLocaleDateString('en-IN', {
                           weekday: 'short',
                           day: 'numeric',
@@ -172,13 +178,13 @@ export default function ExamsScreen() {
                       </Text>
                     </View>
                     <View style={styles.metaCol}>
-                      <Clock size={13} color={theme.colors.textSecondary} />
-                      <Text style={styles.metaLabel}>{entry.examTime}</Text>
+                      <Clock size={13} color={colors.textSecondary} />
+                      <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>{entry.examTime}</Text>
                     </View>
                     {entry.roomBlock && (
                       <View style={styles.metaCol}>
-                        <MapPin size={13} color={theme.colors.textSecondary} />
-                        <Text style={styles.metaLabel}>{entry.roomBlock}</Text>
+                        <MapPin size={13} color={colors.textSecondary} />
+                        <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>{entry.roomBlock}</Text>
                       </View>
                     )}
                   </View>
@@ -191,29 +197,29 @@ export default function ExamsScreen() {
             {/* Results Finder Header Card */}
             <GlassCard style={styles.resultsHeaderCard}>
               <View style={styles.resultsHeaderRow}>
-                <Award size={22} color={theme.colors.accent} />
+                <Award size={22} color={colors.accent} />
                 <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.resultsHeaderTitle}>On-Device Result Finder</Text>
-                  <Text style={styles.resultsHeaderSub}>
+                  <Text style={[styles.resultsHeaderTitle, { color: colors.textPrimary }]}>On-Device Result Finder</Text>
+                  <Text style={[styles.resultsHeaderSub, { color: colors.textSecondary }]}>
                     Search roll number in official university grade sheets. Data is processed locally and never leaves your device.
                   </Text>
                 </View>
               </View>
 
               {/* Search Box */}
-              <View style={styles.searchBar}>
-                <Search size={18} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
+              <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: subtleBorder }]}>
+                <Search size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
                 <TextInput
                   value={rollQuery}
                   onChangeText={setRollQuery}
                   placeholder="Enter Roll Number (e.g. 22/ICS/042)"
-                  placeholderTextColor={theme.colors.textTertiary}
-                  style={styles.searchInput}
+                  placeholderTextColor={colors.textTertiary}
+                  style={[styles.searchInput, { color: colors.textPrimary }]}
                   autoCapitalize="characters"
                 />
                 {rollQuery ? (
                   <TouchableOpacity onPress={() => setRollQuery('')} hitSlop={8}>
-                    <X size={16} color={theme.colors.textSecondary} />
+                    <X size={16} color={colors.textSecondary} />
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -232,37 +238,37 @@ export default function ExamsScreen() {
               <GlassCard style={styles.resultCard} accentBorder>
                 <View style={styles.resultHeader}>
                   <View>
-                    <Text style={styles.studentName}>{searchResult.studentName}</Text>
-                    <Text style={styles.studentRoll}>{searchResult.rollNo} • {searchResult.programme}</Text>
+                    <Text style={[styles.studentName, { color: colors.textPrimary }]}>{searchResult.studentName}</Text>
+                    <Text style={[styles.studentRoll, { color: colors.textSecondary }]}>{searchResult.rollNo} • {searchResult.programme}</Text>
                   </View>
                   <View style={[styles.statusBadge, searchResult.status === 'PASS' ? styles.statusPass : styles.statusPcp]}>
-                    <Text style={styles.statusText}>{searchResult.status}</Text>
+                    <Text style={[styles.statusText, { color: colors.textPrimary }]}>{searchResult.status}</Text>
                   </View>
                 </View>
 
                 {/* GPA Stats */}
                 <View style={styles.gpaRow}>
                   <View style={styles.gpaBox}>
-                    <Text style={styles.gpaLabel}>SGPA</Text>
-                    <Text style={styles.gpaValue}>{searchResult.sgpa.toFixed(2)}</Text>
+                    <Text style={[styles.gpaLabel, { color: colors.textSecondary }]}>SGPA</Text>
+                    <Text style={[styles.gpaValue, { color: colors.accent }]}>{searchResult.sgpa.toFixed(2)}</Text>
                   </View>
-                  <View style={styles.gpaDivider} />
+                  <View style={[styles.gpaDivider, { backgroundColor: subtleBorder }]} />
                   <View style={styles.gpaBox}>
-                    <Text style={styles.gpaLabel}>CGPA</Text>
-                    <Text style={styles.gpaValue}>{searchResult.cgpa.toFixed(2)}</Text>
+                    <Text style={[styles.gpaLabel, { color: colors.textSecondary }]}>CGPA</Text>
+                    <Text style={[styles.gpaValue, { color: colors.accent }]}>{searchResult.cgpa.toFixed(2)}</Text>
                   </View>
                 </View>
 
                 {/* Subject Grades */}
-                <Text style={styles.gradesTableTitle}>Subject-wise Performance</Text>
+                <Text style={[styles.gradesTableTitle, { color: colors.textSecondary }]}>Subject-wise Performance</Text>
                 {searchResult.grades.map((g) => (
-                  <View key={g.subjectCode} style={styles.gradeRow}>
+                  <View key={g.subjectCode} style={[styles.gradeRow, { borderBottomColor: subtleDivider }]}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.gradeSubjectName}>{g.subjectName}</Text>
-                      <Text style={styles.gradeSubjectCode}>{g.subjectCode} • {g.credits} Credits</Text>
+                      <Text style={[styles.gradeSubjectName, { color: colors.textPrimary }]}>{g.subjectName}</Text>
+                      <Text style={[styles.gradeSubjectCode, { color: colors.textSecondary }]}>{g.subjectCode} • {g.credits} Credits</Text>
                     </View>
-                    <View style={styles.gradeLetterBox}>
-                      <Text style={styles.gradeLetter}>{g.grade}</Text>
+                    <View style={[styles.gradeLetterBox, { backgroundColor: colors.accentSoft }]}>
+                      <Text style={[styles.gradeLetter, { color: colors.accent }]}>{g.grade}</Text>
                     </View>
                   </View>
                 ))}
@@ -271,9 +277,9 @@ export default function ExamsScreen() {
 
             {hasSearched && !searchResult && (
               <View style={styles.noResultBox}>
-                <AlertCircle size={24} color={theme.colors.warning} />
-                <Text style={styles.noResultTitle}>No matching record found</Text>
-                <Text style={styles.noResultSub}>
+                <AlertCircle size={24} color={colors.warning} />
+                <Text style={[styles.noResultTitle, { color: colors.textPrimary }]}>No matching record found</Text>
+                <Text style={[styles.noResultSub, { color: colors.textSecondary }]}>
                   No published result found for roll number "{rollQuery}". Ensure your roll number matches university format (e.g. 22/ICS/042).
                 </Text>
               </View>
@@ -294,7 +300,6 @@ export default function ExamsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -308,7 +313,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: theme.colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -318,16 +322,13 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 20,
-    color: theme.colors.ivory,
   },
   headerSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: theme.colors.surface,
     marginHorizontal: theme.spacing.lg,
     marginTop: theme.spacing.sm,
     borderRadius: 999,
@@ -340,15 +341,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   tabItemActive: {
-    backgroundColor: theme.colors.accent,
+    // backgroundColor applied inline
   },
   tabText: {
     fontFamily: 'Inter-Medium',
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
   tabTextActive: {
-    color: theme.colors.ivory,
     fontFamily: 'Inter-SemiBold',
   },
   scrollContent: {
@@ -357,7 +356,6 @@ const styles = StyleSheet.create({
   },
   countdownCard: {
     marginBottom: theme.spacing.md,
-    backgroundColor: theme.colors.accentSoft,
   },
   countdownRow: {
     flexDirection: 'row',
@@ -367,19 +365,16 @@ const styles = StyleSheet.create({
   countdownBadge: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 10,
-    color: theme.colors.accent,
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   countdownTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: theme.colors.ivory,
   },
   countdownSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   countdownBox: {
@@ -393,12 +388,10 @@ const styles = StyleSheet.create({
   countdownNumber: {
     fontFamily: 'Poppins-Bold',
     fontSize: 24,
-    color: theme.colors.accent,
   },
   countdownLabel: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 9,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   reminderCard: {
@@ -414,7 +407,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: theme.colors.accentSoft,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -424,12 +416,10 @@ const styles = StyleSheet.create({
   reminderTitle: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
-    color: theme.colors.ivory,
   },
   reminderSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
     marginTop: 2,
     lineHeight: 15,
   },
@@ -443,12 +433,10 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
-    color: theme.colors.ivory,
   },
   sectionSub: {
     fontFamily: 'Inter-Medium',
     fontSize: 11,
-    color: theme.colors.textSecondary,
   },
   datesheetList: {
     gap: 10,
@@ -463,7 +451,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   examEntryCodeBadge: {
-    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 4,
@@ -471,7 +458,6 @@ const styles = StyleSheet.create({
   examEntryCode: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 10,
-    color: theme.colors.accent,
   },
   examShiftBadge: {
     backgroundColor: 'rgba(245, 158, 11, 0.1)',
@@ -482,12 +468,10 @@ const styles = StyleSheet.create({
   examShiftText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 9,
-    color: theme.colors.warning,
   },
   examSubjectTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 14,
-    color: theme.colors.ivory,
     marginBottom: 8,
   },
   examMetaGrid: {
@@ -503,7 +487,6 @@ const styles = StyleSheet.create({
   metaLabel: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
   },
   resultsHeaderCard: {
     marginBottom: theme.spacing.md,
@@ -517,28 +500,23 @@ const styles = StyleSheet.create({
   resultsHeaderTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: theme.colors.ivory,
   },
   resultsHeaderSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 4,
     lineHeight: 16,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.10)',
     paddingHorizontal: 12,
     height: 44,
   },
   searchInput: {
     flex: 1,
-    color: theme.colors.ivory,
     fontFamily: 'Inter-Regular',
     fontSize: 13,
   },
@@ -555,12 +533,10 @@ const styles = StyleSheet.create({
   studentName: {
     fontFamily: 'Poppins-Bold',
     fontSize: 17,
-    color: theme.colors.ivory,
   },
   studentRoll: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   statusBadge: {
@@ -581,7 +557,6 @@ const styles = StyleSheet.create({
   statusText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 11,
-    color: theme.colors.ivory,
   },
   gpaRow: {
     flexDirection: 'row',
@@ -597,22 +572,18 @@ const styles = StyleSheet.create({
   gpaLabel: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 11,
-    color: theme.colors.textSecondary,
   },
   gpaValue: {
     fontFamily: 'Poppins-Bold',
     fontSize: 22,
-    color: theme.colors.accent,
     marginTop: 2,
   },
   gpaDivider: {
     width: 1,
-    backgroundColor: 'rgba(17, 24, 39, 0.10)',
   },
   gradesTableTitle: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginBottom: 8,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -623,31 +594,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(17, 24, 39, 0.05)',
   },
   gradeSubjectName: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
-    color: theme.colors.ivory,
   },
   gradeSubjectCode: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   gradeLetterBox: {
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: theme.colors.accentSoft,
     justifyContent: 'center',
     alignItems: 'center',
   },
   gradeLetter: {
     fontFamily: 'Poppins-Bold',
     fontSize: 14,
-    color: theme.colors.accent,
   },
   noResultBox: {
     alignItems: 'center',
@@ -657,13 +623,11 @@ const styles = StyleSheet.create({
   noResultTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
-    color: theme.colors.ivory,
     marginTop: 8,
   },
   noResultSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     textAlign: 'center',
     marginTop: 4,
     lineHeight: 17,

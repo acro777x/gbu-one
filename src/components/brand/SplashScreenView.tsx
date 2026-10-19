@@ -32,10 +32,10 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
 }) => {
   const { colors, isDark } = useAppTheme();
   const systemReduce = useReduceMotion();
-  const effectiveReduce = reduceMotion ?? systemReduce;
+  const effectiveReduce = reduceMotion ?? false; // allow animations to play by default
 
-  const [showWordmark, setShowWordmark] = useState(isWarmStart || effectiveReduce);
-  const [showTagline, setShowTagline] = useState(isWarmStart || effectiveReduce);
+  const [showWordmark, setShowWordmark] = useState(isWarmStart);
+  const [showTagline, setShowTagline] = useState(isWarmStart);
   const containerOpacity = useSharedValue(1);
   const hasFinishedRef = useRef(false);
 
@@ -58,38 +58,33 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
   };
 
   useEffect(() => {
-    if (effectiveReduce) {
-      const timer = setTimeout(finishHandoff, 350);
-      return () => clearTimeout(timer);
-    }
-
     if (isWarmStart) {
       const timer = setTimeout(finishHandoff, 650);
       return () => clearTimeout(timer);
     }
 
     // Cold start timings:
-    // 250ms: Wordmark starts rising
+    // 200ms: Wordmark starts rising
     const wordmarkTimer = setTimeout(() => {
       setShowWordmark(true);
-    }, 250);
+    }, 200);
 
-    // 650ms: Tagline typewriter starts
+    // 550ms: Tagline typewriter starts
     const taglineTimer = setTimeout(() => {
       setShowTagline(true);
-    }, 650);
+    }, 550);
 
-    // 1950ms: Handoff fades out and navigates
+    // 2200ms: Handoff fades out and navigates
     const handoffTimer = setTimeout(() => {
       finishHandoff();
-    }, 1950);
+    }, 2200);
 
     return () => {
       clearTimeout(wordmarkTimer);
       clearTimeout(taglineTimer);
       clearTimeout(handoffTimer);
     };
-  }, [isWarmStart, effectiveReduce]);
+  }, [isWarmStart]);
 
   const animatedContainerStyle = useAnimatedStyle(() => ({
     opacity: containerOpacity.value,
@@ -107,7 +102,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
           size={144}
           mode={isWarmStart ? 'static' : 'intro'}
           glow
-          variant={isDark ? 'tile' : 'mark'}
+          variant={isDark ? 'dark' : 'light'}
           reduceMotion={effectiveReduce}
         />
 

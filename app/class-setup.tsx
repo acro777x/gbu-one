@@ -11,7 +11,8 @@ import { router } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
 import { Chip, PillButton, GlassCard } from '../src/components/ui';
 import { useAuthStore, ClassSelection } from '../src/store/useAuthStore';
-import { theme } from '../src/lib/theme';
+import { useAppTheme } from '../src/lib/ThemeContext';
+import { spacing, radius } from '../src/lib/theme';
 
 const SCHOOLS = [
   'SOICT',
@@ -69,6 +70,7 @@ const SECTIONS = ['A', 'B', 'C', 'General'];
 
 export default function ClassSetupScreen() {
   const { classSelection, setClassSelection } = useAuthStore();
+  const { colors, isDark } = useAppTheme();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedSchool, setSelectedSchool] = useState<string>(classSelection?.school || 'SOICT');
@@ -97,7 +99,7 @@ export default function ClassSetupScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={styles.topHeader}>
         <TouchableOpacity
           onPress={() => (step > 1 ? setStep(((step - 1) as 1 | 2 | 3 | 4)) : router.back())}
@@ -105,9 +107,9 @@ export default function ClassSetupScreen() {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Back"
         >
-          <ArrowLeft size={22} color={theme.colors.ivory} />
+          <ArrowLeft size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Class Setup</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Class Setup</Text>
         <View style={{ width: 22 }} />
       </View>
 
@@ -118,7 +120,7 @@ export default function ClassSetupScreen() {
             key={`step-${s}`}
             style={[
               styles.stepBar,
-              s <= step ? styles.stepBarActive : styles.stepBarInactive,
+              { backgroundColor: s <= step ? colors.accent : colors.borderGlass },
             ]}
           />
         ))}
@@ -127,8 +129,8 @@ export default function ClassSetupScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {step === 1 && (
           <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>Choose your School</Text>
-            <Text style={styles.stepSubtitle}>
+            <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Choose your School</Text>
+            <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
               Select the faculty / school your department belongs to at GBU.
             </Text>
 
@@ -156,8 +158,8 @@ export default function ClassSetupScreen() {
 
         {step === 2 && (
           <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>Select your Programme</Text>
-            <Text style={styles.stepSubtitle}>
+            <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Select your Programme</Text>
+            <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
               Which degree programme are you enrolled in?
             </Text>
 
@@ -185,8 +187,8 @@ export default function ClassSetupScreen() {
 
         {step === 3 && (
           <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>Select your Semester</Text>
-            <Text style={styles.stepSubtitle}>
+            <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Select your Semester</Text>
+            <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
               Choose your current academic term.
             </Text>
 
@@ -214,8 +216,8 @@ export default function ClassSetupScreen() {
 
         {step === 4 && (
           <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>Select your Section / Batch</Text>
-            <Text style={styles.stepSubtitle}>
+            <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Select your Section / Batch</Text>
+            <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
               This tunes your timetable and notifications to your exact lectures.
             </Text>
 
@@ -233,11 +235,11 @@ export default function ClassSetupScreen() {
 
             {/* Summary Card */}
             <GlassCard style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>TARGET CLASS KEY</Text>
-              <Text style={styles.summaryValue}>
+              <Text style={[styles.summaryLabel, { color: colors.accent }]}>TARGET CLASS KEY</Text>
+              <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
                 {selectedProg.code}-{selectedSem} {selectedSec}
               </Text>
-              <Text style={styles.summarySchool}>{selectedSchool} • {selectedProg.name}</Text>
+              <Text style={[styles.summarySchool, { color: colors.textSecondary }]}>{selectedSchool} • {selectedProg.name}</Text>
             </GlassCard>
 
             <PillButton
@@ -257,14 +259,13 @@ export default function ClassSetupScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   backBtn: {
     padding: 6,
@@ -272,27 +273,22 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: theme.colors.ivory,
   },
   stepIndicatorRow: {
     flexDirection: 'row',
-    paddingHorizontal: theme.spacing.xl,
+    paddingHorizontal: spacing.xl,
     gap: 8,
-    marginVertical: theme.spacing.sm,
+    marginVertical: spacing.sm,
   },
   stepBar: {
     flex: 1,
     height: 4,
     borderRadius: 2,
   },
-  stepBarActive: {
-    backgroundColor: theme.colors.accent,
-  },
-  stepBarInactive: {
-    backgroundColor: 'rgba(17, 24, 39, 0.12)',
-  },
+  stepBarActive: {},
+  stepBarInactive: {},
   scrollContent: {
-    padding: theme.spacing.xl,
+    padding: spacing.xl,
     flexGrow: 1,
   },
   stepContainer: {
@@ -301,47 +297,42 @@ const styles = StyleSheet.create({
   stepTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 24,
-    color: theme.colors.ivory,
     marginBottom: 6,
   },
   stepSubtitle: {
     fontFamily: 'Inter-Regular',
     fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.xl,
+    marginBottom: spacing.xl,
     lineHeight: 20,
   },
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: theme.spacing.xxl,
+    marginBottom: spacing.xxl,
   },
   choiceChip: {
     marginRight: 10,
     marginBottom: 12,
   },
   summaryCard: {
-    marginBottom: theme.spacing.xl,
-    padding: theme.spacing.lg,
+    marginBottom: spacing.xl,
+    padding: spacing.lg,
     alignItems: 'center',
   },
   summaryLabel: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 11,
-    color: theme.colors.accent,
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   summaryValue: {
     fontFamily: 'Poppins-Bold',
     fontSize: 22,
-    color: theme.colors.ivory,
     marginBottom: 2,
   },
   summarySchool: {
     fontFamily: 'Inter-Regular',
     fontSize: 13,
-    color: theme.colors.textSecondary,
   },
   nextBtn: {
     marginTop: 'auto',

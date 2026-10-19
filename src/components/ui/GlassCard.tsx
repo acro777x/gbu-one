@@ -41,12 +41,38 @@ export const GlassCard: React.FC<GlassCardProps> = ({
       ? `${colors.accent}88`
       : colors.borderGlass;
 
+  if (onPress) {
+    return (
+      <AnimatedPressable
+        onPress={onPress}
+        onPressIn={() => (scale.value = withTiming(0.985, { duration: 120 }))}
+        onPressOut={() => (scale.value = withTiming(1, { duration: 160 }))}
+        accessibilityRole="button"
+        style={[
+          styles.card,
+          {
+            backgroundColor: surface,
+            borderColor,
+            shadowColor: isDark ? '#000000' : '#344054',
+          },
+          glow && { shadowColor: colors.accent, shadowOpacity: 0.16, shadowRadius: 18, elevation: 5 },
+          style,
+          animatedStyle,
+        ]}
+      >
+        {glow && (
+          <View
+            pointerEvents="none"
+            style={[styles.ambientGlow, { backgroundColor: colors.accentGlow }]}
+          />
+        )}
+        {contentStyle ? <View style={contentStyle}>{children}</View> : children}
+      </AnimatedPressable>
+    );
+  }
+
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={() => onPress && (scale.value = withTiming(0.985, { duration: 120 }))}
-      onPressOut={() => onPress && (scale.value = withTiming(1, { duration: 160 }))}
-      disabled={!onPress}
+    <View
       style={[
         styles.card,
         {
@@ -56,9 +82,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
         },
         glow && { shadowColor: colors.accent, shadowOpacity: 0.16, shadowRadius: 18, elevation: 5 },
         style,
-        animatedStyle,
       ]}
-      accessibilityRole={onPress ? 'button' : undefined}
     >
       {glow && (
         <View
@@ -66,8 +90,8 @@ export const GlassCard: React.FC<GlassCardProps> = ({
           style={[styles.ambientGlow, { backgroundColor: colors.accentGlow }]}
         />
       )}
-      <View style={[styles.content, contentStyle]}>{children}</View>
-    </AnimatedPressable>
+      {contentStyle ? <View style={contentStyle}>{children}</View> : children}
+    </View>
   );
 };
 
@@ -81,8 +105,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 14,
     elevation: 2,
+    padding: theme.spacing.lg,
   },
-  content: { padding: theme.spacing.lg, position: 'relative' },
   ambientGlow: {
     position: 'absolute',
     top: -30,

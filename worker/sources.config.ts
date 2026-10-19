@@ -23,10 +23,25 @@ export const WORKER_CONFIG = {
       timeoutMs: 15000,
     },
     examsNotices: {
-      name: 'GBU Exams Portal Notices',
-      url: 'https://exams.gbu.ac.in',
+      name: 'GBU Exam Portal Notices',
+      url: 'https://exam.gbu.ac.in',
+      fallbackUrl: 'https://exams.gbu.ac.in',
       rateLimitMs: 1000,
       intervalMinutes: 15,
+      timeoutMs: 15000,
+    },
+    examResults: {
+      name: 'GBU Exam Results & Admit Cards Portal',
+      url: 'https://gbuexam.in',
+      rateLimitMs: 1000,
+      intervalMinutes: 30,
+      timeoutMs: 15000,
+    },
+    placements: {
+      name: 'Corporate Relations & Training and Placement Cell (CRC)',
+      url: 'https://gbu.ac.in/placements',
+      rateLimitMs: 1500,
+      intervalMinutes: 60,
       timeoutMs: 15000,
     },
     timetableApi: {

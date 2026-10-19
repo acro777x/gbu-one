@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -27,6 +28,8 @@ import { theme } from '../../src/lib/theme';
 
 const SCHOOL_FILTERS = ['All', 'SOICT', 'SOM', 'SOBT', 'SOE', 'SOL'];
 const SEMESTER_FILTERS = ['All', 'Sem I', 'Sem II', 'Sem IV'];
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = Math.floor((SCREEN_WIDTH - theme.spacing.lg * 2 - 12) / 2);
 
 export default function PYQScreen() {
   const { colors, isDark } = useAppTheme();
@@ -554,7 +557,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   card: {
-    width: '48%',
+    width: CARD_WIDTH,
     padding: theme.spacing.md,
     minHeight: 145,
     justifyContent: 'space-between',

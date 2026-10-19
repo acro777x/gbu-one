@@ -3,13 +3,14 @@ import { View, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { FloatingTabBar } from '../../src/components/ui/FloatingTabBar';
 import { useAuthStore } from '../../src/store/useAuthStore';
-import { theme } from '../../src/lib/theme';
+import { useAppTheme } from '../../src/lib/ThemeContext';
 
 export default function TabLayout() {
   const { user, isGuest } = useAuthStore();
+  const { colors } = useAppTheme();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <Tabs
         screenOptions={{
           headerShown: false,
@@ -48,6 +49,5 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
 });

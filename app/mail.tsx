@@ -30,6 +30,7 @@ import * as Haptics from 'expo-haptics';
 import { GlassCard, Chip, EmptyState } from '../src/components/ui';
 import { useMailStore } from '../src/store/useMailStore';
 import { StudentEmail } from '../src/features/mail/mailService';
+import { useAppTheme } from '../src/lib/ThemeContext';
 import { theme } from '../src/lib/theme';
 
 const CATEGORIES = [
@@ -41,6 +42,7 @@ const CATEGORIES = [
 ] as const;
 
 export default function MailScreen() {
+  const { colors, isDark } = useAppTheme();
   const {
     emails,
     activeCategory,
@@ -124,59 +126,62 @@ export default function MailScreen() {
     showToast(`Forwarded to ${forwardRecipient}`);
   };
 
+  const pillButtonVariant = isDark ? 'dark' : 'white';
+  const chipBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Top Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={[styles.backButton, { backgroundColor: chipBg, borderColor: colors.borderGlass }]}
             onPress={() => router.back()}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityLabel="Go Back"
           >
-            <ArrowLeft size={20} color={theme.colors.ivory} />
+            <ArrowLeft size={20} color={colors.textPrimary} />
           </TouchableOpacity>
           <View>
             <View style={styles.titleRow}>
-              <Text style={styles.headerTitle}>GBU Webmail</Text>
+              <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>GBU Webmail</Text>
               {unreadCount > 0 && (
-                <View style={styles.unreadCountBadge}>
-                  <Text style={styles.unreadCountBadgeText}>{unreadCount} new</Text>
+                <View style={[styles.unreadCountBadge, { borderColor: colors.accent, backgroundColor: colors.accentSoft }]}>
+                  <Text style={[styles.unreadCountBadgeText, { color: colors.accent }]}>{unreadCount} new</Text>
                 </View>
               )}
             </View>
-            <Text style={styles.headerSub}>student.portal@gbu.ac.in</Text>
+            <Text style={[styles.headerSub, { color: colors.textSecondary }]}>student.portal@gbu.ac.in</Text>
           </View>
         </View>
 
         <TouchableOpacity
-          style={styles.markAllButton}
+          style={[styles.markAllButton, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}40` }]}
           onPress={() => {
             markAllAsRead();
             showToast('All emails marked as read');
           }}
           accessibilityLabel="Mark all as read"
         >
-          <MailCheck size={18} color={theme.colors.accent} />
-          <Text style={styles.markAllText}>Mark Read</Text>
+          <MailCheck size={18} color={colors.accent} />
+          <Text style={[styles.markAllText, { color: colors.accent }]}>Mark Read</Text>
         </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
       <View style={styles.searchWrapper}>
-        <View style={styles.searchBar}>
-          <Search size={18} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
+        <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
+          <Search size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
             placeholder="Search communications, circulars, senders..."
-            placeholderTextColor={theme.colors.textTertiary}
+            placeholderTextColor={colors.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X size={16} color={theme.colors.textSecondary} />
+              <X size={16} color={colors.textSecondary} />
             </TouchableOpacity>
           )}
         </View>
@@ -216,7 +221,7 @@ export default function MailScreen() {
             return (
               <GlassCard
                 key={email.id}
-                style={[styles.emailCard, email.isUnread && styles.unreadCard]}
+                style={[styles.emailCard, email.isUnread && { borderColor: `${colors.accent}66` }]}
                 accentBorder={email.isUnread}
                 onPress={() => handleOpenEmail(email)}
               >
@@ -236,6 +241,7 @@ export default function MailScreen() {
                         <Text
                           style={[
                             styles.senderName,
+                            { color: colors.textPrimary },
                             email.isUnread && styles.senderNameUnread,
                           ]}
                           numberOfLines={1}
@@ -243,12 +249,12 @@ export default function MailScreen() {
                           {email.senderName}
                         </Text>
                         {email.priority === 'high' && (
-                          <View style={styles.priorityBadge}>
-                            <Text style={styles.priorityBadgeText}>URGENT</Text>
+                          <View style={[styles.priorityBadge, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}>
+                            <Text style={[styles.priorityBadgeText, { color: colors.danger }]}>URGENT</Text>
                           </View>
                         )}
                       </View>
-                      <Text style={styles.senderRole} numberOfLines={1}>
+                      <Text style={[styles.senderRole, { color: colors.textSecondary }]} numberOfLines={1}>
                         {email.senderRole}
                       </Text>
                     </View>
@@ -256,7 +262,7 @@ export default function MailScreen() {
 
                   {/* Date & Star */}
                   <View style={styles.rightMeta}>
-                    <Text style={styles.dateText}>{email.dateStr}</Text>
+                    <Text style={[styles.dateText, { color: colors.textSecondary }]}>{email.dateStr}</Text>
                     <TouchableOpacity
                       onPress={() => handleToggleStar(email.id)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -264,8 +270,8 @@ export default function MailScreen() {
                     >
                       <Star
                         size={16}
-                        color={email.isStarred ? theme.colors.warning : theme.colors.textSecondary}
-                        fill={email.isStarred ? theme.colors.warning : 'transparent'}
+                        color={email.isStarred ? colors.warning : colors.textTertiary}
+                        fill={email.isStarred ? colors.warning : 'transparent'}
                       />
                     </TouchableOpacity>
                   </View>
@@ -275,6 +281,7 @@ export default function MailScreen() {
                 <Text
                   style={[
                     styles.subjectText,
+                    { color: colors.textPrimary },
                     email.isUnread && styles.subjectTextUnread,
                   ]}
                   numberOfLines={1}
@@ -283,24 +290,24 @@ export default function MailScreen() {
                 </Text>
 
                 {/* Preview */}
-                <Text style={styles.previewText} numberOfLines={2}>
+                <Text style={[styles.previewText, { color: colors.textSecondary }]} numberOfLines={2}>
                   {email.preview}
                 </Text>
 
                 {/* Bottom Meta Badges */}
                 <View style={styles.cardBottomRow}>
                   {email.hasAttachment && (
-                    <View style={styles.attachmentChip}>
-                      <Paperclip size={12} color={theme.colors.accent} />
-                      <Text style={styles.attachmentChipText}>
+                    <View style={[styles.attachmentChip, { backgroundColor: chipBg }]}>
+                      <Paperclip size={12} color={colors.accent} />
+                      <Text style={[styles.attachmentChipText, { color: colors.textSecondary }]}>
                         {email.attachments?.length || 1} file(s)
                       </Text>
                     </View>
                   )}
                   {email.isUnread && (
                     <View style={styles.unreadDotPill}>
-                      <View style={styles.unreadDot} />
-                      <Text style={styles.unreadDotText}>New</Text>
+                      <View style={[styles.unreadDot, { backgroundColor: colors.accent }]} />
+                      <Text style={[styles.unreadDotText, { color: colors.accent }]}>New</Text>
                     </View>
                   )}
                 </View>
@@ -319,41 +326,41 @@ export default function MailScreen() {
           onRequestClose={() => setActiveEmail(null)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
+            <View style={[styles.modalContainer, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
               {/* Modal Top Bar */}
-              <View style={styles.modalHeader}>
+              <View style={[styles.modalHeader, { borderBottomColor: colors.borderGlass }]}>
                 <TouchableOpacity
-                  style={styles.modalCloseBtn}
+                  style={[styles.modalCloseBtn, { backgroundColor: chipBg }]}
                   onPress={() => {
                     setActiveEmail(null);
                     setIsReplying(false);
                     setIsForwarding(false);
                   }}
                 >
-                  <X size={20} color={theme.colors.ivory} />
+                  <X size={20} color={colors.textPrimary} />
                 </TouchableOpacity>
 
                 <View style={styles.modalActions}>
                   <TouchableOpacity
-                    style={styles.actionIconBtn}
+                    style={[styles.actionIconBtn, { backgroundColor: chipBg }]}
                     onPress={() => handleToggleStar(activeEmail.id)}
                   >
                     <Star
                       size={18}
-                      color={activeEmail.isStarred ? theme.colors.warning : theme.colors.textSecondary}
-                      fill={activeEmail.isStarred ? theme.colors.warning : 'transparent'}
+                      color={activeEmail.isStarred ? colors.warning : colors.textTertiary}
+                      fill={activeEmail.isStarred ? colors.warning : 'transparent'}
                     />
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.actionIconBtn}
+                    style={[styles.actionIconBtn, { backgroundColor: colors.dangerSoft }]}
                     onPress={() => {
                       deleteEmail(activeEmail.id);
                       setActiveEmail(null);
                       showToast('Email moved to trash');
                     }}
                   >
-                    <Trash2 size={18} color={theme.colors.danger} />
+                    <Trash2 size={18} color={colors.danger} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -363,10 +370,10 @@ export default function MailScreen() {
                 contentContainerStyle={styles.modalScrollContent}
               >
                 {/* Subject */}
-                <Text style={styles.readerSubject}>{activeEmail.subject}</Text>
+                <Text style={[styles.readerSubject, { color: colors.textPrimary }]}>{activeEmail.subject}</Text>
 
                 {/* Sender Card */}
-                <View style={styles.readerSenderRow}>
+                <View style={[styles.readerSenderRow, { backgroundColor: colors.surfaceMuted }]}>
                   <View
                     style={[
                       styles.avatarSquircleLarge,
@@ -378,31 +385,31 @@ export default function MailScreen() {
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.readerSenderName}>
+                    <Text style={[styles.readerSenderName, { color: colors.textPrimary }]}>
                       {activeEmail.senderName}
                     </Text>
-                    <Text style={styles.readerSenderEmail}>
+                    <Text style={[styles.readerSenderEmail, { color: colors.textSecondary }]}>
                       {activeEmail.senderEmail}
                     </Text>
-                    <Text style={styles.readerDate}>{activeEmail.dateStr}</Text>
+                    <Text style={[styles.readerDate, { color: colors.textSecondary }]}>{activeEmail.dateStr}</Text>
                   </View>
                 </View>
 
                 {/* Email Body */}
                 <View style={styles.readerBodyContainer}>
-                  <Text style={styles.readerBodyText}>{activeEmail.body}</Text>
+                  <Text style={[styles.readerBodyText, { color: colors.textPrimary }]}>{activeEmail.body}</Text>
                 </View>
 
                 {/* Attachments Section */}
                 {activeEmail.attachments && activeEmail.attachments.length > 0 && (
-                  <View style={styles.attachmentsSection}>
-                    <Text style={styles.attachmentsTitle}>
+                  <View style={[styles.attachmentsSection, { borderTopColor: colors.borderGlass }]}>
+                    <Text style={[styles.attachmentsTitle, { color: colors.textSecondary }]}>
                       Attachments ({activeEmail.attachments.length})
                     </Text>
                     {activeEmail.attachments.map((att) => (
                       <TouchableOpacity
                         key={att.id}
-                        style={styles.attachmentCard}
+                        style={[styles.attachmentCard, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
                         onPress={() => {
                           if (Platform.OS !== 'web') {
                             try {
@@ -416,14 +423,14 @@ export default function MailScreen() {
                           showToast(`Downloaded ${att.name}`);
                         }}
                       >
-                        <FileText size={18} color={theme.colors.accent} />
+                        <FileText size={18} color={colors.accent} />
                         <View style={{ flex: 1, marginLeft: 10 }}>
-                          <Text style={styles.attName} numberOfLines={1}>
+                          <Text style={[styles.attName, { color: colors.textPrimary }]} numberOfLines={1}>
                             {att.name}
                           </Text>
-                          <Text style={styles.attSize}>{att.size}</Text>
+                          <Text style={[styles.attSize, { color: colors.textSecondary }]}>{att.size}</Text>
                         </View>
-                        <Download size={16} color={theme.colors.textSecondary} />
+                        <Download size={16} color={colors.textSecondary} />
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -431,14 +438,14 @@ export default function MailScreen() {
 
                 {/* Reply Composer if active */}
                 {isReplying && (
-                  <View style={styles.composerBox}>
-                    <Text style={styles.composerHeader}>
+                  <View style={[styles.composerBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
+                    <Text style={[styles.composerHeader, { color: colors.accent }]}>
                       Reply to {activeEmail.senderName}
                     </Text>
                     <TextInput
-                      style={styles.composerInput}
+                      style={[styles.composerInput, { backgroundColor: colors.surface, color: colors.textPrimary }]}
                       placeholder="Write your official response..."
-                      placeholderTextColor={theme.colors.textTertiary}
+                      placeholderTextColor={colors.textTertiary}
                       multiline
                       numberOfLines={4}
                       value={replyText}
@@ -449,10 +456,10 @@ export default function MailScreen() {
                         style={styles.composerCancelBtn}
                         onPress={() => setIsReplying(false)}
                       >
-                        <Text style={styles.composerCancelText}>Cancel</Text>
+                        <Text style={[styles.composerCancelText, { color: colors.textSecondary }]}>Cancel</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={styles.composerSendBtn}
+                        style={[styles.composerSendBtn, { backgroundColor: colors.accent }]}
                         onPress={handleSendReply}
                       >
                         <Send size={14} color="#FFF" />
@@ -464,12 +471,12 @@ export default function MailScreen() {
 
                 {/* Forward Composer if active */}
                 {isForwarding && (
-                  <View style={styles.composerBox}>
-                    <Text style={styles.composerHeader}>Forward Communication</Text>
+                  <View style={[styles.composerBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
+                    <Text style={[styles.composerHeader, { color: colors.accent }]}>Forward Communication</Text>
                     <TextInput
-                      style={styles.forwardInput}
+                      style={[styles.forwardInput, { backgroundColor: colors.surface, color: colors.textPrimary }]}
                       placeholder="Recipient GBU Email (e.g. rollno@gbu.ac.in)..."
-                      placeholderTextColor={theme.colors.textTertiary}
+                      placeholderTextColor={colors.textTertiary}
                       value={forwardRecipient}
                       onChangeText={setForwardRecipient}
                     />
@@ -478,10 +485,10 @@ export default function MailScreen() {
                         style={styles.composerCancelBtn}
                         onPress={() => setIsForwarding(false)}
                       >
-                        <Text style={styles.composerCancelText}>Cancel</Text>
+                        <Text style={[styles.composerCancelText, { color: colors.textSecondary }]}>Cancel</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={styles.composerSendBtn}
+                        style={[styles.composerSendBtn, { backgroundColor: colors.accent }]}
                         onPress={handleSendForward}
                       >
                         <CornerUpRight size={14} color="#FFF" />
@@ -493,27 +500,27 @@ export default function MailScreen() {
               </ScrollView>
 
               {/* Bottom Quick Action Bar */}
-              <View style={styles.bottomActionBar}>
+              <View style={[styles.bottomActionBar, { borderTopColor: colors.borderGlass }]}>
                 <TouchableOpacity
-                  style={styles.quickActionButton}
+                  style={[styles.quickActionButton, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
                   onPress={() => {
                     setIsReplying(true);
                     setIsForwarding(false);
                   }}
                 >
-                  <CornerUpLeft size={16} color={theme.colors.accent} />
-                  <Text style={styles.quickActionText}>Reply</Text>
+                  <CornerUpLeft size={16} color={colors.accent} />
+                  <Text style={[styles.quickActionText, { color: colors.textPrimary }]}>Reply</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.quickActionButton}
+                  style={[styles.quickActionButton, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
                   onPress={() => {
                     setIsForwarding(true);
                     setIsReplying(false);
                   }}
                 >
-                  <CornerUpRight size={16} color={theme.colors.ivory} />
-                  <Text style={styles.quickActionText}>Forward</Text>
+                  <CornerUpRight size={16} color={colors.textPrimary} />
+                  <Text style={[styles.quickActionText, { color: colors.textPrimary }]}>Forward</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -524,9 +531,9 @@ export default function MailScreen() {
       {/* Floating Toast Notice */}
       {toastMessage && (
         <View style={styles.toastContainer} pointerEvents="none">
-          <View style={styles.toastPill}>
-            <CheckCircle2 size={15} color={theme.colors.accent} />
-            <Text style={styles.toastText}>{toastMessage}</Text>
+          <View style={[styles.toastPill, { backgroundColor: isDark ? 'rgba(22, 22, 24, 0.95)' : 'rgba(255, 255, 255, 0.95)', borderColor: colors.accent }]}>
+            <CheckCircle2 size={15} color={colors.accent} />
+            <Text style={[styles.toastText, { color: colors.textPrimary }]}>{toastMessage}</Text>
           </View>
         </View>
       )}
@@ -537,7 +544,6 @@ export default function MailScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -555,9 +561,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -569,12 +573,9 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 20,
-    color: theme.colors.ivory,
   },
   unreadCountBadge: {
-    backgroundColor: 'rgba(232, 91, 34, 0.20)',
     borderWidth: 1,
-    borderColor: theme.colors.accent,
     borderRadius: theme.radius.chip,
     paddingHorizontal: 7,
     paddingVertical: 1,
@@ -583,28 +584,23 @@ const styles = StyleSheet.create({
   unreadCountBadgeText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 10,
-    color: theme.colors.accent,
   },
   headerSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 1,
   },
   markAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: theme.radius.chip,
     borderWidth: 1,
-    borderColor: 'rgba(255, 106, 43, 0.25)',
   },
   markAllText: {
     fontFamily: 'Inter-Medium',
     fontSize: 11,
-    color: theme.colors.accent,
     marginLeft: 4,
   },
   searchWrapper: {
@@ -614,16 +610,13 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     borderRadius: theme.radius.pill,
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     paddingHorizontal: 14,
     height: 42,
   },
   searchInput: {
     flex: 1,
-    color: theme.colors.ivory,
     fontFamily: 'Inter-Regular',
     fontSize: 13,
   },
@@ -643,9 +636,6 @@ const styles = StyleSheet.create({
   },
   emailCard: {
     marginBottom: 10,
-  },
-  unreadCard: {
-    borderColor: 'rgba(255, 106, 43, 0.4)',
   },
   emailCardHeader: {
     flexDirection: 'row',
@@ -682,17 +672,13 @@ const styles = StyleSheet.create({
   senderName: {
     fontFamily: 'Inter-Medium',
     fontSize: 14,
-    color: theme.colors.textPrimary,
     flexShrink: 1,
   },
   senderNameUnread: {
     fontFamily: 'Inter-SemiBold',
-    color: theme.colors.ivory,
   },
   priorityBadge: {
-    backgroundColor: 'rgba(255, 92, 92, 0.15)',
     borderWidth: 1,
-    borderColor: theme.colors.danger,
     borderRadius: theme.radius.chip,
     paddingHorizontal: 5,
     paddingVertical: 1,
@@ -701,12 +687,10 @@ const styles = StyleSheet.create({
   priorityBadgeText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 8,
-    color: theme.colors.danger,
   },
   senderRole: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
     marginTop: 1,
   },
   rightMeta: {
@@ -715,12 +699,10 @@ const styles = StyleSheet.create({
   dateText: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
   },
   subjectText: {
     fontFamily: 'Inter-Medium',
     fontSize: 14,
-    color: theme.colors.ivory,
     marginBottom: 4,
   },
   subjectTextUnread: {
@@ -730,7 +712,6 @@ const styles = StyleSheet.create({
   previewText: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     lineHeight: 18,
     marginBottom: 8,
   },
@@ -742,7 +723,6 @@ const styles = StyleSheet.create({
   attachmentChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: theme.radius.chip,
@@ -751,7 +731,6 @@ const styles = StyleSheet.create({
   attachmentChipText: {
     fontFamily: 'Inter-Medium',
     fontSize: 10,
-    color: theme.colors.textSecondary,
   },
   unreadDotPill: {
     flexDirection: 'row',
@@ -762,12 +741,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: theme.colors.accent,
   },
   unreadDotText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 10,
-    color: theme.colors.accent,
   },
   modalOverlay: {
     flex: 1,
@@ -775,11 +752,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContainer: {
-    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     height: '88%',
     paddingBottom: 24,
   },
@@ -789,13 +764,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: theme.spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(17, 24, 39, 0.08)',
   },
   modalCloseBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -807,7 +780,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -820,14 +792,12 @@ const styles = StyleSheet.create({
   readerSubject: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: theme.colors.ivory,
     lineHeight: 24,
     marginBottom: 14,
   },
   readerSenderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(17, 24, 39, 0.04)',
     padding: 12,
     borderRadius: 16,
     marginBottom: 16,
@@ -848,19 +818,15 @@ const styles = StyleSheet.create({
   readerSenderName: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 14,
-    color: theme.colors.ivory,
   },
   readerSenderEmail: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 1,
   },
   readerDate: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
   },
   readerBodyContainer: {
     marginBottom: 20,
@@ -868,27 +834,22 @@ const styles = StyleSheet.create({
   readerBodyText: {
     fontFamily: 'Inter-Regular',
     fontSize: 14,
-    color: theme.colors.textPrimary,
     lineHeight: 22,
   },
   attachmentsSection: {
     borderTopWidth: 1,
-    borderTopColor: 'rgba(17, 24, 39, 0.08)',
     paddingTop: 16,
     marginBottom: 20,
   },
   attachmentsTitle: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
-    color: theme.colors.textSecondary,
     marginBottom: 10,
   },
   attachmentCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     borderRadius: 14,
     padding: 12,
     marginBottom: 8,
@@ -896,43 +857,34 @@ const styles = StyleSheet.create({
   attName: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
-    color: theme.colors.ivory,
   },
   attSize: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   composerBox: {
-    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     padding: 12,
     marginBottom: 20,
   },
   composerHeader: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
-    color: theme.colors.accent,
     marginBottom: 8,
   },
   composerInput: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     borderRadius: 12,
     padding: 10,
-    color: theme.colors.ivory,
     fontFamily: 'Inter-Regular',
     fontSize: 13,
     textAlignVertical: 'top',
     minHeight: 80,
   },
   forwardInput: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     borderRadius: 12,
     padding: 10,
-    color: theme.colors.ivory,
     fontFamily: 'Inter-Regular',
     fontSize: 13,
   },
@@ -950,12 +902,10 @@ const styles = StyleSheet.create({
   composerCancelText: {
     fontFamily: 'Inter-Medium',
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
   composerSendBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.accent,
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: theme.radius.chip,
@@ -964,14 +914,12 @@ const styles = StyleSheet.create({
   composerSendText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 12,
-    color: '#FFF',
   },
   bottomActionBar: {
     flexDirection: 'row',
     paddingHorizontal: theme.spacing.lg,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(17, 24, 39, 0.08)',
     gap: 12,
   },
   quickActionButton: {
@@ -979,9 +927,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     borderRadius: theme.radius.pill,
     paddingVertical: 12,
     gap: 6,
@@ -989,7 +935,6 @@ const styles = StyleSheet.create({
   quickActionText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
-    color: theme.colors.ivory,
   },
   toastContainer: {
     position: 'absolute',
@@ -1002,14 +947,11 @@ const styles = StyleSheet.create({
   toastPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(22, 22, 24, 0.95)',
     borderWidth: 1,
-    borderColor: theme.colors.accent,
     borderRadius: theme.radius.pill,
     paddingHorizontal: 16,
     paddingVertical: 10,
     gap: 8,
-    shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
@@ -1018,6 +960,5 @@ const styles = StyleSheet.create({
   toastText: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
-    color: theme.colors.ivory,
   },
 });

@@ -106,17 +106,9 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
 
                 {/* Main Headline */}
                 <View style={styles.titleContainer}>
-                  {isCurrent ? (
-                    <LetterRise
-                      text={item.title}
-                      style={[styles.heroTitle, { color: colors.textPrimary }]}
-                      stagger={20}
-                    />
-                  ) : (
-                    <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>
-                      {item.title}
-                    </Text>
-                  )}
+                  <Text style={[styles.heroTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+                    {item.title}
+                  </Text>
                 </View>
 
                 {/* Action button */}
