@@ -2,6 +2,7 @@ import {
   computeTimetableDiff,
   Timetable,
   GBU_PERIOD_TIMES,
+  parseGBUClassCode,
 } from '../src/features/timetable/timetableProvider';
 
 describe('GBU Timetable Provider & Diff Engine', () => {
@@ -222,5 +223,68 @@ describe('GBU Timetable Provider & Diff Engine', () => {
     const empty1: Timetable = { classKey: 'BCS', fetchedAt: '', semesterSessionId: '39', slots: [] };
     const empty2: Timetable = { classKey: 'BCS', fetchedAt: '', semesterSessionId: '39', slots: [] };
     expect(computeTimetableDiff(empty1, empty2)).toEqual([]);
+  });
+
+  it('accurately parses SOICT class codes across CSE, ECE, and IT departments', () => {
+    const bcs = parseGBUClassCode('BCS-II A');
+    expect(bcs.department).toBe('CSE');
+    expect(bcs.programmeCode).toBe('BCS');
+    expect(bcs.year).toBe(2);
+    expect(bcs.section).toBe('A');
+
+    const bai = parseGBUClassCode('BAI-II A');
+    expect(bai.department).toBe('CSE');
+    expect(bai.programmeCode).toBe('BAI');
+    expect(bai.programme).toContain('Artificial Intelligence');
+    expect(bai.year).toBe(2);
+    expect(bai.section).toBe('A');
+
+    const cys = parseGBUClassCode('CSE-CS-II A');
+    expect(cys.department).toBe('CSE');
+    expect(cys.programme).toContain('Cyber Security');
+    expect(cys.year).toBe(2);
+
+    const bit = parseGBUClassCode('BIT-II A');
+    expect(bit.department).toBe('IT');
+    expect(bit.programmeCode).toBe('BIT');
+    expect(bit.year).toBe(2);
+
+    const bec = parseGBUClassCode('BEC-II A');
+    expect(bec.department).toBe('ECE');
+    expect(bec.programmeCode).toBe('BEC');
+    expect(bec.year).toBe(2);
+
+    // Formats specified in user prompt: bcs-3-second, bcs-second-a, cse-cs-second, bai-second-a
+    const bcsSecondA = parseGBUClassCode('bcs-second-a');
+    expect(bcsSecondA.department).toBe('CSE');
+    expect(bcsSecondA.programmeCode).toBe('BCS');
+    expect(bcsSecondA.year).toBe(2);
+    expect(bcsSecondA.section).toBe('A');
+
+    const bcs3Second = parseGBUClassCode('bcs-3-second');
+    expect(bcs3Second.department).toBe('CSE');
+    expect(bcs3Second.programmeCode).toBe('BCS');
+    expect(bcs3Second.year).toBe(2); // "Dash 3 dash second represents the second year Btech cse code"
+
+    const cseCsSecond = parseGBUClassCode('cse-cs-second');
+    expect(cseCsSecond.department).toBe('CSE');
+    expect(cseCsSecond.programmeCode).toBe('CSE-CS');
+    expect(cseCsSecond.year).toBe(2);
+
+    const baiSecondA = parseGBUClassCode('bai-second-a');
+    expect(baiSecondA.department).toBe('CSE');
+    expect(baiSecondA.programmeCode).toBe('BAI');
+    expect(baiSecondA.year).toBe(2);
+    expect(baiSecondA.section).toBe('A');
+
+    const ibcs = parseGBUClassCode('IBCS-III A');
+    expect(ibcs.department).toBe('CSE');
+    expect(ibcs.programmeCode).toBe('IBCS');
+    expect(ibcs.year).toBe(3);
+
+    const mcs = parseGBUClassCode('MCS-I A');
+    expect(mcs.department).toBe('CSE');
+    expect(mcs.programmeCode).toBe('MCS');
+    expect(mcs.year).toBe(1);
   });
 });

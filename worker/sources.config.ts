@@ -56,5 +56,23 @@ export const WORKER_CONFIG = {
       intervalMinutes: 120,
       timeoutMs: 15000,
     },
+    ohms: {
+      name: 'Online Hostel Management System (OHMS)',
+      url: 'https://ohms.gbu.ac.in/',
+      intervalMinutes: 120,
+      timeoutMs: 15000,
+    },
+    csms: {
+      name: 'Central Student Management System (CSMS)',
+      url: 'https://csms.gbu.ac.in/',
+      intervalMinutes: 180,
+      timeoutMs: 15000,
+    },
+    digiforms: {
+      name: 'DigiForms Single Window Portal',
+      url: 'https://digiforms.gbu.ac.in/',
+      intervalMinutes: 240,
+      timeoutMs: 15000,
+    },
   },
 };

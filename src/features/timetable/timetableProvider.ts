@@ -87,6 +87,132 @@ export interface RawGBUTimetableItem {
   SessionId: string;
 }
 
+export interface ParsedClassCode {
+  original: string;
+  department: 'CSE' | 'ECE' | 'IT' | string;
+  departmentName: string;
+  programme: string;
+  programmeCode: string;
+  year: number;
+  yearLabel: string;
+  semesterRoman: string;
+  section: string;
+  displayName: string;
+}
+
+/**
+ * Maps raw GBU class codes (e.g. BCS-II A, BAI-II A, CSE-CS-II A, BIT-II A, BEC-II A)
+ * to structured department, programme, year, and section information.
+ */
+export function parseGBUClassCode(rawCode: string): ParsedClassCode {
+  const code = (rawCode || '').trim();
+  const upper = code.toUpperCase();
+
+  let department: 'CSE' | 'ECE' | 'IT' | string = 'CSE';
+  let departmentName = 'Computer Science & Engineering';
+  let programme = 'B.Tech (Computer Science & Engineering)';
+  let programmeCode = 'BCS';
+
+  if (upper.includes('BEC') || upper.startsWith('ECE')) {
+    department = 'ECE';
+    departmentName = 'Electronics & Communication Engineering';
+    programme = 'B.Tech (Electronics & Communication Engineering)';
+    programmeCode = 'BEC';
+  } else if (upper.includes('BIT') || upper.startsWith('IT')) {
+    department = 'IT';
+    departmentName = 'Information Technology';
+    programme = 'B.Tech (Information Technology)';
+    programmeCode = 'BIT';
+  } else if (upper.includes('BAI')) {
+    department = 'CSE';
+    departmentName = 'Computer Science & Engineering';
+    programme = 'B.Tech (Artificial Intelligence)';
+    programmeCode = 'BAI';
+  } else if (upper.includes('CSE-CS') || upper.includes('BCS-CS')) {
+    department = 'CSE';
+    departmentName = 'Computer Science & Engineering';
+    programme = 'B.Tech CSE (Cyber Security)';
+    programmeCode = 'CSE-CS';
+  } else if (upper.includes('CSE-DS') || upper.includes('BCS-DS')) {
+    department = 'CSE';
+    departmentName = 'Computer Science & Engineering';
+    programme = 'B.Tech CSE (Data Science)';
+    programmeCode = 'CSE-DS';
+  } else if (upper.includes('IBCS')) {
+    department = 'CSE';
+    departmentName = 'Computer Science & Engineering';
+    programme = 'Integrated B.Tech + M.Tech (CSE)';
+    programmeCode = 'IBCS';
+  } else if (upper.includes('MCS')) {
+    department = 'CSE';
+    departmentName = 'Computer Science & Engineering';
+    programme = 'M.Tech (Computer Science & Engineering)';
+    programmeCode = 'MCS';
+  }
+
+  // Parse Year / Semester
+  let year = 2;
+  let yearLabel = '2nd Year';
+  let semesterRoman = 'II';
+
+  // Check explicit named year / roman numeral terms first to avoid collisions with batch prefixes (e.g. -3-second)
+  if (upper.includes('FOURTH') || upper.includes('4TH') || upper.includes('FINAL') || upper.includes('-IV') || upper.includes('/IV')) {
+    year = 4;
+    yearLabel = '4th Year';
+    semesterRoman = 'IV';
+  } else if (upper.includes('THIRD') || upper.includes('3RD') || upper.includes('-III') || upper.includes('/III')) {
+    year = 3;
+    yearLabel = '3rd Year';
+    semesterRoman = 'III';
+  } else if (upper.includes('SECOND') || upper.includes('2ND') || upper.includes('-II') || upper.includes('/II')) {
+    year = 2;
+    yearLabel = '2nd Year';
+    semesterRoman = 'II';
+  } else if (upper.includes('FIRST') || upper.includes('1ST') || upper.includes('-I') || upper.includes('/I')) {
+    year = 1;
+    yearLabel = '1st Year';
+    semesterRoman = 'I';
+  } else if (upper.includes('-4') || upper.includes('/4') || upper.includes(' 4')) {
+    year = 4;
+    yearLabel = '4th Year';
+    semesterRoman = 'IV';
+  } else if (upper.includes('-3') || upper.includes('/3') || upper.includes(' 3')) {
+    year = 3;
+    yearLabel = '3rd Year';
+    semesterRoman = 'III';
+  } else if (upper.includes('-2') || upper.includes('/2') || upper.includes(' 2')) {
+    year = 2;
+    yearLabel = '2nd Year';
+    semesterRoman = 'II';
+  } else if (upper.includes('-1') || upper.includes('/1') || upper.includes(' 1')) {
+    year = 1;
+    yearLabel = '1st Year';
+    semesterRoman = 'I';
+  }
+
+  // Parse Section (e.g. " A", "-A", "-SEC-A", " (A)")
+  let section = 'A';
+  const secMatch = upper.match(/(?:[\s\-_/([]*(?:SEC|SECTION)?[\s\-_:]*|[-_])([A-D])[)\]]?$/);
+  if (secMatch) {
+    section = secMatch[1];
+  }
+
+  const displayName = `${programme} ${yearLabel} (Sec ${section})`;
+
+  return {
+    original: code,
+    department,
+    departmentName,
+    programme,
+    programmeCode,
+    year,
+    yearLabel,
+    semesterRoman,
+    section,
+    displayName,
+  };
+}
+
 export class GBUTimetableProvider implements TimetableProvider {
   private baseUrl = 'https://mygbu.in/schd/api.php';
   private cachedRawData: Record<string, RawGBUTimetableItem[]> = {};
@@ -134,11 +260,12 @@ export class GBUTimetableProvider implements TimetableProvider {
       if (!section) continue;
 
       if (!classMap.has(section)) {
+        const parsed = parseGBUClassCode(section);
         classMap.set(section, {
           school: item.school ? item.school.trim() : 'SOICT',
-          programme: item.program_name ? item.program_name.trim() : 'B.Tech',
-          programmeCode: item.Code ? item.Code.trim() : 'BCS',
-          semester: section.includes('-II') ? 'II' : section.includes('-IV') ? 'IV' : 'I',
+          programme: parsed.programme,
+          programmeCode: parsed.programmeCode,
+          semester: parsed.semesterRoman,
           section,
         });
       }
@@ -418,6 +545,203 @@ export const MOCK_RAW_TIMETABLE: RawGBUTimetableItem[] = [
     subject_name: 'OS Lab',
     abbr: 'PG',
     subject_id: '15117',
+    SessionId: '39',
+  },
+  // B.Tech CSE 2nd Year Sec A (BCS-II A)
+  {
+    TimeTableId: '23101',
+    TT_Day: '1',
+    TT_Period: '1',
+    CSF_Id: '19601',
+    Room_Id: '207',
+    ActivityTag: 'Lecture',
+    RoomName: 'IL102',
+    Building: 'SOICT',
+    Section_Id: '1298',
+    Subject_Code: 'CSE205',
+    SectionName: 'BCS-II A',
+    Code: 'BCS',
+    faculty_id: '2691',
+    TeacherName: 'Dr. Arun Sharma',
+    program_id: '1088',
+    program_name: 'B.Tech (CS)',
+    school: 'SOICT',
+    StudentDepartment: 'CSE',
+    subject_name: 'Data Structures & Algorithms',
+    abbr: 'AS',
+    subject_id: '15115',
+    SessionId: '39',
+  },
+  {
+    TimeTableId: '23102',
+    TT_Day: '1',
+    TT_Period: '2',
+    CSF_Id: '19602',
+    Room_Id: '207',
+    ActivityTag: 'Lecture',
+    RoomName: 'IL102',
+    Building: 'SOICT',
+    Section_Id: '1298',
+    Subject_Code: 'CSE209',
+    SectionName: 'BCS-II A',
+    Code: 'BCS',
+    faculty_id: '2690',
+    TeacherName: 'Prashant Gaurav',
+    program_id: '1088',
+    program_name: 'B.Tech (CS)',
+    school: 'SOICT',
+    StudentDepartment: 'CSE',
+    subject_name: 'Operating System',
+    abbr: 'PG',
+    subject_id: '15114',
+    SessionId: '39',
+  },
+  // B.Tech AI 2nd Year Sec A (BAI-II A)
+  {
+    TimeTableId: '23201',
+    TT_Day: '1',
+    TT_Period: '1',
+    CSF_Id: '19701',
+    Room_Id: '210',
+    ActivityTag: 'Lecture',
+    RoomName: 'IL105',
+    Building: 'SOICT',
+    Section_Id: '1301',
+    Subject_Code: 'AI201',
+    SectionName: 'BAI-II A',
+    Code: 'BAI',
+    faculty_id: '2701',
+    TeacherName: 'Dr. Rajesh Kumar',
+    program_id: '1090',
+    program_name: 'B.Tech (AI)',
+    school: 'SOICT',
+    StudentDepartment: 'CSE',
+    subject_name: 'Foundations of Artificial Intelligence',
+    abbr: 'RK',
+    subject_id: '15201',
+    SessionId: '39',
+  },
+  {
+    TimeTableId: '23202',
+    TT_Day: '1',
+    TT_Period: '2',
+    CSF_Id: '19702',
+    Room_Id: '210',
+    ActivityTag: 'Lecture',
+    RoomName: 'IL105',
+    Building: 'SOICT',
+    Section_Id: '1301',
+    Subject_Code: 'AI203',
+    SectionName: 'BAI-II A',
+    Code: 'BAI',
+    faculty_id: '2702',
+    TeacherName: 'Dr. Priya Singhal',
+    program_id: '1090',
+    program_name: 'B.Tech (AI)',
+    school: 'SOICT',
+    StudentDepartment: 'CSE',
+    subject_name: 'Machine Learning Fundamentals',
+    abbr: 'PS',
+    subject_id: '15202',
+    SessionId: '39',
+  },
+  {
+    TimeTableId: '23203',
+    TT_Day: '1',
+    TT_Period: '3',
+    CSF_Id: '19703',
+    Room_Id: 'LAB05',
+    ActivityTag: 'Lab',
+    RoomName: 'AI & Robotics Lab',
+    Building: 'SOICT',
+    Section_Id: '1301',
+    Subject_Code: 'AI211',
+    SectionName: 'BAI-II A',
+    Code: 'BAI',
+    faculty_id: '2701',
+    TeacherName: 'Dr. Rajesh Kumar',
+    program_id: '1090',
+    program_name: 'B.Tech (AI)',
+    school: 'SOICT',
+    StudentDepartment: 'CSE',
+    subject_name: 'AI Programming Lab',
+    abbr: 'RK',
+    subject_id: '15203',
+    SessionId: '39',
+  },
+  // B.Tech CSE Cyber Security 2nd Year (CSE-CS-II A)
+  {
+    TimeTableId: '23301',
+    TT_Day: '1',
+    TT_Period: '1',
+    CSF_Id: '19801',
+    Room_Id: '212',
+    ActivityTag: 'Lecture',
+    RoomName: 'IL108',
+    Building: 'SOICT',
+    Section_Id: '1305',
+    Subject_Code: 'CYS201',
+    SectionName: 'CSE-CS-II A',
+    Code: 'CSE-CS',
+    faculty_id: '2710',
+    TeacherName: 'Dr. Amit Verma',
+    program_id: '1092',
+    program_name: 'B.Tech (CSE - Cyber Security)',
+    school: 'SOICT',
+    StudentDepartment: 'CSE',
+    subject_name: 'Information Security & Cryptography',
+    abbr: 'AV',
+    subject_id: '15301',
+    SessionId: '39',
+  },
+  // B.Tech IT 2nd Year (BIT-II A)
+  {
+    TimeTableId: '23401',
+    TT_Day: '1',
+    TT_Period: '1',
+    CSF_Id: '19901',
+    Room_Id: '215',
+    ActivityTag: 'Lecture',
+    RoomName: 'IL201',
+    Building: 'SOICT',
+    Section_Id: '1310',
+    Subject_Code: 'IT201',
+    SectionName: 'BIT-II A',
+    Code: 'BIT',
+    faculty_id: '2720',
+    TeacherName: 'Dr. Sandeep Sharma',
+    program_id: '1095',
+    program_name: 'B.Tech (IT)',
+    school: 'SOICT',
+    StudentDepartment: 'IT',
+    subject_name: 'Web Technologies & Frameworks',
+    abbr: 'SS',
+    subject_id: '15401',
+    SessionId: '39',
+  },
+  // B.Tech ECE 2nd Year (BEC-II A)
+  {
+    TimeTableId: '23501',
+    TT_Day: '1',
+    TT_Period: '1',
+    CSF_Id: '20001',
+    Room_Id: '302',
+    ActivityTag: 'Lecture',
+    RoomName: 'EC101',
+    Building: 'SOICT',
+    Section_Id: '1320',
+    Subject_Code: 'ECE201',
+    SectionName: 'BEC-II A',
+    Code: 'BEC',
+    faculty_id: '2730',
+    TeacherName: 'Dr. Vikas Rana',
+    program_id: '1100',
+    program_name: 'B.Tech (ECE)',
+    school: 'SOICT',
+    StudentDepartment: 'ECE',
+    subject_name: 'Signals and Systems',
+    abbr: 'VR',
+    subject_id: '15501',
     SessionId: '39',
   },
 ];

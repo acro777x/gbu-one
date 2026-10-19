@@ -30,7 +30,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
   reduceMotion,
   onFinish,
 }) => {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const systemReduce = useReduceMotion();
   const effectiveReduce = reduceMotion ?? systemReduce;
 
@@ -107,7 +107,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
           size={144}
           mode={isWarmStart ? 'static' : 'intro'}
           glow
-          variant="tile"
+          variant={isDark ? 'tile' : 'mark'}
           reduceMotion={effectiveReduce}
         />
 

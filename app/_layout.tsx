@@ -4,13 +4,7 @@ import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFonts, Poppins_700Bold } from '@expo-google-fonts/poppins';
-import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-} from '@expo-google-fonts/inter';
+import { useFonts } from 'expo-font';
 import { SplashScreenView } from '../src/components/brand/SplashScreenView';
 import { ThemeProvider, useAppTheme } from '../src/lib/ThemeContext';
 
@@ -24,11 +18,11 @@ function AppShell() {
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
 
   const [fontsLoaded, fontError] = useFonts({
-    'Poppins-Bold': Poppins_700Bold,
-    'Inter-Regular': Inter_400Regular,
-    'Inter-Medium': Inter_500Medium,
-    'Inter-SemiBold': Inter_600SemiBold,
-    'Inter-Bold': Inter_700Bold,
+    'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
+    'Inter-Regular': require('../assets/fonts/Inter-Regular.ttf'),
+    'Inter-Medium': require('../assets/fonts/Inter-Medium.ttf'),
+    'Inter-SemiBold': require('../assets/fonts/Inter-SemiBold.ttf'),
+    'Inter-Bold': require('../assets/fonts/Inter-Bold.ttf'),
   });
 
   // Query onboarding status from persistent storage
@@ -116,6 +110,7 @@ function AppShell() {
         <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="login" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="class-setup" options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="notice/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="dev/motion" />
       </Stack>
       {!splashFinished && (

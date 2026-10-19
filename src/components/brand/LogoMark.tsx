@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import React from 'react';
 import { StyleProp, ViewStyle, Image, StyleSheet, View } from 'react-native';
-import Svg, { Defs, LinearGradient, Stop, Path } from 'react-native-svg';
-import { LOGO_PATHS } from './logoPaths';
 import { useAppTheme } from '../../lib/ThemeContext';
 
 export interface LogoMarkProps {
@@ -15,82 +13,41 @@ export interface LogoMarkProps {
 }
 
 // Pre-resolved image assets for instantaneous offline rendering
-const MARK_IMAGE = require('../../../assets/brand/mark-square.png');
+const MARK_LIGHT_IMAGE = require('../../../assets/brand/mark-light.png');
+const MARK_DARK_IMAGE = require('../../../assets/brand/mark-dark.png');
 const TILE_DARK_IMAGE = require('../../../assets/brand/logo-tile-dark.png');
-const TILE_LIGHT_IMAGE = require('../../../assets/brand/logo-tile-light.png');
 
 export const LogoMark: React.FC<LogoMarkProps> = ({
   size = 64,
   mono = false,
   monoColor,
-  numeralColor,
+  numeralColor: _numeralColor,
   variant = 'mark',
   style,
 }) => {
   const { colors, isDark } = useAppTheme();
   const effectiveMonoColor = monoColor || colors.logoNumeralFill;
-  const effectiveNumeralColor = numeralColor || colors.logoNumeralFill;
 
-  // Use authentic vector asset when monochrome is explicitly requested (e.g. status/tray/themed icon)
-  if (mono || variant === 'vector') {
-    return (
-      <Svg
-        viewBox={LOGO_PATHS.viewBox}
-        width={size}
-        height={size}
-        style={style}
-        fill="none"
-      >
-        <Defs>
-          <LinearGradient id="gbuRingGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-            <Stop offset="0%" stopColor={LOGO_PATHS.colors.ringGradStart} />
-            <Stop offset="50%" stopColor={LOGO_PATHS.colors.ringGradMid} />
-            <Stop offset="100%" stopColor={LOGO_PATHS.colors.ringGradEnd} />
-          </LinearGradient>
-        </Defs>
-
-        {/* Ring Ribbon A */}
-        <Path
-          d={LOGO_PATHS.ribbonA.d}
-          fill={mono ? effectiveMonoColor : 'url(#gbuRingGrad)'}
-        />
-
-        {/* Ring Ribbon B */}
-        <Path
-          d={LOGO_PATHS.ribbonB.d}
-          fill={mono ? effectiveMonoColor : 'url(#gbuRingGrad)'}
-        />
-
-        {/* Dome & Finial */}
-        <Path
-          d={LOGO_PATHS.domeFinial.d}
-          fill={mono ? effectiveMonoColor : LOGO_PATHS.colors.dome}
-        />
-
-        {/* Numeral 1 */}
-        <Path
-          d={LOGO_PATHS.numeralOne.d}
-          fill={mono ? (monoColor || '#0B0B0C') : effectiveNumeralColor}
-        />
-      </Svg>
-    );
-  }
-
-  // Authentic tile format with the user's exact lighting, frame, and glow
-  if (variant === 'tile' || variant === 'dark' || variant === 'light') {
-    const tileSource =
-      variant === 'dark'
-        ? TILE_DARK_IMAGE
-        : variant === 'light'
-          ? TILE_LIGHT_IMAGE
-          : isDark
-            ? TILE_DARK_IMAGE
-            : TILE_LIGHT_IMAGE;
-
+  // Monochrome tint mode (for system status, tray, or monochrome badges)
+  if (mono) {
     return (
       <View style={[{ width: size, height: size }, styles.center, style]}>
         <Image
-          source={tileSource}
+          source={MARK_LIGHT_IMAGE}
+          style={{ width: size, height: size, tintColor: effectiveMonoColor }}
+          resizeMode="contain"
+          fadeDuration={0}
+        />
+      </View>
+    );
+  }
+
+  // Dark tile format with dark frame and glow (only in dark mode if tile requested)
+  if ((variant === 'tile' || variant === 'dark') && isDark) {
+    return (
+      <View style={[{ width: size, height: size }, styles.center, style]}>
+        <Image
+          source={TILE_DARK_IMAGE}
           style={{ width: size, height: size, borderRadius: size * 0.22 }}
           resizeMode="contain"
           fadeDuration={0}
@@ -99,11 +56,20 @@ export const LogoMark: React.FC<LogoMarkProps> = ({
     );
   }
 
-  // Authentic mark (transparent background with user's genuine glossy ring, dome and numeral)
+  // Authentic mark with NO background: uses light theme mark in light mode, dark theme mark in dark mode
+  const effectiveMarkSource =
+    variant === 'light'
+      ? MARK_LIGHT_IMAGE
+      : variant === 'dark'
+        ? MARK_DARK_IMAGE
+        : isDark
+          ? MARK_DARK_IMAGE
+          : MARK_LIGHT_IMAGE;
+
   return (
     <View style={[{ width: size, height: size }, styles.center, style]}>
       <Image
-        source={MARK_IMAGE}
+        source={effectiveMarkSource}
         style={{ width: size, height: size }}
         resizeMode="contain"
         fadeDuration={0}

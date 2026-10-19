@@ -5,7 +5,7 @@
 
 export interface NoticeItem {
   id: string;
-  source: 'main' | 'exams' | 'hostel' | 'other';
+  source: 'main' | 'exams' | 'hostel' | 'ohms' | 'csms' | 'digiforms' | 'other';
   sourceId: string;
   title: string;
   cleanTitle: string;
@@ -444,5 +444,47 @@ export const MOCK_NOTICES: NoticeItem[] = [
     category: 'event',
     audience: { all: true },
     importance: 2,
+  },
+  {
+    id: 'not_7',
+    source: 'ohms',
+    sourceId: 'src_ohms_room_phase2',
+    title: 'OHMS Portal: Phase-2 Hostel Room Reallotment and Repaired Wing Occupancy',
+    cleanTitle: 'Phase-2 Hostel Room Reallotment Schedule',
+    postedAt: '2026-10-18T10:00:00.000Z',
+    fileUrl: 'https://ohms.gbu.ac.in/circulars/phase2_allotment_2026.pdf',
+    fileType: 'pdf',
+    category: 'hostel',
+    audience: { all: true },
+    importance: 4,
+    deadlineAt: '2026-10-28T17:00:00.000Z',
+  },
+  {
+    id: 'not_8',
+    source: 'csms',
+    sourceId: 'src_csms_reg_autumn',
+    title: 'Mandatory Student Profile Verification & Course Registration on CSMS Portal',
+    cleanTitle: 'Mandatory CSMS Profile & Course Registration',
+    postedAt: '2026-10-16T08:30:00.000Z',
+    fileUrl: 'https://csms.gbu.ac.in/orders/registration_guidelines_2026.pdf',
+    fileType: 'pdf',
+    category: 'academic',
+    audience: { all: true },
+    importance: 5,
+    deadlineAt: '2026-11-05T23:59:59.000Z',
+  },
+  {
+    id: 'not_9',
+    source: 'digiforms',
+    sourceId: 'src_digiforms_tablet_dist',
+    title: 'DigiForms Single-Window: Submission for UP Free Tablet/Smartphone Scheme 2026-27',
+    cleanTitle: 'DigiForms: UP Smartphone Scheme Distribution Application',
+    postedAt: '2026-10-13T15:20:00.000Z',
+    fileUrl: 'https://digiforms.gbu.ac.in/schemes/tablet_smartphone_scheme_2026.pdf',
+    fileType: 'pdf',
+    category: 'scholarship',
+    audience: { all: true },
+    importance: 4,
+    deadlineAt: '2026-11-15T18:00:00.000Z',
   },
 ];

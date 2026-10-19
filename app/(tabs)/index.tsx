@@ -36,6 +36,8 @@ import { GBUTimetableProvider, Slot } from '../../src/features/timetable/timetab
 import { MOCK_NOTICES } from '../../src/features/notices/noticeService';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
+import { TimetableChangeModal } from '../../src/components/timetable/TimetableChangeModal';
+import { useTimetableAlert } from '../../src/features/timetable/useTimetableAlert';
 
 export default function HomeScreen() {
   const { colors, isDark } = useAppTheme();
@@ -43,6 +45,8 @@ export default function HomeScreen() {
   const { user, isGuest, classSelection } = useAuthStore();
   const { emails, getUnreadCount } = useMailStore();
   const [refreshing, setRefreshing] = useState(false);
+  const enrolledClassKey = classSelection?.section || 'BAI-II A';
+  const { modalVisible, activeDiff, dismissAlert } = useTimetableAlert(enrolledClassKey);
   const [nextSlot, setNextSlot] = useState<Slot | null>(null);
   const hasTimetableChange = Boolean(nextSlot?.isChanged);
 
@@ -52,8 +56,7 @@ export default function HomeScreen() {
   useEffect(() => {
     let mounted = true;
     const provider = new GBUTimetableProvider();
-    const section = classSelection?.section || 'BCS-II B';
-    provider.getTimetable(section, '39').then((tt) => {
+    provider.getTimetable(enrolledClassKey, '39').then((tt) => {
       if (!mounted) return;
       if (tt.slots.length > 0) {
         const dayOfWeek = (new Date().getDay() || 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -65,13 +68,12 @@ export default function HomeScreen() {
     return () => {
       mounted = false;
     };
-  }, [classSelection?.section]);
+  }, [enrolledClassKey]);
 
   const onRefresh = () => {
     setRefreshing(true);
     const provider = new GBUTimetableProvider();
-    const section = classSelection?.section || 'BCS-II B';
-    provider.getTimetable(section, '39').then((tt) => {
+    provider.getTimetable(enrolledClassKey, '39').then((tt) => {
       if (tt.slots.length > 0) {
         const dayOfWeek = (new Date().getDay() || 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
         const todaySlots = tt.slots.filter((s) => s.day === dayOfWeek);
@@ -89,7 +91,7 @@ export default function HomeScreen() {
     meta: n.deadlineAt
       ? `Deadline: ${new Date(n.deadlineAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
       : `${n.source.toUpperCase()} • Official Notice`,
-    onPress: () => router.push('/notices' as never),
+    onPress: () => router.push(`/notice/${n.id}` as never),
   }));
 
   return (
@@ -316,7 +318,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.deadlineRow}>
-            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notices' as never)}>
+            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notice/not_2' as never)}>
               <View style={styles.deadlineBadge}>
                 <Clock size={12} color={colors.warning} />
                 <Text style={[styles.deadlineBadgeText, { color: colors.warning }]}>2 days left</Text>
@@ -325,7 +327,7 @@ export default function HomeScreen() {
               <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>Due 31 Oct 2026</Text>
             </GlassCard>
 
-            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notices' as never)}>
+            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notice/not_3' as never)}>
               <View style={styles.deadlineBadge}>
                 <Clock size={12} color={colors.warning} />
                 <Text style={[styles.deadlineBadgeText, { color: colors.warning }]}>12 days left</Text>
@@ -334,7 +336,7 @@ export default function HomeScreen() {
               <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>Due 10 Nov 2026</Text>
             </GlassCard>
 
-            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notices' as never)}>
+            <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notice/not_5' as never)}>
               <View style={styles.deadlineBadge}>
                 <Clock size={12} color={colors.success} />
                 <Text style={[styles.deadlineBadgeText, { color: colors.success }]}>18 days left</Text>
@@ -407,6 +409,15 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* High-priority In-App Timetable Alert Pop-Up */}
+      <TimetableChangeModal
+        visible={modalVisible}
+        classKey={enrolledClassKey}
+        changeMessage={activeDiff?.message || 'Your class timetable has been updated by the university.'}
+        changeType={activeDiff?.type}
+        onDismiss={dismissAlert}
+      />
     </SafeAreaView>
   );
 }

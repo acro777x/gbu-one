@@ -16,7 +16,7 @@ import {
 import { WORKER_CONFIG } from './sources.config';
 
 export interface ScrapedRawNotice {
-  source: 'main' | 'exams' | 'hostel' | 'other';
+  source: 'main' | 'exams' | 'hostel' | 'ohms' | 'csms' | 'digiforms' | 'other';
   rawTitle: string;
   url: string;
   dateStr: string;
@@ -103,6 +103,110 @@ export function parseExamsNoticesHtml(html: string): ScrapedRawNotice[] {
         url: href,
         dateStr: new Date().toISOString().split('T')[0],
       });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Parses HTML from Hostel portal (hostels.gbu.ac.in)
+ */
+export function parseHostelNoticesHtml(html: string): ScrapedRawNotice[] {
+  const results: ScrapedRawNotice[] = [];
+  const linkRegex = /<a\s+[^>]*href=["']([^"']*(?:allotment|hostel|mess|circular|notice|room)[^"']*\.(?:pdf|docx?|jpe?g|png))["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkRegex.exec(html)) !== null) {
+    let href = match[1].trim();
+    if (!href.startsWith('http')) {
+      href = `http://hostels.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
+    }
+    const rawTitle = match[2].replace(/<[^>]+>/g, '').trim();
+    if (rawTitle.length > 3) {
+      results.push({
+        source: 'hostel',
+        rawTitle,
+        url: href,
+        dateStr: new Date().toISOString().split('T')[0],
+      });
+    }
+  }
+
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch: RegExpExecArray | null;
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
+    const rowContent = rowMatch[1];
+    const link = rowContent.match(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const dateMatch = rowContent.match(/(?:<td[^>]*>)?\s*([0-3]?[0-9][/.-][0-1]?[0-9][/.-][2-9][0-9]{3})\s*(?:<\/td>)?/i);
+    if (link && !results.some((r) => r.url.includes(link[1]))) {
+      let href = link[1].trim();
+      if (!href.startsWith('http')) {
+        href = `http://hostels.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
+      }
+      const rawTitle = link[2].replace(/<[^>]+>/g, '').trim();
+      if (rawTitle.length > 3) {
+        results.push({
+          source: 'hostel',
+          rawTitle,
+          url: href,
+          dateStr: dateMatch ? dateMatch[1].trim() : new Date().toISOString().split('T')[0],
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Parses announcements and circulars from GBU subdomains (e.g. ohms.gbu.ac.in, csms.gbu.ac.in, digiforms.gbu.ac.in)
+ */
+export function parseSubdomainHtml(
+  html: string,
+  source: 'ohms' | 'csms' | 'digiforms' | 'other',
+  baseUrl: string,
+): ScrapedRawNotice[] {
+  const results: ScrapedRawNotice[] = [];
+  const linkRegex = /<a\s+[^>]*href=["']([^"']*\.(?:pdf|docx?|jpe?g|png|html?))["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkRegex.exec(html)) !== null) {
+    let href = match[1].trim();
+    if (!href.startsWith('http')) {
+      href = `${baseUrl.replace(/\/+$/, '')}/${href.replace(/^\/+/, '')}`;
+    }
+    const rawTitle = match[2].replace(/<[^>]+>/g, '').trim();
+    if (rawTitle.length > 3 && !results.some((r) => r.url === href)) {
+      results.push({
+        source,
+        rawTitle,
+        url: href,
+        dateStr: new Date().toISOString().split('T')[0],
+      });
+    }
+  }
+
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch: RegExpExecArray | null;
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
+    const rowContent = rowMatch[1];
+    const link = rowContent.match(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const dateMatch = rowContent.match(/(?:<td[^>]*>)?\s*([0-3]?[0-9][/.-][0-1]?[0-9][/.-][2-9][0-9]{3})\s*(?:<\/td>)?/i);
+    if (link) {
+      let href = link[1].trim();
+      if (!href.startsWith('http')) {
+        href = `${baseUrl.replace(/\/+$/, '')}/${href.replace(/^\/+/, '')}`;
+      }
+      const rawTitle = link[2].replace(/<[^>]+>/g, '').trim();
+      if (rawTitle.length > 3 && !results.some((r) => r.url === href)) {
+        results.push({
+          source,
+          rawTitle,
+          url: href,
+          dateStr: dateMatch ? dateMatch[1].trim() : new Date().toISOString().split('T')[0],
+        });
+      }
     }
   }
 
@@ -207,8 +311,8 @@ export class NoticesWorkerJob {
 
     // 1. Main notices
     let mainHtml = '';
-    if (mockHtmlMap && mockHtmlMap.main) {
-      mainHtml = mockHtmlMap.main;
+    if (mockHtmlMap) {
+      mainHtml = mockHtmlMap.main || '';
     } else {
       try {
         mainHtml = await this.fetchHtml(WORKER_CONFIG.sources.mainNotices.url);
@@ -229,8 +333,8 @@ export class NoticesWorkerJob {
 
     // 2. Exams notices
     let examsHtml = '';
-    if (mockHtmlMap && mockHtmlMap.exams) {
-      examsHtml = mockHtmlMap.exams;
+    if (mockHtmlMap) {
+      examsHtml = mockHtmlMap.exams || '';
     } else {
       try {
         examsHtml = await this.fetchHtml(WORKER_CONFIG.sources.examsNotices.url);
@@ -244,7 +348,72 @@ export class NoticesWorkerJob {
       scraped.push(...examItems);
     }
 
-    // 3. Enrich & Deduplicate
+    // 3. Hostel notices
+    let hostelHtml = '';
+    if (mockHtmlMap) {
+      hostelHtml = mockHtmlMap.hostel || '';
+    } else {
+      try {
+        hostelHtml = await this.fetchHtml(WORKER_CONFIG.sources.hostels.url);
+      } catch (err) {
+        console.warn('Worker: Hostel notices fetch failed:', err);
+      }
+    }
+
+    if (hostelHtml) {
+      const hostelItems = parseHostelNoticesHtml(hostelHtml);
+      scraped.push(...hostelItems);
+    }
+
+    // 4. OHMS notices
+    let ohmsHtml = '';
+    if (mockHtmlMap) {
+      ohmsHtml = mockHtmlMap.ohms || '';
+    } else if (WORKER_CONFIG.sources.ohms) {
+      try {
+        ohmsHtml = await this.fetchHtml(WORKER_CONFIG.sources.ohms.url);
+      } catch (err) {
+        console.warn('Worker: OHMS notices fetch failed:', err);
+      }
+    }
+    if (ohmsHtml) {
+      const ohmsItems = parseSubdomainHtml(ohmsHtml, 'ohms', WORKER_CONFIG.sources.ohms.url);
+      scraped.push(...ohmsItems);
+    }
+
+    // 5. CSMS notices
+    let csmsHtml = '';
+    if (mockHtmlMap) {
+      csmsHtml = mockHtmlMap.csms || '';
+    } else if (WORKER_CONFIG.sources.csms) {
+      try {
+        csmsHtml = await this.fetchHtml(WORKER_CONFIG.sources.csms.url);
+      } catch (err) {
+        console.warn('Worker: CSMS notices fetch failed:', err);
+      }
+    }
+    if (csmsHtml) {
+      const csmsItems = parseSubdomainHtml(csmsHtml, 'csms', WORKER_CONFIG.sources.csms.url);
+      scraped.push(...csmsItems);
+    }
+
+    // 6. DigiForms notices
+    let digiHtml = '';
+    if (mockHtmlMap) {
+      digiHtml = mockHtmlMap.digiforms || '';
+    } else if (WORKER_CONFIG.sources.digiforms) {
+      try {
+        digiHtml = await this.fetchHtml(WORKER_CONFIG.sources.digiforms.url);
+      } catch (err) {
+        console.warn('Worker: DigiForms notices fetch failed:', err);
+      }
+    }
+    if (digiHtml) {
+      const digiItems = parseSubdomainHtml(digiHtml, 'digiforms', WORKER_CONFIG.sources.digiforms.url);
+      scraped.push(...digiItems);
+    }
+
+    // 7. Enrich & Deduplicate
     const enrichedItems: NoticeItem[] = [];
     const newItems: NoticeItem[] = [];
 

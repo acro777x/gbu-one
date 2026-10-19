@@ -11,6 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { Search, Share2, BellRing, X, ExternalLink } from 'lucide-react-native';
 import { NoticeCard, Chip, BottomSheet, PillButton, EmptyState } from '../../src/components/ui';
 import { MOCK_NOTICES, NoticeItem } from '../../src/features/notices/noticeService';
@@ -51,7 +52,7 @@ export default function NoticesScreen() {
 
   const handleOpenNotice = (notice: NoticeItem) => {
     setActiveNotice(notice);
-    setSheetVisible(true);
+    router.push({ pathname: '/notice/[id]', params: { id: notice.id } });
   };
 
   const handleShare = async () => {

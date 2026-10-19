@@ -200,14 +200,54 @@ describe('Notices Scraper & Parser Worker', () => {
 
   it('executes full NoticesWorkerJob and identifies push candidates', async () => {
     const job = new NoticesWorkerJob();
+    const sampleHostelHtml = `
+      <html>
+        <body>
+          <a href="/allotment_list_2.pdf">Second List of Hostel Allotment for Newly Admitted Students 2026</a>
+          <a href="http://hostels.gbu.ac.in/mess_circular_oct2026.pdf">Mess Menu & Timings Circular October 2026</a>
+        </body>
+      </html>
+    `;
     const result = await job.runJob({
       main: sampleMainHtml,
       exams: sampleExamsHtml,
+      hostel: sampleHostelHtml,
     });
 
-    expect(result.totalScraped).toBe(5);
-    expect(result.newNoticesCount).toBe(5);
+    expect(result.totalScraped).toBe(7);
+    expect(result.newNoticesCount).toBe(7);
     expect(result.highPriorityPushCount).toBeGreaterThan(0);
     expect(result.pushCandidates.every((n) => n.importance >= 3)).toBe(true);
+    expect(result.notices.some((n) => n.source === 'hostel')).toBe(true);
+  });
+
+  it('parses university subdomains (OHMS, CSMS, DigiForms) accurately', async () => {
+    const job = new NoticesWorkerJob();
+    const sampleOhmsHtml = `
+      <div>
+        <a href="/circulars/phase2_allotment.pdf">Phase-2 Hostel Room Reallotment Schedule</a>
+      </div>
+    `;
+    const sampleCsmsHtml = `
+      <tr>
+        <td>20/10/2026</td>
+        <td><a href="/orders/mandatory_registration.pdf">Mandatory CSMS Profile & Course Registration</a></td>
+      </tr>
+    `;
+    const sampleDigiformsHtml = `
+      <div>
+        <a href="https://digiforms.gbu.ac.in/schemes/tablet_2026.pdf">UP Smartphone Scheme Distribution Application</a>
+      </div>
+    `;
+
+    const result = await job.runJob({
+      ohms: sampleOhmsHtml,
+      csms: sampleCsmsHtml,
+      digiforms: sampleDigiformsHtml,
+    });
+
+    expect(result.notices.some((n) => n.source === 'ohms')).toBe(true);
+    expect(result.notices.some((n) => n.source === 'csms')).toBe(true);
+    expect(result.notices.some((n) => n.source === 'digiforms')).toBe(true);
   });
 });
