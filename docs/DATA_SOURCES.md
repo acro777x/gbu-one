@@ -5,7 +5,7 @@ Verified in October 2026. Hosts change; keep everything in `worker/sources.confi
 ## Public pages (scrape politely)
 | Source | URL | Content | Notes |
 |---|---|---|---|
-| Main notices | `https://test.gbu.ac.in/page/notices` (also reachable from `gbu.ac.in`) | Table: Date, Title (link). Links look like `/Admissions/DownloadFile?nName=<id>.<ext><filename>` | Newest first, no pagination seen, no categories. Many targets are scanned JPG/JPEG, others PDF. Titles are sometimes useful, filenames are not. |
+| Main notices | `https://test.gbu.ac.in/page/notices` (same page as `https://www.gbu.ac.in/page/notices`) | Table: Date, Title (link). Links look like `/Admissions/DownloadFile?nName=<id>.<ext><filename>` | Newest first, no pagination seen, no categories. Many targets are scanned JPG/JPEG, others PDF. Titles are sometimes useful, filenames are not. **See `GBU_WEB_STRUCTURE.md` for the verified markup, the exact regex, the soft-404 trap, and the `~/` href bug.** |
 | Exams portal | `https://exams.gbu.ac.in` | Latest notices (title, posted date, attachment), important links, important dates, contact | Attachments under `/admin/public/uploads/notices/` and `/uploads/notices/`. Some entries are JS-only ("View School-wise Datesheet") — handle or skip with a logged note. |
 | Timetables landing | `https://test.gbu.ac.in/academics/timetables` | Links to the timetable system: on campus `http://172.25.5.15`, off campus `http://mygbu.in` | The owner's API comes from this system. |
 | Student portal | `https://gbu.samarth.edu.in` | Login required | **Do not scrape.** Link out only. |
@@ -19,6 +19,8 @@ Verified in October 2026. Hosts change; keep everything in `worker/sources.confi
 
 ## Scraping rules
 - Respect robots.txt if present. Only public, unauthenticated pages.
+- **Soft-404 check (GBU):** unknown paths return **HTTP 200** with a 38,725-byte "404 - Page not found" page. Treat a body containing `404 - Page not found` (or that exact body length) as a failure, not as data.
+- **TLS:** GBU's certificate chain does not verify on some hosts. Bundle the CA — do not disable certificate verification globally.
 - Rate: max 1 request per source per run, runs every 15 minutes for notices (every 60 minutes outside 7:00–22:00 IST), 1s delay between files, exponential backoff on errors, honour `Retry-After`.
 - User-Agent: `GBUOne-Worker/1.0 (student project; contact: <owner email from env>)`.
 - Download attachments once; cache by content hash; never re-OCR the same file.
