@@ -129,6 +129,232 @@ export default function MailScreen() {
   const pillButtonVariant = isDark ? 'dark' : 'white';
   const chipBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
 
+  if (activeEmail) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
+        {/* Full Screen Email Header */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity
+              style={[styles.backButton, { backgroundColor: chipBg, borderColor: colors.borderGlass }]}
+              onPress={() => {
+                setActiveEmail(null);
+                setIsReplying(false);
+                setIsForwarding(false);
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel="Back to Inbox"
+            >
+              <ArrowLeft size={20} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                {activeEmail.senderName}
+              </Text>
+              <Text style={[styles.headerSub, { color: colors.textSecondary }]} numberOfLines={1}>
+                {activeEmail.senderRole}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity
+              style={[styles.actionIconBtn, { backgroundColor: chipBg }]}
+              onPress={() => handleToggleStar(activeEmail.id)}
+            >
+              <Star
+                size={18}
+                color={activeEmail.isStarred ? colors.warning : colors.textTertiary}
+                fill={activeEmail.isStarred ? colors.warning : 'transparent'}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionIconBtn, { backgroundColor: colors.dangerSoft }]}
+              onPress={() => {
+                deleteEmail(activeEmail.id);
+                setActiveEmail(null);
+                showToast('Email moved to trash');
+              }}
+            >
+              <Trash2 size={18} color={colors.danger} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <ScrollView
+          style={styles.modalScroll}
+          contentContainerStyle={[styles.modalScrollContent, { paddingBottom: 100 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Subject */}
+          <Text style={[styles.readerSubject, { color: colors.textPrimary }]}>{activeEmail.subject}</Text>
+
+          {/* Sender Card */}
+          <View style={[styles.readerSenderRow, { backgroundColor: colors.surfaceMuted }]}>
+            <View
+              style={[
+                styles.avatarSquircleLarge,
+                { backgroundColor: activeEmail.avatarColor },
+              ]}
+            >
+              <Text style={styles.avatarTextLarge}>
+                {activeEmail.avatarInitial}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.readerSenderName, { color: colors.textPrimary }]}>
+                {activeEmail.senderName}
+              </Text>
+              <Text style={[styles.readerSenderEmail, { color: colors.textSecondary }]}>
+                {activeEmail.senderEmail}
+              </Text>
+              <Text style={[styles.readerDate, { color: colors.textSecondary }]}>{activeEmail.dateStr}</Text>
+            </View>
+          </View>
+
+          {/* Email Body */}
+          <View style={styles.readerBodyContainer}>
+            <Text style={[styles.readerBodyText, { color: colors.textPrimary }]}>{activeEmail.body}</Text>
+          </View>
+
+          {/* Attachments Section */}
+          {activeEmail.attachments && activeEmail.attachments.length > 0 && (
+            <View style={[styles.attachmentsSection, { borderTopColor: colors.borderGlass }]}>
+              <Text style={[styles.attachmentsTitle, { color: colors.textSecondary }]}>
+                Attachments ({activeEmail.attachments.length})
+              </Text>
+              {activeEmail.attachments.map((att) => (
+                <TouchableOpacity
+                  key={att.id}
+                  style={[styles.attachmentCard, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
+                  onPress={() => {
+                    if (Platform.OS !== 'web') {
+                      try {
+                        Haptics.notificationAsync(
+                          Haptics.NotificationFeedbackType.Success
+                        );
+                      } catch (e) {
+                        // ignore
+                      }
+                    }
+                    showToast(`Downloaded ${att.name}`);
+                  }}
+                >
+                  <FileText size={18} color={colors.accent} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.attName, { color: colors.textPrimary }]} numberOfLines={1}>
+                      {att.name}
+                    </Text>
+                    <Text style={[styles.attSize, { color: colors.textSecondary }]}>{att.size}</Text>
+                  </View>
+                  <Download size={16} color={colors.textSecondary} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Reply Composer if active */}
+          {isReplying && (
+            <View style={[styles.composerBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
+              <Text style={[styles.composerHeader, { color: colors.accent }]}>
+                Reply to {activeEmail.senderName}
+              </Text>
+              <TextInput
+                style={[styles.composerInput, { backgroundColor: colors.surface, color: colors.textPrimary }]}
+                placeholder="Write your official response..."
+                placeholderTextColor={colors.textTertiary}
+                multiline
+                numberOfLines={4}
+                value={replyText}
+                onChangeText={setReplyText}
+              />
+              <View style={styles.composerActions}>
+                <TouchableOpacity
+                  style={styles.composerCancelBtn}
+                  onPress={() => setIsReplying(false)}
+                >
+                  <Text style={[styles.composerCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.composerSendBtn, { backgroundColor: colors.accent }]}
+                  onPress={handleSendReply}
+                >
+                  <Send size={14} color="#FFF" />
+                  <Text style={styles.composerSendText}>Send</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Forward Composer if active */}
+          {isForwarding && (
+            <View style={[styles.composerBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
+              <Text style={[styles.composerHeader, { color: colors.accent }]}>Forward Communication</Text>
+              <TextInput
+                style={[styles.forwardInput, { backgroundColor: colors.surface, color: colors.textPrimary }]}
+                placeholder="Recipient GBU Email (e.g. rollno@gbu.ac.in)..."
+                placeholderTextColor={colors.textTertiary}
+                value={forwardRecipient}
+                onChangeText={setForwardRecipient}
+              />
+              <View style={styles.composerActions}>
+                <TouchableOpacity
+                  style={styles.composerCancelBtn}
+                  onPress={() => setIsForwarding(false)}
+                >
+                  <Text style={[styles.composerCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.composerSendBtn, { backgroundColor: colors.accent }]}
+                  onPress={handleSendForward}
+                >
+                  <CornerUpRight size={14} color="#FFF" />
+                  <Text style={styles.composerSendText}>Forward</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Bottom Quick Action Bar */}
+        <View style={[styles.bottomActionBar, { backgroundColor: colors.surface, borderTopColor: colors.borderGlass }]}>
+          <TouchableOpacity
+            style={[styles.quickActionButton, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
+            onPress={() => {
+              setIsReplying(true);
+              setIsForwarding(false);
+            }}
+          >
+            <CornerUpLeft size={16} color={colors.accent} />
+            <Text style={[styles.quickActionText, { color: colors.textPrimary }]}>Reply</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.quickActionButton, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
+            onPress={() => {
+              setIsForwarding(true);
+              setIsReplying(false);
+            }}
+          >
+            <CornerUpRight size={16} color={colors.textPrimary} />
+            <Text style={[styles.quickActionText, { color: colors.textPrimary }]}>Forward</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Floating Toast Notice */}
+        {toastMessage && (
+          <View style={styles.toastContainer} pointerEvents="none">
+            <View style={[styles.toastPill, { backgroundColor: isDark ? 'rgba(22, 22, 24, 0.95)' : 'rgba(255, 255, 255, 0.95)', borderColor: colors.accent }]}>
+              <CheckCircle2 size={15} color={colors.accent} />
+              <Text style={[styles.toastText, { color: colors.textPrimary }]}>{toastMessage}</Text>
+            </View>
+          </View>
+        )}
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Top Header */}
@@ -317,216 +543,7 @@ export default function MailScreen() {
         )}
       </ScrollView>
 
-      {/* Email Reader Modal */}
-      {activeEmail && (
-        <Modal
-          visible={!!activeEmail}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setActiveEmail(null)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContainer, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
-              {/* Modal Top Bar */}
-              <View style={[styles.modalHeader, { borderBottomColor: colors.borderGlass }]}>
-                <TouchableOpacity
-                  style={[styles.modalCloseBtn, { backgroundColor: chipBg }]}
-                  onPress={() => {
-                    setActiveEmail(null);
-                    setIsReplying(false);
-                    setIsForwarding(false);
-                  }}
-                >
-                  <X size={20} color={colors.textPrimary} />
-                </TouchableOpacity>
 
-                <View style={styles.modalActions}>
-                  <TouchableOpacity
-                    style={[styles.actionIconBtn, { backgroundColor: chipBg }]}
-                    onPress={() => handleToggleStar(activeEmail.id)}
-                  >
-                    <Star
-                      size={18}
-                      color={activeEmail.isStarred ? colors.warning : colors.textTertiary}
-                      fill={activeEmail.isStarred ? colors.warning : 'transparent'}
-                    />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionIconBtn, { backgroundColor: colors.dangerSoft }]}
-                    onPress={() => {
-                      deleteEmail(activeEmail.id);
-                      setActiveEmail(null);
-                      showToast('Email moved to trash');
-                    }}
-                  >
-                    <Trash2 size={18} color={colors.danger} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <ScrollView
-                style={styles.modalScroll}
-                contentContainerStyle={styles.modalScrollContent}
-              >
-                {/* Subject */}
-                <Text style={[styles.readerSubject, { color: colors.textPrimary }]}>{activeEmail.subject}</Text>
-
-                {/* Sender Card */}
-                <View style={[styles.readerSenderRow, { backgroundColor: colors.surfaceMuted }]}>
-                  <View
-                    style={[
-                      styles.avatarSquircleLarge,
-                      { backgroundColor: activeEmail.avatarColor },
-                    ]}
-                  >
-                    <Text style={styles.avatarTextLarge}>
-                      {activeEmail.avatarInitial}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.readerSenderName, { color: colors.textPrimary }]}>
-                      {activeEmail.senderName}
-                    </Text>
-                    <Text style={[styles.readerSenderEmail, { color: colors.textSecondary }]}>
-                      {activeEmail.senderEmail}
-                    </Text>
-                    <Text style={[styles.readerDate, { color: colors.textSecondary }]}>{activeEmail.dateStr}</Text>
-                  </View>
-                </View>
-
-                {/* Email Body */}
-                <View style={styles.readerBodyContainer}>
-                  <Text style={[styles.readerBodyText, { color: colors.textPrimary }]}>{activeEmail.body}</Text>
-                </View>
-
-                {/* Attachments Section */}
-                {activeEmail.attachments && activeEmail.attachments.length > 0 && (
-                  <View style={[styles.attachmentsSection, { borderTopColor: colors.borderGlass }]}>
-                    <Text style={[styles.attachmentsTitle, { color: colors.textSecondary }]}>
-                      Attachments ({activeEmail.attachments.length})
-                    </Text>
-                    {activeEmail.attachments.map((att) => (
-                      <TouchableOpacity
-                        key={att.id}
-                        style={[styles.attachmentCard, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
-                        onPress={() => {
-                          if (Platform.OS !== 'web') {
-                            try {
-                              Haptics.notificationAsync(
-                                Haptics.NotificationFeedbackType.Success
-                              );
-                            } catch (e) {
-                              // ignore
-                            }
-                          }
-                          showToast(`Downloaded ${att.name}`);
-                        }}
-                      >
-                        <FileText size={18} color={colors.accent} />
-                        <View style={{ flex: 1, marginLeft: 10 }}>
-                          <Text style={[styles.attName, { color: colors.textPrimary }]} numberOfLines={1}>
-                            {att.name}
-                          </Text>
-                          <Text style={[styles.attSize, { color: colors.textSecondary }]}>{att.size}</Text>
-                        </View>
-                        <Download size={16} color={colors.textSecondary} />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
-                {/* Reply Composer if active */}
-                {isReplying && (
-                  <View style={[styles.composerBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
-                    <Text style={[styles.composerHeader, { color: colors.accent }]}>
-                      Reply to {activeEmail.senderName}
-                    </Text>
-                    <TextInput
-                      style={[styles.composerInput, { backgroundColor: colors.surface, color: colors.textPrimary }]}
-                      placeholder="Write your official response..."
-                      placeholderTextColor={colors.textTertiary}
-                      multiline
-                      numberOfLines={4}
-                      value={replyText}
-                      onChangeText={setReplyText}
-                    />
-                    <View style={styles.composerActions}>
-                      <TouchableOpacity
-                        style={styles.composerCancelBtn}
-                        onPress={() => setIsReplying(false)}
-                      >
-                        <Text style={[styles.composerCancelText, { color: colors.textSecondary }]}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.composerSendBtn, { backgroundColor: colors.accent }]}
-                        onPress={handleSendReply}
-                      >
-                        <Send size={14} color="#FFF" />
-                        <Text style={styles.composerSendText}>Send</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-
-                {/* Forward Composer if active */}
-                {isForwarding && (
-                  <View style={[styles.composerBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
-                    <Text style={[styles.composerHeader, { color: colors.accent }]}>Forward Communication</Text>
-                    <TextInput
-                      style={[styles.forwardInput, { backgroundColor: colors.surface, color: colors.textPrimary }]}
-                      placeholder="Recipient GBU Email (e.g. rollno@gbu.ac.in)..."
-                      placeholderTextColor={colors.textTertiary}
-                      value={forwardRecipient}
-                      onChangeText={setForwardRecipient}
-                    />
-                    <View style={styles.composerActions}>
-                      <TouchableOpacity
-                        style={styles.composerCancelBtn}
-                        onPress={() => setIsForwarding(false)}
-                      >
-                        <Text style={[styles.composerCancelText, { color: colors.textSecondary }]}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.composerSendBtn, { backgroundColor: colors.accent }]}
-                        onPress={handleSendForward}
-                      >
-                        <CornerUpRight size={14} color="#FFF" />
-                        <Text style={styles.composerSendText}>Forward</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-              </ScrollView>
-
-              {/* Bottom Quick Action Bar */}
-              <View style={[styles.bottomActionBar, { borderTopColor: colors.borderGlass }]}>
-                <TouchableOpacity
-                  style={[styles.quickActionButton, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
-                  onPress={() => {
-                    setIsReplying(true);
-                    setIsForwarding(false);
-                  }}
-                >
-                  <CornerUpLeft size={16} color={colors.accent} />
-                  <Text style={[styles.quickActionText, { color: colors.textPrimary }]}>Reply</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.quickActionButton, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
-                  onPress={() => {
-                    setIsForwarding(true);
-                    setIsReplying(false);
-                  }}
-                >
-                  <CornerUpRight size={16} color={colors.textPrimary} />
-                  <Text style={[styles.quickActionText, { color: colors.textPrimary }]}>Forward</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
 
       {/* Floating Toast Notice */}
       {toastMessage && (
