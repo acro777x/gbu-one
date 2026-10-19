@@ -229,7 +229,7 @@ export default function HomeScreen() {
           </View>
 
           {/* Academic Attendance Battery Meter */}
-          <AttendanceBatteryCard onPressDetails={() => router.push('/profile' as never)} />
+          <AttendanceBatteryCard onPressDetails={() => router.push('/goal' as never)} />
 
           {/* Next Class Card */}
           <View style={styles.sectionHeaderRow}>

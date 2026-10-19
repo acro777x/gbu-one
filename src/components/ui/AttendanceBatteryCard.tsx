@@ -104,7 +104,7 @@ export const AttendanceBatteryCard: React.FC<AttendanceBatteryCardProps> = ({
       <View style={styles.headerRow}>
         <TouchableOpacity
           style={styles.titleWithIcon}
-          onPress={onPressDetails || (() => router.push('/profile' as never))}
+          onPress={onPressDetails || (() => router.push('/goal' as never))}
           activeOpacity={0.8}
         >
           <View style={[styles.statusIconCircle, { backgroundColor: `${batteryColor}18` }]}>
