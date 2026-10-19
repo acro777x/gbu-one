@@ -62,6 +62,117 @@ describe('Notices Scraper & Parser Worker', () => {
     expect(parsed[1].url).toBe('https://test.gbu.ac.in/Admissions/DownloadFile?nName=Fee_Ext_3.pdf');
   });
 
+  it('parses the real GBU /page/notices format (DD Mon YYYY + nName filenames)', () => {
+    // Verbatim structure from https://www.gbu.ac.in/page/notices
+    // (see docs/GBU_WEB_STRUCTURE.md). The date cell is "DD Mon YYYY" and the
+    // href carries a filename that itself contains date-like digit runs.
+    const realHtml = `
+      <h2>Notices and Circulars (Public)</h2>
+      <div class="py-5">
+        <table class="table table-condensed table-striped">
+          <tr>
+            <th style="width:150px">Date</th>
+            <th>Title</th>
+          </tr>
+          <tr>
+            <td>
+
+              01 Oct 2026
+
+            </td>
+
+            <td>
+
+              <a href="/Admissions/DownloadFile?nName=-3239624_135ecad8.pdfScan30092026.pdf" target="_blank">Notice for Scholarship on NSP Portal</a>
+
+            </td>
+          </tr>
+          <tr>
+            <td>
+
+              18 Sep 2026
+
+            </td>
+
+            <td>
+
+              <a href="/Admissions/DownloadFile?nName=-8055826_861029a0.jpgScan_20260918.jpg" target="_blank">Advisory on Events and use of the University&#39;s Name and Identity</a>
+
+            </td>
+          </tr>
+          <tr>
+            <td>
+
+              07 Sep 2026
+
+            </td>
+
+            <td>
+
+              <a href="/Admissions/DownloadFile?nName=-1187430_c747e443.pdf37%20UP%20Bn%20NCC%20Selection%20Notice%202026.pdf" target="_blank">Notice for NCC Enrollment &amp; Selection Process (Session 2026&#8211;27)- Reg.</a>
+
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+
+    const parsed = parseMainNoticesHtml(realHtml);
+    expect(parsed).toHaveLength(3);
+
+    // Date must come from the <td>, not from digits inside the filename
+    expect(parsed[0].dateStr).toBe('01 Oct 2026');
+    expect(parsed[1].dateStr).toBe('18 Sep 2026');
+    expect(parsed[2].dateStr).toBe('07 Sep 2026');
+
+    // URLs are absolute and keep the nName query string intact
+    expect(parsed[0].url).toBe(
+      'https://test.gbu.ac.in/Admissions/DownloadFile?nName=-3239624_135ecad8.pdfScan30092026.pdf'
+    );
+
+    // HTML entities are decoded in titles
+    expect(parsed[1].rawTitle).toBe("Advisory on Events and use of the University's Name and Identity");
+    expect(parsed[2].rawTitle).toBe('Notice for NCC Enrollment & Selection Process (Session 2026–27)- Reg.');
+  });
+
+  it('does not mistake date-like digits inside a filename for the row date', () => {
+    // The old loose regex matched "25-08-2026" from inside the nName filename.
+    const html = `
+      <table>
+        <tr>
+          <td>16 Sep 2026</td>
+          <td><a href="/Admissions/DownloadFile?nName=-1254719_ef91f782.pdf31%20UP%20(Girls)Bn%20NCC%20Notice.pdf">Notice for Senior Wing NCC</a></td>
+        </tr>
+        <tr>
+          <td>05 Apr 2025</td>
+          <td><a href="/Admissions/DownloadFile?nName=123.pdf25-08-2026.pdf">Something else entirely</a></td>
+        </tr>
+      </table>
+    `;
+
+    const parsed = parseMainNoticesHtml(html);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].dateStr).toBe('16 Sep 2026');
+    expect(parsed[1].dateStr).toBe('05 Apr 2025');
+  });
+
+  it('strips the leading ~/ from hrefs (GBU emits broken ~/Content links)', () => {
+    const html = `
+      <table>
+        <tr>
+          <td>12 Jan 2022</td>
+          <td><a href="~/Content/examination/SOBSC_Date%20Sheet_12Jan2022.pdf">Datesheet</a></td>
+        </tr>
+      </table>
+    `;
+
+    const parsed = parseMainNoticesHtml(html);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].url).toBe(
+      'https://test.gbu.ac.in/Content/examination/SOBSC_Date%20Sheet_12Jan2022.pdf'
+    );
+  });
+
   it('parses exams portal HTML links correctly', () => {
     const parsed = parseExamsNoticesHtml(sampleExamsHtml);
     expect(parsed).toHaveLength(2);

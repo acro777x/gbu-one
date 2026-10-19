@@ -17,7 +17,7 @@ export const WORKER_CONFIG = {
     mainNotices: {
       name: 'GBU Main Notices',
       url: 'https://test.gbu.ac.in/page/notices',
-      fallbackUrl: 'https://www.gbu.ac.in/notices',
+      fallbackUrl: 'https://www.gbu.ac.in/page/notices',
       rateLimitMs: 1000,
       intervalMinutes: 15,
       timeoutMs: 15000,

@@ -46,36 +46,67 @@ export function generateSourceId(source: string, url: string, dateStr: string): 
 
 /**
  * Parses HTML table rows from GBU main notices page (test.gbu.ac.in/page/notices)
+ *
+ * GBU's notices page is a single server-rendered table:
+ *   <table class="table table-condensed table-striped">
+ *     <tr><th>Date</th><th>Title</th></tr>
+ *     <tr><td>01 Oct 2026</td>
+ *         <td><a href="/Admissions/DownloadFile?nName=..." target="_blank">Title</a></td></tr>
+ *
+ * Notes (verified against the live page - see docs/GBU_WEB_STRUCTURE.md):
+ * - The date cell uses `DD Mon YYYY` (e.g. "01 Oct 2026"). Other GBU pages use
+ *   `DD-MM-YYYY`, so both are accepted.
+ * - The date MUST be anchored to the first <td> of the row. A loose date regex
+ *   also matches digit runs inside the `nName` filename (e.g. "25-08-2026"),
+ *   which produced 12 false positives and left 201 real rows undated.
+ * - There is no pagination: /page/notices returns all 213 notices in one page.
  */
+const GBU_NOTICE_ROW_RE =
+  /<tr[^>]*>\s*<td[^>]*>\s*(\d{2}\s+[A-Za-z]{3}\s+\d{4}|\d{2}[-/.]\d{2}[-/.]\d{4})\s*<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/gi;
+
+/**
+ * GBU publishes titles with HTML entities (e.g. "University&#39;s", "NCC &amp; Selection").
+ * Decode the common ones so titles are human-readable.
+ */
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&#(\d+);/g, (_m, code: string) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_m, code: string) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+}
+
 export function parseMainNoticesHtml(html: string): ScrapedRawNotice[] {
   const results: ScrapedRawNotice[] = [];
-  // GBU table pattern: <tr> ... <td>date</td> ... <a href="url">title</a> ... </tr>
-  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch: RegExpExecArray | null;
 
-  while ((rowMatch = rowRegex.exec(html)) !== null) {
-    const rowContent = rowMatch[1];
-    // Find link
-    const linkMatch = rowContent.match(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
-    // Find date (e.g. DD/MM/YYYY, DD-MM-YYYY, or DD.MM.YYYY)
-    const dateMatch = rowContent.match(/(?:<td[^>]*>)?\s*([0-3]?[0-9][/.-][0-1]?[0-9][/.-][2-9][0-9]{3})\s*(?:<\/td>)?/i);
+  while ((rowMatch = GBU_NOTICE_ROW_RE.exec(html)) !== null) {
+    const dateStr = rowMatch[1].trim();
+    const cellContent = rowMatch[2];
 
-    if (linkMatch) {
-      let href = linkMatch[1].trim();
-      if (!href.startsWith('http')) {
-        href = `https://test.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
-      }
-      const rawTitle = linkMatch[2].replace(/<[^>]+>/g, '').trim();
-      const dateStr = dateMatch ? dateMatch[1].trim() : new Date().toISOString().split('T')[0];
+    // Find the anchor inside this row's title cell
+    const linkMatch = cellContent.match(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    if (!linkMatch) continue;
 
-      if (rawTitle.length > 2) {
-        results.push({
-          source: 'main',
-          rawTitle,
-          url: href,
-          dateStr,
-        });
-      }
+    let href = linkMatch[1].trim();
+    // GBU sometimes emits `~/Content/...` which 404s - resolve against the root.
+    href = href.replace(/^~\//, '/');
+    if (!href.startsWith('http')) {
+      href = `https://test.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
+    }
+    const rawTitle = decodeHtmlEntities(linkMatch[2].replace(/<[^>]+>/g, '').trim());
+
+    if (rawTitle.length > 2) {
+      results.push({
+        source: 'main',
+        rawTitle,
+        url: href,
+        dateStr,
+      });
     }
   }
 
