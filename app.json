@@ -19,7 +19,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/brand/android-adaptive-foreground.png",
-        "backgroundColor": "#0B0B0C"
+        "backgroundColor": "#FFFFFF"
       },
       "package": "in.gbu.one"
     },
