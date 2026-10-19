@@ -361,6 +361,22 @@ export function groupNoticeThreads(notices: NoticeItem[]): NoticeItem[] {
 
 export const MOCK_NOTICES: NoticeItem[] = [
   {
+    id: 'not_revised_datesheet',
+    source: 'exams',
+    sourceId: 'src_exam_midsem_revised_2026',
+    title: 'Revised Schedule for Mid Semester Examination Autumn Session 2026-27',
+    cleanTitle: 'Revised Mid-Semester Exam Datesheet (Autumn 2026)',
+    postedAt: '2026-10-19T08:00:00.000Z',
+    fileUrl: 'https://exam.gbu.ac.in',
+    fileType: 'pdf',
+    category: 'datesheet',
+    audience: { all: true },
+    importance: 5,
+    deadlineAt: '2026-11-03T09:00:00.000Z',
+    threadId: 'th_midsem_autumn_2026',
+    threadUpdateCount: 3,
+  },
+  {
     id: 'not_1',
     source: 'exams',
     sourceId: 'src_exam_midsem_2026',

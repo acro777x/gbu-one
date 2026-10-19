@@ -57,21 +57,17 @@ export const LogoMark: React.FC<LogoMarkProps> = ({
     );
   }
 
-  // Authentic mark with NO background: uses light theme mark in light mode, dark theme mark in dark mode
+  // Authentic mark: use MARK_DARK_IMAGE by default so the numeral '1' is brilliantly defined against the dark circular interior on both light and dark screens
   const effectiveMarkSource =
     variant === 'light'
       ? MARK_LIGHT_IMAGE
-      : variant === 'dark'
-        ? MARK_DARK_IMAGE
-        : isDark
-          ? MARK_DARK_IMAGE
-          : MARK_LIGHT_IMAGE;
+      : MARK_DARK_IMAGE;
 
   return (
     <View style={[{ width: size, height: size }, styles.center, style]}>
       <Image
         source={effectiveMarkSource}
-        style={{ width: size, height: size }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
         resizeMode="contain"
         fadeDuration={0}
       />

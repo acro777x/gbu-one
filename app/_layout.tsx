@@ -60,11 +60,15 @@ function AppShell() {
     setSplashFinished(true);
   }, []);
 
-  // Guarantee onboarding routing for first-time launch as soon as storage and splash are ready
+  // Guarantee appropriate routing as soon as storage and splash are ready
   useEffect(() => {
-    if (splashFinished && hasCheckedOnboarding && !hasSeenOnboarding) {
+    if (splashFinished && hasCheckedOnboarding) {
       const navTimer = setTimeout(() => {
-        router.replace('/onboarding');
+        if (!hasSeenOnboarding) {
+          router.replace('/onboarding');
+        } else {
+          router.replace('/(tabs)');
+        }
       }, 60);
       return () => clearTimeout(navTimer);
     }
