@@ -5,10 +5,12 @@ import {
   Text,
   TextInput,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   RefreshControl,
   Share,
   Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -111,8 +113,14 @@ export default function NoticesScreen() {
       </View>
 
       {/* Notices List */}
-      <ScrollView
+      <FlatList
+        data={filteredNotices}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -120,32 +128,29 @@ export default function NoticesScreen() {
             tintColor={colors.accent}
           />
         }
-      >
-        {filteredNotices.length === 0 ? (
+        ListEmptyComponent={
           <EmptyState
             title="No notices found"
             description="Try clearing your search query or selecting a different category filter."
           />
-        ) : (
-          filteredNotices.map((n) => (
-            <NoticeCard
-              key={n.id}
-              id={n.id}
-              category={n.category}
-              title={n.cleanTitle}
-              source={n.source.toUpperCase()}
-              date={new Date(n.postedAt).toLocaleDateString('en-IN', {
-                day: 'numeric',
-                month: 'short',
-              })}
-              importance={n.importance}
-              deadlineBadge={n.deadlineAt ? 'Deadline' : undefined}
-              threadUpdateCount={n.threadUpdateCount}
-              onPress={() => handleOpenNotice(n)}
-            />
-          ))
+        }
+        renderItem={({ item: n }) => (
+          <NoticeCard
+            id={n.id}
+            category={n.category}
+            title={n.cleanTitle}
+            source={n.source.toUpperCase()}
+            date={new Date(n.postedAt).toLocaleDateString('en-IN', {
+              day: 'numeric',
+              month: 'short',
+            })}
+            importance={n.importance}
+            deadlineBadge={n.deadlineAt ? 'Deadline' : undefined}
+            threadUpdateCount={n.threadUpdateCount}
+            onPress={() => handleOpenNotice(n)}
+          />
         )}
-      </ScrollView>
+      />
 
       {/* Notice Detail Bottom Sheet */}
       <BottomSheet

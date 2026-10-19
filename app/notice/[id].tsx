@@ -23,10 +23,43 @@ export default function NoticeDetailScreen() {
   const [downloading, setDownloading] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
 
-  // Find notice by id or fallback to first notice
-  const notice: NoticeItem =
-    MOCK_NOTICES.find((n) => n.id === id) ||
-    MOCK_NOTICES[0];
+  // Find notice by id
+  const notice: NoticeItem | undefined = MOCK_NOTICES.find((n) => n.id === id);
+
+  if (!notice) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
+        <View style={[styles.navBar, { borderBottomColor: colors.borderGlass }]}>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={16}
+            style={({ pressed }) => [
+              styles.iconButton,
+              { backgroundColor: colors.surfaceAlt, opacity: pressed ? 0.7 : 1 },
+            ]}
+          >
+            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+          </Pressable>
+          <Text style={[styles.navTitle, { color: colors.textPrimary }]}>Notice Details</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <View style={styles.notFoundCenter}>
+          <Ionicons name="alert-circle-outline" size={56} color={colors.textTertiary} />
+          <Text style={[styles.notFoundTitle, { color: colors.textPrimary }]}>Notice Not Found</Text>
+          <Text style={[styles.notFoundDesc, { color: colors.textSecondary }]}>
+            The notice you requested may have expired, been removed, or the link is invalid.
+          </Text>
+          <Pressable
+            onPress={() => router.back()}
+            style={[styles.notFoundBtn, { backgroundColor: colors.accent }]}
+          >
+            <Text style={styles.notFoundBtnText}>Return to Notices</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const handleShare = async () => {
     try {
@@ -482,6 +515,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   secondaryCtaText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 15,
+  },
+  notFoundCenter: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  notFoundTitle: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 20,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  notFoundDesc: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing.lg,
+  },
+  notFoundBtn: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+  },
+  notFoundBtnText: {
+    color: '#FFFFFF',
     fontFamily: 'Inter-SemiBold',
     fontSize: 15,
   },

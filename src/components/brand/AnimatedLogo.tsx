@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -144,12 +144,18 @@ const styles = StyleSheet.create({
   },
   glowCircle: {
     position: 'absolute',
-    backgroundColor: 'rgba(255, 106, 43, 0.28)',
-    shadowColor: '#FF6A2B',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 36,
-    elevation: 10,
+    backgroundColor: 'rgba(255, 106, 43, 0.22)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#FF6A2B',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.5,
+        shadowRadius: 32,
+      },
+      android: {
+        elevation: 0,
+      },
+    }),
   },
 });
 

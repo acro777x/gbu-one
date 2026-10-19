@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, StatusBar } from 'react-native';
-import { Stack, router } from 'expo-router';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFonts } from 'expo-font';
 import { SplashScreenView } from '../src/components/brand/SplashScreenView';
 import { ThemeProvider, useAppTheme } from '../src/lib/ThemeContext';
@@ -12,8 +11,6 @@ import { ThemeProvider, useAppTheme } from '../src/lib/ThemeContext';
 function AppShell() {
   const { colors, isDark } = useAppTheme();
   const [splashFinished, setSplashFinished] = useState(false);
-  const [hasCheckedOnboarding, setHasCheckedOnboarding] = useState(false);
-  const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
 
   const [fontsLoaded, fontError] = useFonts({
     'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
@@ -22,27 +19,6 @@ function AppShell() {
     'Inter-SemiBold': require('../assets/fonts/Inter-SemiBold.ttf'),
     'Inter-Bold': require('../assets/fonts/Inter-Bold.ttf'),
   });
-
-  // Query onboarding status from persistent storage
-  useEffect(() => {
-    let mounted = true;
-    AsyncStorage.getItem('@gbu_one_has_seen_onboarding')
-      .then((val) => {
-        if (mounted) {
-          setHasSeenOnboarding(val === 'true');
-          setHasCheckedOnboarding(true);
-        }
-      })
-      .catch(() => {
-        if (mounted) {
-          setHasSeenOnboarding(false);
-          setHasCheckedOnboarding(true);
-        }
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   // Hide native splash screen as soon as custom fonts are fully loaded into memory
   useEffect(() => {
@@ -55,25 +31,11 @@ function AppShell() {
     setSplashFinished(true);
   }, []);
 
-  // Guarantee appropriate routing as soon as storage and splash are ready
-  useEffect(() => {
-    if (splashFinished && hasCheckedOnboarding) {
-      const navTimer = setTimeout(() => {
-        if (!hasSeenOnboarding) {
-          router.replace('/onboarding');
-        } else {
-          router.replace('/(tabs)');
-        }
-      }, 60);
-      return () => clearTimeout(navTimer);
-    }
-  }, [splashFinished, hasCheckedOnboarding, hasSeenOnboarding]);
-
   // Failsafe timer: ensures animated splash never hangs
   useEffect(() => {
     const safetyTimer = setTimeout(() => {
       handleSplashFinish();
-    }, 4500);
+    }, 2400);
     return () => clearTimeout(safetyTimer);
   }, [handleSplashFinish]);
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Pressable, ViewStyle, StyleProp, View } from 'react-native';
+import { StyleSheet, Pressable, ViewStyle, StyleProp, View, Platform } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { theme } from '../../lib/theme';
 import { useAppTheme } from '../../lib/ThemeContext';
@@ -101,10 +101,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     position: 'relative',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 0,
+      },
+    }),
     padding: theme.spacing.lg,
   },
   ambientGlow: {

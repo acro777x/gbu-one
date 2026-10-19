@@ -32,7 +32,8 @@ import {
 import { CountUp } from '../../src/components/motion/CountUp';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { useMailStore } from '../../src/store/useMailStore';
-import { GBUTimetableProvider, Slot } from '../../src/features/timetable/timetableProvider';
+import { Slot } from '../../src/features/timetable/timetableProvider';
+import { getSectionTimetable } from '../../src/features/timetable/timetableStore';
 import { MOCK_NOTICES } from '../../src/features/notices/noticeService';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
@@ -55,8 +56,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     let mounted = true;
-    const provider = new GBUTimetableProvider();
-    provider.getTimetable(enrolledClassKey, '39').then((tt) => {
+    getSectionTimetable(enrolledClassKey, '39', false).then((tt) => {
       if (!mounted) return;
       if (tt.slots.length > 0) {
         const dayOfWeek = (new Date().getDay() || 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -64,7 +64,7 @@ export default function HomeScreen() {
         const slot = todaySlots.length > 0 ? todaySlots[0] : tt.slots[0];
         setNextSlot(slot);
       }
-    });
+    }).catch(() => {});
     return () => {
       mounted = false;
     };
@@ -72,13 +72,14 @@ export default function HomeScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    const provider = new GBUTimetableProvider();
-    provider.getTimetable(enrolledClassKey, '39').then((tt) => {
+    getSectionTimetable(enrolledClassKey, '39', true).then((tt) => {
       if (tt.slots.length > 0) {
         const dayOfWeek = (new Date().getDay() || 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
         const todaySlots = tt.slots.filter((s) => s.day === dayOfWeek);
         setNextSlot(todaySlots.length > 0 ? todaySlots[0] : tt.slots[0]);
       }
+      setRefreshing(false);
+    }).catch(() => {
       setRefreshing(false);
     });
   };
@@ -400,13 +401,15 @@ export default function HomeScreen() {
           </View>
 
           {/* Motion Playground Shortcut in dev */}
-          <TouchableOpacity
-            style={styles.devLink}
-            onPress={() => router.push('/dev/motion' as never)}
-          >
-            <Sparkles size={14} color={colors.accent} />
-            <Text style={[styles.devLinkText, { color: colors.accent }]}>Motion Playground (/dev/motion)</Text>
-          </TouchableOpacity>
+          {__DEV__ && (
+            <TouchableOpacity
+              style={styles.devLink}
+              onPress={() => router.push('/dev/motion' as never)}
+            >
+              <Sparkles size={14} color={colors.accent} />
+              <Text style={[styles.devLinkText, { color: colors.accent }]}>Motion Playground (/dev/motion)</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 

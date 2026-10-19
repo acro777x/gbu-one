@@ -33,7 +33,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
 }) => {
   const { colors, isDark } = useAppTheme();
   const systemReduce = useReduceMotion();
-  const effectiveReduce = reduceMotion ?? false; // allow animations to play by default
+  const effectiveReduce = reduceMotion ?? systemReduce;
 
   const [showWordmark, setShowWordmark] = useState(isWarmStart);
   const [showTagline, setShowTagline] = useState(isWarmStart);
@@ -65,20 +65,20 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
     }
 
     // Cold start timings:
-    // 200ms: Wordmark starts rising
+    // 150ms: Wordmark starts rising
     const wordmarkTimer = setTimeout(() => {
       setShowWordmark(true);
-    }, 200);
+    }, 150);
 
-    // 450ms: Tagline typewriter starts at brisk 24ms per character
+    // 350ms: Tagline typewriter starts
     const taglineTimer = setTimeout(() => {
       setShowTagline(true);
-    }, 450);
+    }, 350);
 
-    // 3400ms: Ample time to appreciate the full animated mark, wordmark, and tagline
+    // 1700ms: Streamlined, punchy splash sequence
     const handoffTimer = setTimeout(() => {
       finishHandoff();
-    }, 3400);
+    }, 1700);
 
     return () => {
       clearTimeout(wordmarkTimer);

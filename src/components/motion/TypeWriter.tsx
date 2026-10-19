@@ -1,12 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { Text, TextStyle, StyleSheet, View, StyleProp } from 'react-native';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { TextStyle, StyleSheet, View, StyleProp } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
   withSequence,
   withTiming,
+  withDelay,
   cancelAnimation,
+  runOnJS,
+  Easing,
+  SharedValue,
 } from 'react-native-reanimated';
 import { theme } from '../../lib/theme';
 import { useReduceMotion } from '../../lib/useReduceMotion';
@@ -21,6 +25,38 @@ export interface TypeWriterProps {
   onDone?: () => void;
 }
 
+interface AnimatedCharProps {
+  char: string;
+  index: number;
+  revealedCount: SharedValue<number>;
+  style?: StyleProp<TextStyle>;
+  reduceMotion: boolean;
+}
+
+const AnimatedChar: React.FC<AnimatedCharProps> = ({
+  char,
+  index,
+  revealedCount,
+  style,
+  reduceMotion,
+}) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    'worklet';
+    if (reduceMotion) {
+      return { opacity: 1 };
+    }
+    return {
+      opacity: revealedCount.value >= index + 1 ? 1 : 0,
+    };
+  });
+
+  return (
+    <Animated.Text style={[styles.text, style, animatedStyle]}>
+      {char}
+    </Animated.Text>
+  );
+};
+
 export const TypeWriter: React.FC<TypeWriterProps> = ({
   text,
   speed = 45,
@@ -33,21 +69,26 @@ export const TypeWriter: React.FC<TypeWriterProps> = ({
   const systemReduce = useReduceMotion();
   const effectiveReduce = reduceMotion ?? systemReduce;
 
-  const [displayedText, setDisplayedText] = useState(effectiveReduce ? text : '');
   const [isDone, setIsDone] = useState(effectiveReduce);
   const cursorOpacity = useSharedValue(1);
+  const revealedCount = useSharedValue(effectiveReduce ? text.length : 0);
+
+  const handleComplete = useCallback(() => {
+    setIsDone(true);
+    onDone?.();
+  }, [onDone]);
 
   useEffect(() => {
     if (isDone) {
       cancelAnimation(cursorOpacity);
-      cursorOpacity.value = withTiming(0, { duration: 600 });
+      cursorOpacity.value = withTiming(0, { duration: 400 });
       return;
     }
 
     cursorOpacity.value = withRepeat(
       withSequence(
-        withTiming(1, { duration: 400 }),
-        withTiming(0, { duration: 400 }),
+        withTiming(1, { duration: 350 }),
+        withTiming(0, { duration: 350 }),
       ),
       -1,
       true,
@@ -56,57 +97,109 @@ export const TypeWriter: React.FC<TypeWriterProps> = ({
 
   useEffect(() => {
     if (effectiveReduce) {
-      setDisplayedText(text);
-      setIsDone(true);
-      onDone?.();
+      revealedCount.value = text.length;
+      handleComplete();
       return;
     }
 
-    setDisplayedText('');
+    revealedCount.value = 0;
     setIsDone(false);
 
-    let currentIndex = 0;
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const startTimeout = setTimeout(() => {
-      interval = setInterval(() => {
-        if (currentIndex < text.length) {
-          currentIndex++;
-          setDisplayedText(text.slice(0, currentIndex));
-        } else {
-          if (interval) clearInterval(interval);
-          setIsDone(true);
-          onDone?.();
-        }
-      }, speed);
-    }, delay);
+    revealedCount.value = withDelay(
+      delay,
+      withTiming(
+        text.length,
+        {
+          duration: text.length * speed,
+          easing: Easing.linear,
+        },
+        (finished) => {
+          if (finished) {
+            runOnJS(handleComplete)();
+          }
+        },
+      ),
+    );
 
     return () => {
-      clearTimeout(startTimeout);
-      if (interval) clearInterval(interval);
+      cancelAnimation(revealedCount);
     };
-  }, [text, speed, delay, effectiveReduce]);
+  }, [text, speed, delay, effectiveReduce, handleComplete]);
 
   const animatedCursorStyle = useAnimatedStyle(() => ({
     opacity: cursorOpacity.value,
   }));
 
+  // Structure characters into words to allow normal line wrapping
+  const words = useMemo(() => {
+    let globalIndex = 0;
+    const splitWords = text.split(' ');
+    return splitWords.map((word, wIdx) => {
+      const chars = word.split('').map((char) => {
+        const item = { char, index: globalIndex };
+        globalIndex++;
+        return item;
+      });
+
+      const hasSpace = wIdx < splitWords.length - 1;
+      const spaceIndex = hasSpace ? globalIndex++ : -1;
+
+      return {
+        chars,
+        hasSpace,
+        spaceIndex,
+      };
+    });
+  }, [text]);
+
   return (
     <View style={styles.container} accessible accessibilityLabel={text}>
-      <Text style={[styles.text, style]}>
-        {displayedText}
+      <View style={styles.textRow}>
+        {words.map((w, wIdx) => (
+          <View key={`w_${wIdx}`} style={styles.wordRow}>
+            {w.chars.map((c) => (
+              <AnimatedChar
+                key={`c_${c.index}`}
+                char={c.char}
+                index={c.index}
+                revealedCount={revealedCount}
+                style={style}
+                reduceMotion={effectiveReduce}
+              />
+            ))}
+            {w.hasSpace && (
+              <AnimatedChar
+                char=" "
+                index={w.spaceIndex}
+                revealedCount={revealedCount}
+                style={style}
+                reduceMotion={effectiveReduce}
+              />
+            )}
+          </View>
+        ))}
         {cursor && !isDone && (
           <Animated.Text style={[styles.cursor, style, animatedCursorStyle]}>
             |
           </Animated.Text>
         )}
-      </Text>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wordRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -118,6 +211,7 @@ const styles = StyleSheet.create({
   cursor: {
     color: theme.colors.accent,
     fontFamily: 'Inter-Regular',
+    marginLeft: 1,
   },
 });
 

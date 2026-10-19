@@ -33,6 +33,7 @@ export interface Timetable {
   fetchedAt: string;
   semesterSessionId: string;
   slots: Slot[];
+  source?: 'live' | 'mock';
 }
 
 export interface TimetableDiffItem {
@@ -216,6 +217,7 @@ export function parseGBUClassCode(rawCode: string): ParsedClassCode {
 export class GBUTimetableProvider implements TimetableProvider {
   private baseUrl = 'https://mygbu.in/schd/api.php';
   private cachedRawData: Record<string, RawGBUTimetableItem[]> = {};
+  private isLiveSource: Record<string, boolean> = {};
 
   private async fetchRawData(sessionId: string = '39'): Promise<RawGBUTimetableItem[]> {
     if (this.cachedRawData[sessionId]) {
@@ -241,12 +243,15 @@ export class GBUTimetableProvider implements TimetableProvider {
       const data = await response.json();
       if (Array.isArray(data) && data.length > 0) {
         this.cachedRawData[sessionId] = data;
+        this.isLiveSource[sessionId] = true;
         return data;
       }
+      this.isLiveSource[sessionId] = false;
       return MOCK_RAW_TIMETABLE;
     } catch (err) {
       clearTimeout(timeoutId);
       console.warn('Network fetch error or timeout, falling back to mock timetable:', err);
+      this.isLiveSource[sessionId] = false;
       return MOCK_RAW_TIMETABLE;
     }
   }
@@ -316,6 +321,7 @@ export class GBUTimetableProvider implements TimetableProvider {
       fetchedAt: new Date().toISOString(),
       semesterSessionId,
       slots,
+      source: this.isLiveSource[semesterSessionId] ? 'live' : 'mock',
     };
   }
 }
@@ -328,6 +334,11 @@ export function computeTimetableDiff(
   oldTimetable: Timetable,
   newTimetable: Timetable,
 ): TimetableDiffItem[] {
+  // Never compare mock against live or vice-versa to prevent false "new class added" alerts
+  if (oldTimetable.source === 'mock' || newTimetable.source === 'mock') {
+    return [];
+  }
+
   const diffs: TimetableDiffItem[] = [];
 
   const remainingOldSlots = [...oldTimetable.slots];

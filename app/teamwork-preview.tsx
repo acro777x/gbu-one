@@ -38,16 +38,24 @@ export default function TeamworkPreviewScreen() {
         >
           <ArrowLeft size={18} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Cohort & Teamwork Hub</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Cohort Hub (Preview)</Text>
         <View style={{ width: 36 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Feature Preview Disclaimer Banner */}
+        <View style={[styles.previewBanner, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}44` }]}>
+          <Text style={[styles.previewBannerTitle, { color: colors.accent }]}>PREVIEW MODE • SAMPLE DATA</Text>
+          <Text style={[styles.previewBannerText, { color: colors.textSecondary }]}>
+            Class standing and peer study circles below are simulation previews. Real cohort metrics will sync once backend cohort networking is connected.
+          </Text>
+        </View>
+
         {/* Section Cohort Hero */}
         <GlassCard style={styles.heroCard}>
           <View style={styles.heroRow}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.heroSubtitle, { color: colors.accent }]}>SECTION BATCH METRICS</Text>
+              <Text style={[styles.heroSubtitle, { color: colors.accent }]}>SAMPLE BATCH BENCHMARKS</Text>
               <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>
                 {classSelection?.section || 'BCS-II B'} ({classSelection?.school || 'SOICT'})
               </Text>
@@ -276,5 +284,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 12,
     lineHeight: 16,
+  },
+  previewBanner: {
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    marginBottom: theme.spacing.md,
+  },
+  previewBannerTitle: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 11,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  previewBannerText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
   },
 });

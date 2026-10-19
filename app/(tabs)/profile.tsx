@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,6 +8,7 @@ import {
   Switch,
   Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -43,11 +44,55 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, isGuest, classSelection, logout } = useAuthStore();
 
-  // Notification toggles
+  // Persistent notification preferences
   const [notifyNotices, setNotifyNotices] = useState(true);
   const [notifyTimetable, setNotifyTimetable] = useState(true);
   const [notifyExams, setNotifyExams] = useState(true);
   const [notifyDeadlines, setNotifyDeadlines] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.multiGet([
+      '@gbu_one_notify_notices',
+      '@gbu_one_notify_timetable',
+      '@gbu_one_notify_exams',
+      '@gbu_one_notify_deadlines',
+    ]).then((pairs) => {
+      if (!mounted) return;
+      pairs.forEach(([key, val]) => {
+        if (val !== null) {
+          const parsed = val === 'true';
+          if (key === '@gbu_one_notify_notices') setNotifyNotices(parsed);
+          if (key === '@gbu_one_notify_timetable') setNotifyTimetable(parsed);
+          if (key === '@gbu_one_notify_exams') setNotifyExams(parsed);
+          if (key === '@gbu_one_notify_deadlines') setNotifyDeadlines(parsed);
+        }
+      });
+    }).catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const toggleNotices = (val: boolean) => {
+    setNotifyNotices(val);
+    AsyncStorage.setItem('@gbu_one_notify_notices', String(val)).catch(() => {});
+  };
+
+  const toggleTimetable = (val: boolean) => {
+    setNotifyTimetable(val);
+    AsyncStorage.setItem('@gbu_one_notify_timetable', String(val)).catch(() => {});
+  };
+
+  const toggleExams = (val: boolean) => {
+    setNotifyExams(val);
+    AsyncStorage.setItem('@gbu_one_notify_exams', String(val)).catch(() => {});
+  };
+
+  const toggleDeadlines = (val: boolean) => {
+    setNotifyDeadlines(val);
+    AsyncStorage.setItem('@gbu_one_notify_deadlines', String(val)).catch(() => {});
+  };
 
   // Connected local attendance store
   const { subjects, markAttended, markMissed } = useAttendanceStore();
@@ -340,7 +385,7 @@ export default function ProfileScreen() {
             <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Smart Notices</Text>
             <Switch
               value={notifyNotices}
-              onValueChange={setNotifyNotices}
+              onValueChange={toggleNotices}
               trackColor={{ false: colors.borderGlass, true: colors.accent }}
             />
           </View>
@@ -349,7 +394,7 @@ export default function ProfileScreen() {
             <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Timetable & Room Changes</Text>
             <Switch
               value={notifyTimetable}
-              onValueChange={setNotifyTimetable}
+              onValueChange={toggleTimetable}
               trackColor={{ false: colors.borderGlass, true: colors.accent }}
             />
           </View>
@@ -358,7 +403,7 @@ export default function ProfileScreen() {
             <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Exam Dates & Date Sheets</Text>
             <Switch
               value={notifyExams}
-              onValueChange={setNotifyExams}
+              onValueChange={toggleExams}
               trackColor={{ false: colors.borderGlass, true: colors.accent }}
             />
           </View>
@@ -367,28 +412,30 @@ export default function ProfileScreen() {
             <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Deadlines & Fee Submission</Text>
             <Switch
               value={notifyDeadlines}
-              onValueChange={setNotifyDeadlines}
+              onValueChange={toggleDeadlines}
               trackColor={{ false: colors.borderGlass, true: colors.accent }}
             />
           </View>
         </GlassCard>
 
         {/* Dev Motion Playground Link */}
-        <GlassCard style={styles.card}>
-          <TouchableOpacity
-            style={styles.settingRow}
-            onPress={() => router.push('/dev/motion' as never)}
-          >
-            <View style={styles.settingIconCol}>
-              <Sparkles size={20} color={colors.accent} />
-            </View>
-            <View style={styles.settingTextCol}>
-              <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>Motion Playground</Text>
-              <Text style={[styles.settingValue, { color: colors.textSecondary }]}>Test UI-thread animations, TypeWriter, LetterRise</Text>
-            </View>
-            <ChevronRight size={18} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </GlassCard>
+        {__DEV__ && (
+          <GlassCard style={styles.card}>
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => router.push('/dev/motion' as never)}
+            >
+              <View style={styles.settingIconCol}>
+                <Sparkles size={20} color={colors.accent} />
+              </View>
+              <View style={styles.settingTextCol}>
+                <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>Motion Playground</Text>
+                <Text style={[styles.settingValue, { color: colors.textSecondary }]}>Test UI-thread animations, TypeWriter, LetterRise</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </GlassCard>
+        )}
 
         {/* Account / Logout */}
         <GlassCard style={styles.card}>

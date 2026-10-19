@@ -14,6 +14,7 @@ import { Eye, EyeOff, User, Lock } from 'lucide-react-native';
 import { LogoMark } from '../src/components/brand/LogoMark';
 import { OfficialSeal } from '../src/components/brand/OfficialSeal';
 import { PillButton } from '../src/components/ui/PillButton';
+import { BottomSheet } from '../src/components/ui/BottomSheet';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { useAppTheme } from '../src/lib/ThemeContext';
 import { theme } from '../src/lib/theme';
@@ -26,7 +27,16 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { login, loginAsGuest } = useAuthStore();
+  // Registration sheet state
+  const [registerVisible, setRegisterVisible] = useState(false);
+  const [regName, setRegName] = useState('');
+  const [regRoll, setRegRoll] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regError, setRegError] = useState<string | null>(null);
+  const [regLoading, setRegLoading] = useState(false);
+
+  const { login, register, loginAsGuest } = useAuthStore();
 
   const handleLogin = async () => {
     setErrorMessage(null);
@@ -45,6 +55,33 @@ export default function LoginScreen() {
   const handleGuest = () => {
     loginAsGuest();
     router.replace('/(tabs)');
+  };
+
+  const handleRegister = async () => {
+    setRegError(null);
+    if (!regName.trim() || !regRoll.trim() || !regEmail.trim() || !regPassword) {
+      setRegError('All fields are required.');
+      return;
+    }
+    if (regPassword.length < 6) {
+      setRegError('Password must be at least 6 characters.');
+      return;
+    }
+    setRegLoading(true);
+    const result = await register({
+      rollNo: regRoll,
+      name: regName,
+      email: regEmail,
+      password: regPassword,
+    });
+    setRegLoading(false);
+
+    if (result.success) {
+      setRegisterVisible(false);
+      router.replace('/(tabs)');
+    } else {
+      setRegError(result.error || 'Failed to create student account.');
+    }
   };
 
   return (
@@ -168,6 +205,20 @@ export default function LoginScreen() {
             size="md"
             style={styles.guestBtn}
           />
+
+          {/* Create Account Link */}
+          <TouchableOpacity
+            style={styles.createAccountRow}
+            onPress={() => setRegisterVisible(true)}
+            hitSlop={8}
+          >
+            <Text style={[styles.createAccountPrompt, { color: colors.textSecondary }]}>
+              New to GBU One?{' '}
+            </Text>
+            <Text style={[styles.createAccountLink, { color: colors.accent }]}>
+              Create account
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Footer Note */}
@@ -178,6 +229,86 @@ export default function LoginScreen() {
           <OfficialSeal />
         </View>
       </ScrollView>
+
+      {/* Registration Bottom Sheet */}
+      <BottomSheet
+        visible={registerVisible}
+        onClose={() => setRegisterVisible(false)}
+        title="Create Student Account"
+      >
+        <View style={styles.sheetContent}>
+          {regError && (
+            <View style={[styles.errorBox, { backgroundColor: colors.dangerSoft, borderColor: `${colors.danger}40`, marginBottom: 12 }]}>
+              <Text style={[styles.errorText, { color: colors.danger }]}>{regError}</Text>
+            </View>
+          )}
+
+          <Text style={[styles.sheetLabel, { color: colors.textSecondary }]}>Full Name</Text>
+          <TextInput
+            value={regName}
+            onChangeText={(text) => {
+              setRegName(text);
+              setRegError(null);
+            }}
+            placeholder="e.g. Aarav Sharma"
+            placeholderTextColor={colors.textTertiary}
+            style={[styles.sheetInput, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass, color: colors.textPrimary }]}
+          />
+
+          <Text style={[styles.sheetLabel, { color: colors.textSecondary }]}>Roll Number / Enrollment No.</Text>
+          <TextInput
+            value={regRoll}
+            onChangeText={(text) => {
+              setRegRoll(text);
+              setRegError(null);
+            }}
+            placeholder="e.g. 22/BCS/048"
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="characters"
+            style={[styles.sheetInput, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass, color: colors.textPrimary }]}
+          />
+
+          <Text style={[styles.sheetLabel, { color: colors.textSecondary }]}>GBU Email</Text>
+          <TextInput
+            value={regEmail}
+            onChangeText={(text) => {
+              setRegEmail(text);
+              setRegError(null);
+            }}
+            placeholder="e.g. student@gbu.ac.in"
+            placeholderTextColor={colors.textTertiary}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            style={[styles.sheetInput, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass, color: colors.textPrimary }]}
+          />
+
+          <Text style={[styles.sheetLabel, { color: colors.textSecondary }]}>Create App Password</Text>
+          <TextInput
+            value={regPassword}
+            onChangeText={(text) => {
+              setRegPassword(text);
+              setRegError(null);
+            }}
+            placeholder="Min 6 characters"
+            placeholderTextColor={colors.textTertiary}
+            secureTextEntry
+            style={[styles.sheetInput, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass, color: colors.textPrimary }]}
+          />
+
+          <PillButton
+            label="Create Account"
+            onPress={handleRegister}
+            loading={regLoading}
+            variant="primary"
+            size="md"
+            style={{ marginTop: 14 }}
+          />
+
+          <Text style={[styles.sheetDisclaimer, { color: colors.textTertiary }]}>
+            Never enter your official university web portal password.
+          </Text>
+        </View>
+      </BottomSheet>
     </KeyboardAvoidingView>
   );
 }
@@ -287,5 +418,45 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     maxWidth: 300,
+  },
+  createAccountRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingVertical: 4,
+  },
+  createAccountPrompt: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 13,
+  },
+  createAccountLink: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
+  },
+  sheetContent: {
+    paddingTop: 8,
+    paddingBottom: 20,
+  },
+  sheetLabel: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 12,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  sheetInput: {
+    height: 44,
+    borderRadius: theme.radius.chip,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    fontFamily: 'Inter-Regular',
+    fontSize: 14,
+  },
+  sheetDisclaimer: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 14,
+    lineHeight: 16,
   },
 });

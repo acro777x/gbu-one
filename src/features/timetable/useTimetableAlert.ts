@@ -1,44 +1,65 @@
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  GBUTimetableProvider,
   computeTimetableDiff,
   TimetableDiffItem,
   Timetable,
 } from './timetableProvider';
+import { getSectionTimetable } from './timetableStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const TIMETABLE_SNAPSHOT_KEY = '@gbu_one_timetable_last_snapshot';
 const TIMETABLE_LAST_ALERT_KEY = '@gbu_one_timetable_last_alert_id';
 
-export function useTimetableAlert(enrolledClassKey: string = 'BAI-II A') {
+export function useTimetableAlert(enrolledClassKey?: string) {
   const [modalVisible, setModalVisible] = useState(false);
   const [activeDiff, setActiveDiff] = useState<TimetableDiffItem | null>(null);
+
+  const authClass = useAuthStore((s) => s.classSelection?.section);
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const effectiveClassKey = enrolledClassKey || authClass || 'BCS-II B';
 
   useEffect(() => {
     let isMounted = true;
 
     async function checkForChanges() {
-      try {
-        const provider = new GBUTimetableProvider();
-        const currentTimetable = await provider.getTimetable(enrolledClassKey);
+      // Do not run background alerts for unauthenticated guest sessions
+      if (isGuest) return;
 
-        const rawOld = await AsyncStorage.getItem(`${TIMETABLE_SNAPSHOT_KEY}_${enrolledClassKey}`);
+      try {
+        const currentTimetable = await getSectionTimetable(effectiveClassKey);
+
+        // Never store or diff against a mock fallback to prevent false alerts
+        if (currentTimetable.source === 'mock') {
+          return;
+        }
+
+        const rawOld = await AsyncStorage.getItem(`${TIMETABLE_SNAPSHOT_KEY}_${effectiveClassKey}`);
         if (!rawOld) {
-          // Store first snapshot
+          // Store first live snapshot
           await AsyncStorage.setItem(
-            `${TIMETABLE_SNAPSHOT_KEY}_${enrolledClassKey}`,
+            `${TIMETABLE_SNAPSHOT_KEY}_${effectiveClassKey}`,
             JSON.stringify(currentTimetable),
           );
           return;
         }
 
         const oldTimetable: Timetable = JSON.parse(rawOld);
+        if (oldTimetable.source === 'mock') {
+          // Upgrade old mock snapshot to new live snapshot silently
+          await AsyncStorage.setItem(
+            `${TIMETABLE_SNAPSHOT_KEY}_${effectiveClassKey}`,
+            JSON.stringify(currentTimetable),
+          );
+          return;
+        }
+
         const diffs = computeTimetableDiff(oldTimetable, currentTimetable);
 
         if (diffs.length > 0) {
           const firstDiff = diffs[0];
           const lastAlertId = await AsyncStorage.getItem(
-            `${TIMETABLE_LAST_ALERT_KEY}_${enrolledClassKey}`,
+            `${TIMETABLE_LAST_ALERT_KEY}_${effectiveClassKey}`,
           );
 
           const alertSignature = `${firstDiff.type}_${firstDiff.slot.id}_${firstDiff.slot.start}`;
@@ -46,8 +67,13 @@ export function useTimetableAlert(enrolledClassKey: string = 'BAI-II A') {
             setActiveDiff(firstDiff);
             setModalVisible(true);
             await AsyncStorage.setItem(
-              `${TIMETABLE_LAST_ALERT_KEY}_${enrolledClassKey}`,
+              `${TIMETABLE_LAST_ALERT_KEY}_${effectiveClassKey}`,
               alertSignature,
+            );
+            // Save latest live snapshot
+            await AsyncStorage.setItem(
+              `${TIMETABLE_SNAPSHOT_KEY}_${effectiveClassKey}`,
+              JSON.stringify(currentTimetable),
             );
           }
         }
@@ -61,7 +87,7 @@ export function useTimetableAlert(enrolledClassKey: string = 'BAI-II A') {
     return () => {
       isMounted = false;
     };
-  }, [enrolledClassKey]);
+  }, [effectiveClassKey, isGuest]);
 
   const dismissAlert = () => {
     setModalVisible(false);
@@ -73,3 +99,5 @@ export function useTimetableAlert(enrolledClassKey: string = 'BAI-II A') {
     dismissAlert,
   };
 }
+
+export default useTimetableAlert;

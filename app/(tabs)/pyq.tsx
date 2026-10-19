@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   TextInput,
   Dimensions,
+  FlatList,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -63,7 +65,7 @@ export default function PYQScreen() {
 
   const handleBulkDownload = () => {
     if (selectedIds.length === 0) return;
-    setToastMessage(`Downloading ${selectedIds.length} paper${selectedIds.length > 1 ? 's' : ''} as ZIP bundle...`);
+    setToastMessage(`Bulk download (${selectedIds.length} papers) is coming soon with cloud storage integration.`);
     setToastVisible(true);
     setSelectedIds([]);
   };
@@ -83,7 +85,7 @@ export default function PYQScreen() {
 
   const handleSendReport = (reason: string) => {
     setReportSheetVisible(false);
-    setToastMessage(`Report submitted for ${reportingPaper?.subjectCode} (${reason})`);
+    setToastMessage(`Report received: moderation queue will review ${reportingPaper?.subjectCode} (${reason}).`);
     setToastVisible(true);
   };
 
@@ -94,7 +96,7 @@ export default function PYQScreen() {
       return;
     }
     setUploadSheetVisible(false);
-    setToastMessage(`Uploaded ${uploadSubjectCode.toUpperCase()}. Submitted for student review.`);
+    setToastMessage(`Upload submitted: ${uploadSubjectCode.toUpperCase()} is queued for cloud storage sync.`);
     setToastVisible(true);
     setUploadSubjectCode('');
     setUploadSubjectName('');
@@ -108,6 +110,106 @@ export default function PYQScreen() {
   );
 
   const trendingPapers = [...MOCK_PAPERS].sort((a, b) => b.downloads - a.downloads).slice(0, 3);
+
+  const renderPaperItem = ({ item: paper }: { item: PYQItem }) => {
+    const isSelected = selectedIds.includes(paper.id);
+
+    return (
+      <GlassCard
+        key={paper.id}
+        style={[styles.card, isSelected && { backgroundColor: colors.accentSoft }]}
+        accentBorder={isSelected}
+        onPress={() => toggleSelect(paper.id)}
+      >
+        <View style={styles.cardHeader}>
+          <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+            <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                handleOpenReport(paper);
+              }}
+              hitSlop={8}
+            >
+              <Flag size={13} color={colors.textTertiary} />
+            </TouchableOpacity>
+            {isSelected && (
+              <CheckCircle2 size={16} color={colors.accent} />
+            )}
+          </View>
+        </View>
+
+        <Text style={[styles.subjectName, { color: colors.textPrimary }]} numberOfLines={2}>
+          {paper.subjectName}
+        </Text>
+
+        <View style={styles.metaRow}>
+          <Text style={[styles.typeText, { color: colors.textSecondary }]}>
+            {paper.year} • {paper.examType}
+          </Text>
+          <Text style={[styles.programmeTag, { color: colors.textTertiary }]}>
+            {paper.programme} ({paper.semester})
+          </Text>
+        </View>
+
+        <View style={styles.downloadRow}>
+          <Download size={12} color={colors.textSecondary} />
+          <Text style={[styles.downloadCount, { color: colors.textSecondary }]}>{paper.downloads} downloads</Text>
+        </View>
+      </GlassCard>
+    );
+  };
+
+  const renderHeader = () => (
+    <View>
+      {/* Trending Spotlight */}
+      {searchQuery === '' && selectedSchool === 'All' && selectedSemester === 'All' && (
+        <View style={styles.trendingSection}>
+          <View style={styles.sectionHeaderRow}>
+            <Flame size={16} color={colors.accent} />
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Trending Papers</Text>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendingScroll}>
+            {trendingPapers.map((paper) => (
+              <GlassCard
+                key={`trend_${paper.id}`}
+                style={styles.trendingCard}
+                onPress={() => toggleSelect(paper.id)}
+              >
+                <View style={styles.cardHeader}>
+                  <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+                    <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
+                  </View>
+                  <Text style={[styles.trendDownloads, { color: colors.accent }]}>{paper.downloads} dl</Text>
+                </View>
+                <Text style={[styles.trendTitle, { color: colors.textPrimary }]} numberOfLines={2}>{paper.subjectName}</Text>
+                <Text style={[styles.typeText, { color: colors.textSecondary }]}>{paper.year} • {paper.examType}</Text>
+              </GlassCard>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Papers Grid Header */}
+      <View style={styles.allPapersHeaderRow}>
+        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>All Question Papers</Text>
+        <Text style={[styles.resultsCount, { color: colors.textSecondary }]}>
+          {filteredPapers.length} paper{filteredPapers.length === 1 ? '' : 's'}
+        </Text>
+      </View>
+    </View>
+  );
+
+  const renderFooter = () => (
+    <View style={[styles.takedownSection, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
+      <Text style={[styles.takedownText, { color: colors.textSecondary }]}>
+        DMCA & University Copyright Notice: Question papers uploaded are submitted by students for academic non-commercial revision. Gautam Buddha University holds official curriculum copyright.
+      </Text>
+    </View>
+  );
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
@@ -173,111 +275,27 @@ export default function PYQScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]} showsVerticalScrollIndicator={false}>
-        {/* Trending Spotlight */}
-        {searchQuery === '' && selectedSchool === 'All' && selectedSemester === 'All' && (
-          <View style={styles.trendingSection}>
-            <View style={styles.sectionHeaderRow}>
-              <Flame size={16} color={colors.accent} />
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Trending Papers</Text>
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendingScroll}>
-              {trendingPapers.map((paper) => (
-                <GlassCard
-                  key={`trend_${paper.id}`}
-                  style={styles.trendingCard}
-                  onPress={() => toggleSelect(paper.id)}
-                >
-                  <View style={styles.cardHeader}>
-                    <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
-                      <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
-                    </View>
-                    <Text style={[styles.trendDownloads, { color: colors.accent }]}>{paper.downloads} dl</Text>
-                  </View>
-                  <Text style={[styles.trendTitle, { color: colors.textPrimary }]} numberOfLines={2}>{paper.subjectName}</Text>
-                  <Text style={[styles.typeText, { color: colors.textSecondary }]}>{paper.year} • {paper.examType}</Text>
-                </GlassCard>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Papers Grid */}
-        <View style={styles.allPapersHeaderRow}>
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>All Question Papers</Text>
-          <Text style={[styles.resultsCount, { color: colors.textSecondary }]}>
-            {filteredPapers.length} paper{filteredPapers.length === 1 ? '' : 's'}
-          </Text>
-        </View>
-
-        {filteredPapers.length === 0 ? (
+      <FlatList
+        data={filteredPapers}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={styles.columnWrapper}
+        renderItem={renderPaperItem}
+        ListHeaderComponent={renderHeader}
+        ListEmptyComponent={
           <EmptyState
             title="No papers found"
             description="Try selecting a different school, semester or search keyword."
           />
-        ) : (
-          <View style={styles.grid}>
-            {filteredPapers.map((paper) => {
-              const isSelected = selectedIds.includes(paper.id);
-
-              return (
-                <GlassCard
-                  key={paper.id}
-                  style={[styles.card, isSelected && { backgroundColor: colors.accentSoft }]}
-                  accentBorder={isSelected}
-                  onPress={() => toggleSelect(paper.id)}
-                >
-                  <View style={styles.cardHeader}>
-                    <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
-                      <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <TouchableOpacity
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handleOpenReport(paper);
-                        }}
-                        hitSlop={8}
-                      >
-                        <Flag size={13} color={colors.textTertiary} />
-                      </TouchableOpacity>
-                      {isSelected && (
-                        <CheckCircle2 size={16} color={colors.accent} />
-                      )}
-                    </View>
-                  </View>
-
-                  <Text style={[styles.subjectName, { color: colors.textPrimary }]} numberOfLines={2}>
-                    {paper.subjectName}
-                  </Text>
-
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.typeText, { color: colors.textSecondary }]}>
-                      {paper.year} • {paper.examType}
-                    </Text>
-                    <Text style={[styles.programmeTag, { color: colors.textTertiary }]}>
-                      {paper.programme} ({paper.semester})
-                    </Text>
-                  </View>
-
-                  <View style={styles.downloadRow}>
-                    <Download size={12} color={colors.textSecondary} />
-                    <Text style={[styles.downloadCount, { color: colors.textSecondary }]}>{paper.downloads} downloads</Text>
-                  </View>
-                </GlassCard>
-              );
-            })}
-          </View>
-        )}
-
-        {/* Copyright / Takedown note */}
-        <View style={[styles.takedownSection, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
-          <Text style={[styles.takedownText, { color: colors.textSecondary }]}>
-            DMCA & University Copyright Notice: Question papers uploaded are submitted by students for academic non-commercial revision. Gautam Buddha University holds official curriculum copyright.
-          </Text>
-        </View>
-      </ScrollView>
+        }
+        ListFooterComponent={filteredPapers.length > 0 ? renderFooter : null}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={8}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+      />
 
       {/* Floating Bulk Action Bar */}
       {selectedIds.length > 0 && (
@@ -550,6 +568,10 @@ const styles = StyleSheet.create({
   resultsCount: {
     fontFamily: 'Inter-Medium',
     fontSize: 12,
+  },
+  columnWrapper: {
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
   grid: {
     flexDirection: 'row',

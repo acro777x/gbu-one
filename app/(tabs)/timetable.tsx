@@ -25,10 +25,10 @@ import {
 import * as Haptics from 'expo-haptics';
 import { GlassCard, Skeleton, EmptyState } from '../../src/components/ui';
 import {
-  GBUTimetableProvider,
   Timetable,
   Slot,
 } from '../../src/features/timetable/timetableProvider';
+import { getSectionTimetable } from '../../src/features/timetable/timetableStore';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { useAttendanceStore } from '../../src/features/attendance/attendanceStore';
 import { useAppTheme } from '../../src/lib/ThemeContext';
@@ -83,8 +83,6 @@ function getFacultyColor(name?: string): string {
   return FACULTY_COLORS[sum % FACULTY_COLORS.length];
 }
 
-const provider = new GBUTimetableProvider();
-
 export default function TimetableScreen() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -109,12 +107,12 @@ export default function TimetableScreen() {
     setTimeout(() => setToastMessage(null), 2500);
   };
 
-  const loadTimetable = async () => {
+  const loadTimetable = async (forceRefresh = false) => {
     try {
-      setLoading(true);
-      const data = await provider.getTimetable(currentSection, '39');
+      if (!forceRefresh) setLoading(true);
+      const data = await getSectionTimetable(currentSection, '39', forceRefresh);
       setTimetable(data);
-      setIsOffline(false);
+      setIsOffline(data.source === 'mock');
     } catch {
       setIsOffline(true);
     } finally {
@@ -123,12 +121,12 @@ export default function TimetableScreen() {
   };
 
   useEffect(() => {
-    loadTimetable();
+    loadTimetable(false);
   }, [currentSection]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadTimetable();
+    await loadTimetable(true);
     setRefreshing(false);
   };
 

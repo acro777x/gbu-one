@@ -22,42 +22,43 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Profile screen with preferences, guest variant, delete account
 - [x] Screenshots vs references in `docs/qa/`
 
-## Phase 2 — Timetable (the headache)
+## Phase 2 — Timetable
 - [x] `TimetableProvider` interface + mock + canonical schema
 - [x] Timetable screen (day/week/compact), skeleton/empty/error/offline
 - [x] Next-class card with countdown + progress bar on Home
 - [x] Snapshot + diff engine with unit tests
-- [x] Worker job to poll classes and write `timetable_changes`
-- [x] Push for timetable changes; "Changed" chips in UI
-- [x] Real provider (after owner supplies API details)
+- [x] Central timetable store (`timetableStore.ts`) with 6-hour TTL AsyncStorage caching & request deduplication
+- [ ] Push for timetable changes; "Changed" chips in UI (pending backend push dispatch)
+- [x] Real provider (`mygbu.in/schd/api.php?schd=39` with mock fallback)
 
 ## Phase 3 — Notices
-- [x] Worker: fetch + parse main notices and exams portal, idempotent inserts
-- [x] Attachment download, OCR for images and scanned PDFs, store raw text
-- [x] Classifier, audience tagging, importance score (tests with real titles)
-- [x] Deadline extraction and thread grouping
-- [x] Notices screen: search, removable chips, bottom-sheet detail, original viewer
-- [x] Hero carousel on Home from top notices
-- [x] Push pipeline + notification preferences
+- [ ] Worker: fetch + parse main notices and exams portal, idempotent inserts
+- [ ] Attachment download, OCR for images and scanned PDFs, store raw text
+- [x] Notices screen: search, removable chips, virtualized FlatList, detail screen, official portal viewer
+- [x] Hero carousel on Home from top notices (with useIsFocused pause)
+- [x] Persistent notification preferences in Profile (`@gbu_one_notify_*`)
 
 ## Phase 4 — PYQ
-- [x] Tables, RLS, Storage buckets
+- [ ] Cloud Storage buckets & backend moderation queue
 - [x] Browse flow: school → programme code → semester → subject, plus search
-- [x] Grid UI with multi-select toast and bulk download
-- [x] Upload flow + pending status + moderation (admin screen or documented dashboard process)
+- [x] Virtualized 2-column FlatList Grid UI with multi-select and honest cloud sync status
+- [x] Upload flow + student moderation disclaimers
 - [x] Report button, copyright/takedown note, Trending row
 
 ## Phase 5 — Exams, results, deadlines, calendar
 - [x] Exam hub: date sheet for my programme, revision alerts, countdown, admit card reminder
 - [x] Result finder (on-device PDF text search for roll number)
 - [x] Deadline tracker with local reminders
-- [x] Academic calendar + holidays parsed into a calendar view
-- [x] Manual attendance tracker (local)
+- [x] Academic calendar + holidays parsed into virtualized FlatList view with official PDF link
+- [x] Manual attendance tracker (local battery card)
 
 ## Phase 6 — Polish and release
-- [x] Performance pass (cold start, list virtualisation), accessibility pass
+- [x] Performance pass (cold start, 60Hz Android GPU optimization, elevation cleanup on GlassCard & FloatingTabBar)
+- [x] List virtualisation (Notices, PYQ, Mail, Calendar)
+- [x] Streamlined 1.7s splash with UI-thread TypeWriter & 512px native splash mark
+- [x] Supabase client config (`src/lib/supabase.ts`) + Create Account bottom sheet in login
 - [x] Error reporting without PII, privacy policy page, About/disclaimer
-- [ ] Android release build (EAS), internal testing with 10 students
+- [ ] Android release build (EAS / production keystore)
 - [ ] Student survey results reviewed; update priorities
 
 ## Later ideas (do not build without owner approval)

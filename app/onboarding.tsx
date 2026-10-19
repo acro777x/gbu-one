@@ -55,7 +55,6 @@ const SLIDES: Slide[] = [
 ];
 
 // Department/programme data structure
-const SCHOOLS = ['SOICT'] as const;
 
 interface ProgrammeInfo {
   label: string;

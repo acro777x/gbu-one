@@ -1,6 +1,31 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { View } from 'react-native';
 import { Redirect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAppTheme } from '../src/lib/ThemeContext';
 
 export default function Index() {
-  return <Redirect href="/(tabs)" />;
+  const { colors } = useAppTheme();
+  const [target, setTarget] = useState<'/onboarding' | '/(tabs)' | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem('@gbu_one_has_seen_onboarding')
+      .then((v) => {
+        if (mounted) {
+          setTarget(v === 'true' ? '/(tabs)' : '/onboarding');
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setTarget('/onboarding');
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!target) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  return <Redirect href={target} />;
 }

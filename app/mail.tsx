@@ -6,8 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Modal,
   Platform,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -126,7 +126,6 @@ export default function MailScreen() {
     showToast(`Forwarded to ${forwardRecipient}`);
   };
 
-  const pillButtonVariant = isDark ? 'dark' : 'white';
   const chipBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
 
   if (activeEmail) {
@@ -429,11 +428,16 @@ export default function MailScreen() {
       </View>
 
       {/* Email List */}
-      <ScrollView
+      <FlatList
+        data={filteredEmails}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-      >
-        {filteredEmails.length === 0 ? (
+        initialNumToRender={8}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListEmptyComponent={
           <EmptyState
             title="No emails found"
             description={
@@ -442,106 +446,103 @@ export default function MailScreen() {
                 : 'Your inbox is clear for this category.'
             }
           />
-        ) : (
-          filteredEmails.map((email) => {
-            return (
-              <GlassCard
-                key={email.id}
-                style={[styles.emailCard, email.isUnread && { borderColor: `${colors.accent}66` }]}
-                accentBorder={email.isUnread}
-                onPress={() => handleOpenEmail(email)}
-              >
-                <View style={styles.emailCardHeader}>
-                  {/* Avatar + Sender Info */}
-                  <View style={styles.senderGroup}>
-                    <View
-                      style={[
-                        styles.avatarSquircle,
-                        { backgroundColor: email.avatarColor },
-                      ]}
-                    >
-                      <Text style={styles.avatarText}>{email.avatarInitial}</Text>
-                    </View>
-                    <View style={styles.senderTextCol}>
-                      <View style={styles.senderNameRow}>
-                        <Text
-                          style={[
-                            styles.senderName,
-                            { color: colors.textPrimary },
-                            email.isUnread && styles.senderNameUnread,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {email.senderName}
-                        </Text>
-                        {email.priority === 'high' && (
-                          <View style={[styles.priorityBadge, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}>
-                            <Text style={[styles.priorityBadgeText, { color: colors.danger }]}>URGENT</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={[styles.senderRole, { color: colors.textSecondary }]} numberOfLines={1}>
-                        {email.senderRole}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Date & Star */}
-                  <View style={styles.rightMeta}>
-                    <Text style={[styles.dateText, { color: colors.textSecondary }]}>{email.dateStr}</Text>
-                    <TouchableOpacity
-                      onPress={() => handleToggleStar(email.id)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      style={{ marginTop: 4 }}
-                    >
-                      <Star
-                        size={16}
-                        color={email.isStarred ? colors.warning : colors.textTertiary}
-                        fill={email.isStarred ? colors.warning : 'transparent'}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* Subject */}
-                <Text
+        }
+        renderItem={({ item: email }) => (
+          <GlassCard
+            key={email.id}
+            style={[styles.emailCard, email.isUnread && { borderColor: `${colors.accent}66` }]}
+            accentBorder={email.isUnread}
+            onPress={() => handleOpenEmail(email)}
+          >
+            <View style={styles.emailCardHeader}>
+              {/* Avatar + Sender Info */}
+              <View style={styles.senderGroup}>
+                <View
                   style={[
-                    styles.subjectText,
-                    { color: colors.textPrimary },
-                    email.isUnread && styles.subjectTextUnread,
+                    styles.avatarSquircle,
+                    { backgroundColor: email.avatarColor },
                   ]}
-                  numberOfLines={1}
                 >
-                  {email.subject}
-                </Text>
-
-                {/* Preview */}
-                <Text style={[styles.previewText, { color: colors.textSecondary }]} numberOfLines={2}>
-                  {email.preview}
-                </Text>
-
-                {/* Bottom Meta Badges */}
-                <View style={styles.cardBottomRow}>
-                  {email.hasAttachment && (
-                    <View style={[styles.attachmentChip, { backgroundColor: chipBg }]}>
-                      <Paperclip size={12} color={colors.accent} />
-                      <Text style={[styles.attachmentChipText, { color: colors.textSecondary }]}>
-                        {email.attachments?.length || 1} file(s)
-                      </Text>
-                    </View>
-                  )}
-                  {email.isUnread && (
-                    <View style={styles.unreadDotPill}>
-                      <View style={[styles.unreadDot, { backgroundColor: colors.accent }]} />
-                      <Text style={[styles.unreadDotText, { color: colors.accent }]}>New</Text>
-                    </View>
-                  )}
+                  <Text style={styles.avatarText}>{email.avatarInitial}</Text>
                 </View>
-              </GlassCard>
-            );
-          })
+                <View style={styles.senderTextCol}>
+                  <View style={styles.senderNameRow}>
+                    <Text
+                      style={[
+                        styles.senderName,
+                        { color: colors.textPrimary },
+                        email.isUnread && styles.senderNameUnread,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {email.senderName}
+                    </Text>
+                    {email.priority === 'high' && (
+                      <View style={[styles.priorityBadge, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}>
+                        <Text style={[styles.priorityBadgeText, { color: colors.danger }]}>URGENT</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.senderRole, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {email.senderRole}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Date & Star */}
+              <View style={styles.rightMeta}>
+                <Text style={[styles.dateText, { color: colors.textSecondary }]}>{email.dateStr}</Text>
+                <TouchableOpacity
+                  onPress={() => handleToggleStar(email.id)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ marginTop: 4 }}
+                >
+                  <Star
+                    size={16}
+                    color={email.isStarred ? colors.warning : colors.textTertiary}
+                    fill={email.isStarred ? colors.warning : 'transparent'}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Subject */}
+            <Text
+              style={[
+                styles.subjectText,
+                { color: colors.textPrimary },
+                email.isUnread && styles.subjectTextUnread,
+              ]}
+              numberOfLines={1}
+            >
+              {email.subject}
+            </Text>
+
+            {/* Preview */}
+            <Text style={[styles.previewText, { color: colors.textSecondary }]} numberOfLines={2}>
+              {email.preview}
+            </Text>
+
+            {/* Bottom Meta Badges */}
+            <View style={styles.cardBottomRow}>
+              {email.hasAttachment && (
+                <View style={[styles.attachmentChip, { backgroundColor: chipBg }]}>
+                  <Paperclip size={12} color={colors.accent} />
+                  <Text style={[styles.attachmentChipText, { color: colors.textSecondary }]}>
+                    {email.attachments?.length || 1} file(s)
+                  </Text>
+                </View>
+              )}
+              {email.isUnread && (
+                <View style={styles.unreadDotPill}>
+                  <View style={[styles.unreadDot, { backgroundColor: colors.accent }]} />
+                  <Text style={[styles.unreadDotText, { color: colors.accent }]}>New</Text>
+                </View>
+              )}
+            </View>
+          </GlassCard>
         )}
-      </ScrollView>
+      />
 
 
 

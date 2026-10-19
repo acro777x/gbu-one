@@ -177,8 +177,6 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
             capsuleAnimatedStyle,
           ]}
         >
-          {/* Reactive Glow behind active tab */}
-          <View style={[styles.reactiveGlow, { backgroundColor: colors.accent }]} />
           <View
             style={[
               styles.capsulePill,
@@ -224,11 +222,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 4,
     position: 'relative',
-    shadowColor: '#344054',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 20,
-    elevation: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#344054',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.14,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   activeCapsule: {
     position: 'absolute',
@@ -243,17 +247,6 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 24,
     borderWidth: 1,
-  },
-  reactiveGlow: {
-    position: 'absolute',
-    width: '70%',
-    height: 28,
-    borderRadius: 14,
-    opacity: 0.12,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 4,
   },
   tabButton: {
     flex: 1,

@@ -11,6 +11,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Linking,
+  FlatList,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -114,59 +116,66 @@ export default function CalendarScreen() {
       </View>
 
       {/* Events Timeline */}
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.timelineList}>
-          {filteredEvents.map((event) => {
-            const badgeStyle = getCategoryBadgeStyle(event.category);
-            const dateObj = new Date(event.dateFrom);
-            const formattedDate = dateObj.toLocaleDateString('en-IN', {
-              day: 'numeric',
-              month: 'short',
-              year: 'numeric',
-            });
+      <FlatList
+        data={filteredEvents}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={8}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        renderItem={({ item: event }) => {
+          const badgeStyle = getCategoryBadgeStyle(event.category);
+          const dateObj = new Date(event.dateFrom);
+          const formattedDate = dateObj.toLocaleDateString('en-IN', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          });
 
-            return (
-              <GlassCard key={event.id} style={styles.eventCard}>
-                <View style={styles.eventCardTop}>
-                  <View style={[styles.categoryBadge, { backgroundColor: badgeStyle.backgroundColor }]}>
-                    {getCategoryIcon(event.category)}
-                    <Text style={[styles.categoryBadgeText, { color: badgeStyle.color }]}>
-                      {event.category.toUpperCase()}
-                    </Text>
-                  </View>
-                  <Text style={[styles.eventDateText, { color: colors.textSecondary }]}>{formattedDate}</Text>
+          return (
+            <GlassCard key={event.id} style={styles.eventCard}>
+              <View style={styles.eventCardTop}>
+                <View style={[styles.categoryBadge, { backgroundColor: badgeStyle.backgroundColor }]}>
+                  {getCategoryIcon(event.category)}
+                  <Text style={[styles.categoryBadgeText, { color: badgeStyle.color }]}>
+                    {event.category.toUpperCase()}
+                  </Text>
                 </View>
+                <Text style={[styles.eventDateText, { color: colors.textSecondary }]}>{formattedDate}</Text>
+              </View>
 
-                <Text style={[styles.eventTitle, { color: colors.textPrimary }]}>{event.title}</Text>
+              <Text style={[styles.eventTitle, { color: colors.textPrimary }]}>{event.title}</Text>
 
-                {event.description && (
-                  <Text style={[styles.eventDescription, { color: colors.textSecondary }]}>{event.description}</Text>
-                )}
-              </GlassCard>
-            );
-          })}
-        </View>
-
-        {/* Official Source Callout */}
-        <View style={[styles.sourceCallout, {
-          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.03)',
-          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.08)',
-        }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.sourceTitle, { color: colors.textPrimary }]}>Official GBU Calendar 2026-27</Text>
-            <Text style={[styles.sourceSub, { color: colors.textSecondary }]}>
-              Approved by the Academic Council. View the signed official PDF document.
-            </Text>
+              {event.description && (
+                <Text style={[styles.eventDescription, { color: colors.textSecondary }]}>{event.description}</Text>
+              )}
+            </GlassCard>
+          );
+        }}
+        ListFooterComponent={
+          /* Official Source Callout */
+          <View style={[styles.sourceCallout, {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.03)',
+            borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.08)',
+          }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.sourceTitle, { color: colors.textPrimary }]}>Official GBU Calendar 2026-27</Text>
+              <Text style={[styles.sourceSub, { color: colors.textSecondary }]}>
+                Approved by the Academic Council. View the signed official PDF document.
+              </Text>
+            </View>
+            <PillButton
+              label="View PDF"
+              onPress={openOfficialCalendarPdf}
+              variant="outline"
+              size="sm"
+              icon={<ExternalLink size={14} color={colors.accent} style={{ marginRight: 6 }} />}
+            />
           </View>
-          <PillButton
-            label="View PDF"
-            onPress={openOfficialCalendarPdf}
-            variant="outline"
-            size="sm"
-            icon={<ExternalLink size={14} color={colors.accent} style={{ marginRight: 6 }} />}
-          />
-        </View>
-      </ScrollView>
+        }
+      />
     </SafeAreaView>
   );
 }

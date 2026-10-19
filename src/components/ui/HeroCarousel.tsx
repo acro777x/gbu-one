@@ -9,6 +9,7 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useIsFocused } from '@react-navigation/native';
 import { PillButton } from './PillButton';
 import { LetterRise } from '../motion/LetterRise';
 import { useAppTheme } from '../../lib/ThemeContext';
@@ -37,9 +38,10 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const isInteracting = useRef(false);
+  const isFocused = useIsFocused();
 
   useEffect(() => {
-    if (slides.length <= 1) return;
+    if (!isFocused || slides.length <= 1) return;
 
     const timer = setInterval(() => {
       if (!isInteracting.current) {
@@ -52,7 +54,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
     }, autoAdvanceInterval);
 
     return () => clearInterval(timer);
-  }, [slides.length, autoAdvanceInterval]);
+  }, [isFocused, slides.length, autoAdvanceInterval]);
 
   const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;

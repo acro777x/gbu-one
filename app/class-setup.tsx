@@ -12,7 +12,7 @@ import { ArrowLeft } from 'lucide-react-native';
 import { Chip, PillButton, GlassCard } from '../src/components/ui';
 import { useAuthStore, ClassSelection } from '../src/store/useAuthStore';
 import { useAppTheme } from '../src/lib/ThemeContext';
-import { spacing, radius } from '../src/lib/theme';
+import { spacing } from '../src/lib/theme';
 
 const SCHOOLS = [
   'SOICT',
@@ -70,7 +70,7 @@ const SECTIONS = ['A', 'B', 'C', 'General'];
 
 export default function ClassSetupScreen() {
   const { classSelection, setClassSelection } = useAuthStore();
-  const { colors, isDark } = useAppTheme();
+  const { colors } = useAppTheme();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedSchool, setSelectedSchool] = useState<string>(classSelection?.school || 'SOICT');
