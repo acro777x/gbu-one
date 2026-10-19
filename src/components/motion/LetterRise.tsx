@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TextStyle, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, TextStyle, ViewStyle, StyleProp } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -10,13 +10,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { motion } from '../../lib/motion';
 import { theme } from '../../lib/theme';
+import { useReduceMotion } from '../../lib/useReduceMotion';
 
 export interface LetterRiseProps {
   text: string;
   delay?: number;
   stagger?: number;
-  style?: TextStyle;
-  containerStyle?: ViewStyle;
+  style?: StyleProp<TextStyle>;
+  containerStyle?: StyleProp<ViewStyle>;
   reduceMotion?: boolean;
   onDone?: () => void;
 }
@@ -26,7 +27,7 @@ interface AnimatedLetterProps {
   index: number;
   delay: number;
   stagger: number;
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
   reduceMotion: boolean;
   isLast: boolean;
   onDone?: () => void;
@@ -70,8 +71,11 @@ const AnimatedLetter: React.FC<AnimatedLetterProps> = ({
     transform: [{ translateY: translateY.value }],
   }));
 
+  const textStyle = StyleSheet.flatten(style);
+  const clipHeight = textStyle?.lineHeight ?? (textStyle?.fontSize ?? 22) * 1.35;
+
   return (
-    <View style={styles.charContainer}>
+    <View style={[styles.charContainer, { height: clipHeight }]}>
       <Animated.Text style={[styles.char, style, animStyle]}>
         {char === ' ' ? '\u00A0' : char}
       </Animated.Text>
@@ -85,9 +89,12 @@ export const LetterRise: React.FC<LetterRiseProps> = ({
   stagger = motion.stagger.letter,
   style,
   containerStyle,
-  reduceMotion = false,
+  reduceMotion,
   onDone,
 }) => {
+  const systemReduce = useReduceMotion();
+  const effectiveReduce = reduceMotion ?? systemReduce;
+
   const words = (text || '').split(' ');
   let runningIndex = 0;
   const totalLetters = (text || '').replace(/\s+/g, '').length;
@@ -108,7 +115,7 @@ export const LetterRise: React.FC<LetterRiseProps> = ({
                   delay={delay}
                   stagger={stagger}
                   style={style}
-                  reduceMotion={reduceMotion}
+                  reduceMotion={effectiveReduce}
                   isLast={currentIdx === totalLetters - 1}
                   onDone={onDone}
                 />

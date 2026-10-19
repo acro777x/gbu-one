@@ -22,12 +22,14 @@ import {
 import { GlassCard, PillButton, Toast, BottomSheet, Chip, EmptyState } from '../../src/components/ui';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { PYQItem, MOCK_PAPERS, filterPapers } from '../../src/features/pyq/pyqService';
+import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
 const SCHOOL_FILTERS = ['All', 'SOICT', 'SOM', 'SOBT', 'SOE', 'SOL'];
 const SEMESTER_FILTERS = ['All', 'Sem I', 'Sem II', 'Sem IV'];
 
 export default function PYQScreen() {
+  const { colors, isDark } = useAppTheme();
   const { isGuest } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSchool, setSelectedSchool] = useState('All');
@@ -48,15 +50,10 @@ export default function PYQScreen() {
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
-      let next;
       if (prev.includes(id)) {
-        next = prev.filter((item) => item !== id);
-      } else {
-        next = [...prev, id];
-        setToastMessage(`Selected ${next.length} paper${next.length > 1 ? 's' : ''}`);
-        setToastVisible(true);
+        return prev.filter((item) => item !== id);
       }
-      return next;
+      return [...prev, id];
     });
   };
 
@@ -109,34 +106,37 @@ export default function PYQScreen() {
   const trendingPapers = [...MOCK_PAPERS].sort((a, b) => b.downloads - a.downloads).slice(0, 3);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Previous Year Papers</Text>
-          <Text style={styles.headerSub}>Crowdsourced PYQ repository for GBU</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Previous Year Papers</Text>
+          <Text style={[styles.headerSub, { color: colors.textSecondary }]}>Crowdsourced PYQ repository for GBU</Text>
         </View>
 
-        <TouchableOpacity style={styles.uploadBtn} onPress={handleUploadPress}>
-          <UploadCloud size={16} color={theme.colors.accent} />
-          <Text style={styles.uploadBtnText}>Upload</Text>
+        <TouchableOpacity
+          style={[styles.uploadBtn, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}44` }]}
+          onPress={handleUploadPress}
+        >
+          <UploadCloud size={16} color={colors.accent} />
+          <Text style={[styles.uploadBtnText, { color: colors.accent }]}>Upload</Text>
         </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
       <View style={styles.searchSection}>
-        <View style={styles.searchBar}>
-          <Search size={18} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
+        <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
+          <Search size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search by subject name or code..."
-            placeholderTextColor={theme.colors.textTertiary}
-            style={styles.searchInput}
+            placeholderTextColor={colors.textTertiary}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <X size={16} color={theme.colors.textSecondary} />
+              <X size={16} color={colors.textSecondary} />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -151,18 +151,18 @@ export default function PYQScreen() {
               label={sch}
               selected={selectedSchool === sch}
               onPress={() => setSelectedSchool(sch)}
-              onRemove={selectedSchool === sch && sch !== 'All' ? () => setSelectedSchool('All') : undefined}
               style={styles.filterChip}
             />
           ))}
-          <View style={styles.filterDivider} />
+
+          <View style={[styles.filterDivider, { backgroundColor: colors.divider }]} />
+
           {SEMESTER_FILTERS.map((sem) => (
             <Chip
               key={sem}
               label={sem}
               selected={selectedSemester === sem}
               onPress={() => setSelectedSemester(sem)}
-              onRemove={selectedSemester === sem && sem !== 'All' ? () => setSelectedSemester('All') : undefined}
               style={styles.filterChip}
             />
           ))}
@@ -170,13 +170,14 @@ export default function PYQScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Trending Row */}
-        {searchQuery === '' && selectedSchool === 'All' && (
+        {/* Trending Spotlight */}
+        {searchQuery === '' && selectedSchool === 'All' && selectedSemester === 'All' && (
           <View style={styles.trendingSection}>
             <View style={styles.sectionHeaderRow}>
-              <Flame size={16} color={theme.colors.accent} />
-              <Text style={styles.sectionTitle}>Trending Papers</Text>
+              <Flame size={16} color={colors.accent} />
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Trending Papers</Text>
             </View>
+
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendingScroll}>
               {trendingPapers.map((paper) => (
                 <GlassCard
@@ -185,13 +186,13 @@ export default function PYQScreen() {
                   onPress={() => toggleSelect(paper.id)}
                 >
                   <View style={styles.cardHeader}>
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{paper.subjectCode}</Text>
+                    <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+                      <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
                     </View>
-                    <Text style={styles.trendDownloads}>{paper.downloads} dl</Text>
+                    <Text style={[styles.trendDownloads, { color: colors.accent }]}>{paper.downloads} dl</Text>
                   </View>
-                  <Text style={styles.trendTitle} numberOfLines={2}>{paper.subjectName}</Text>
-                  <Text style={styles.typeText}>{paper.year} • {paper.examType}</Text>
+                  <Text style={[styles.trendTitle, { color: colors.textPrimary }]} numberOfLines={2}>{paper.subjectName}</Text>
+                  <Text style={[styles.typeText, { color: colors.textSecondary }]}>{paper.year} • {paper.examType}</Text>
                 </GlassCard>
               ))}
             </ScrollView>
@@ -200,8 +201,8 @@ export default function PYQScreen() {
 
         {/* Papers Grid */}
         <View style={styles.allPapersHeaderRow}>
-          <Text style={styles.sectionTitle}>All Question Papers</Text>
-          <Text style={styles.resultsCount}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>All Question Papers</Text>
+          <Text style={[styles.resultsCount, { color: colors.textSecondary }]}>
             {filteredPapers.length} paper{filteredPapers.length === 1 ? '' : 's'}
           </Text>
         </View>
@@ -219,13 +220,13 @@ export default function PYQScreen() {
               return (
                 <GlassCard
                   key={paper.id}
-                  style={[styles.card, isSelected && styles.cardSelected]}
+                  style={[styles.card, isSelected && { backgroundColor: colors.accentSoft }]}
                   accentBorder={isSelected}
                   onPress={() => toggleSelect(paper.id)}
                 >
                   <View style={styles.cardHeader}>
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{paper.subjectCode}</Text>
+                    <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+                      <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <TouchableOpacity
@@ -235,30 +236,30 @@ export default function PYQScreen() {
                         }}
                         hitSlop={8}
                       >
-                        <Flag size={13} color={theme.colors.textTertiary} />
+                        <Flag size={13} color={colors.textTertiary} />
                       </TouchableOpacity>
                       {isSelected && (
-                        <CheckCircle2 size={16} color={theme.colors.accent} />
+                        <CheckCircle2 size={16} color={colors.accent} />
                       )}
                     </View>
                   </View>
 
-                  <Text style={styles.subjectName} numberOfLines={2}>
+                  <Text style={[styles.subjectName, { color: colors.textPrimary }]} numberOfLines={2}>
                     {paper.subjectName}
                   </Text>
 
                   <View style={styles.metaRow}>
-                    <Text style={styles.typeText}>
+                    <Text style={[styles.typeText, { color: colors.textSecondary }]}>
                       {paper.year} • {paper.examType}
                     </Text>
-                    <Text style={styles.programmeTag}>
+                    <Text style={[styles.programmeTag, { color: colors.textTertiary }]}>
                       {paper.programme} ({paper.semester})
                     </Text>
                   </View>
 
                   <View style={styles.downloadRow}>
-                    <Download size={12} color={theme.colors.textSecondary} />
-                    <Text style={styles.downloadCount}>{paper.downloads} downloads</Text>
+                    <Download size={12} color={colors.textSecondary} />
+                    <Text style={[styles.downloadCount, { color: colors.textSecondary }]}>{paper.downloads} downloads</Text>
                   </View>
                 </GlassCard>
               );
@@ -267,34 +268,31 @@ export default function PYQScreen() {
         )}
 
         {/* Copyright / Takedown note */}
-        <View style={styles.takedownSection}>
-          <Text style={styles.takedownText}>
-            Papers are uploaded by student contributors under fair educational use. If you believe a file infringes copyright or contains errors, tap the flag icon or email student.gbuone@gmail.com for prompt takedown.
+        <View style={[styles.takedownSection, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
+          <Text style={[styles.takedownText, { color: colors.textSecondary }]}>
+            DMCA & University Copyright Notice: Question papers uploaded are submitted by students for academic non-commercial revision. Gautam Buddha University holds official curriculum copyright.
           </Text>
         </View>
       </ScrollView>
 
       {/* Floating Bulk Action Bar */}
       {selectedIds.length > 0 && (
-        <View style={styles.floatingActionBar}>
-          <View style={styles.selectedCountBadge}>
-            <Text style={styles.selectedCountText}>{selectedIds.length} Selected</Text>
+        <View style={[styles.floatingActionBar, { backgroundColor: isDark ? 'rgba(22, 22, 26, 0.96)' : 'rgba(255, 255, 255, 0.96)', borderColor: colors.accent }]}>
+          <View>
+            <Text style={[styles.floatingCountText, { color: colors.textPrimary }]}>
+              {selectedIds.length} paper{selectedIds.length > 1 ? 's' : ''} selected
+            </Text>
+            <TouchableOpacity onPress={() => setSelectedIds([])}>
+              <Text style={[styles.floatingClearText, { color: colors.textSecondary }]}>Clear</Text>
+            </TouchableOpacity>
           </View>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <PillButton
-              label="Clear"
-              onPress={() => setSelectedIds([])}
-              variant="outline"
-              size="sm"
-            />
-            <PillButton
-              label={`Download ZIP (${selectedIds.length})`}
-              onPress={handleBulkDownload}
-              variant="primary"
-              size="sm"
-              icon={<Download size={15} color={theme.colors.onAccent} style={{ marginRight: 6 }} />}
-            />
-          </View>
+          <PillButton
+            label="Download ZIP"
+            onPress={handleBulkDownload}
+            variant="primary"
+            size="sm"
+            icon={<Download size={14} color={colors.onAccent} style={{ marginRight: 4 }} />}
+          />
         </View>
       )}
 
@@ -312,8 +310,8 @@ export default function PYQScreen() {
         title="Account Required"
       >
         <View style={styles.sheetContent}>
-          <Text style={styles.gateTitle}>Create a student account to upload</Text>
-          <Text style={styles.gateSubtitle}>
+          <Text style={[styles.gateTitle, { color: colors.textPrimary }]}>Create a student account to upload</Text>
+          <Text style={[styles.gateSubtitle, { color: colors.textSecondary }]}>
             To maintain academic integrity, PYQ contributions are moderated and linked to student profiles.
           </Text>
           <PillButton
@@ -333,26 +331,26 @@ export default function PYQScreen() {
         title="Contribute Question Paper"
       >
         <View style={styles.sheetContent}>
-          <Text style={styles.uploadFormLabel}>Subject Code</Text>
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Subject Code</Text>
           <TextInput
             value={uploadSubjectCode}
             onChangeText={setUploadSubjectCode}
             placeholder="e.g. CSE205"
-            placeholderTextColor={theme.colors.textTertiary}
-            style={styles.formInput}
+            placeholderTextColor={colors.textTertiary}
+            style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.borderGlass, color: colors.textPrimary }]}
             autoCapitalize="characters"
           />
 
-          <Text style={styles.uploadFormLabel}>Subject Name</Text>
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Subject Name</Text>
           <TextInput
             value={uploadSubjectName}
             onChangeText={setUploadSubjectName}
             placeholder="e.g. Data Structures & Algorithms"
-            placeholderTextColor={theme.colors.textTertiary}
-            style={styles.formInput}
+            placeholderTextColor={colors.textTertiary}
+            style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.borderGlass, color: colors.textPrimary }]}
           />
 
-          <Text style={styles.uploadFormLabel}>School</Text>
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>School</Text>
           <View style={styles.formChipRow}>
             {['SOICT', 'SOM', 'SOBT', 'SOE'].map((s) => (
               <Chip
@@ -365,7 +363,7 @@ export default function PYQScreen() {
             ))}
           </View>
 
-          <Text style={styles.uploadFormLabel}>Exam Type</Text>
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Exam Type</Text>
           <View style={styles.formChipRow}>
             {(['Mid Sem', 'End Sem', 'Back Paper'] as const).map((t) => (
               <Chip
@@ -379,9 +377,9 @@ export default function PYQScreen() {
           </View>
 
           {/* Moderation Disclaimer */}
-          <View style={styles.moderationDisclaimer}>
-            <AlertTriangle size={15} color={theme.colors.warning} />
-            <Text style={styles.moderationDisclaimerText}>
+          <View style={[styles.moderationDisclaimer, { backgroundColor: colors.warningSoft }]}>
+            <AlertTriangle size={15} color={colors.warning} />
+            <Text style={[styles.moderationDisclaimerText, { color: colors.warning }]}>
               All uploads are reviewed by student moderators before being listed. Only submit clean, legible question papers.
             </Text>
           </View>
@@ -391,7 +389,7 @@ export default function PYQScreen() {
             onPress={handleSubmitUpload}
             variant="primary"
             size="md"
-            icon={<FileText size={16} color={theme.colors.onAccent} style={{ marginRight: 6 }} />}
+            icon={<FileText size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
             style={{ marginTop: 14 }}
           />
         </View>
@@ -404,31 +402,31 @@ export default function PYQScreen() {
         title="Report Paper"
       >
         <View style={styles.sheetContent}>
-          <Text style={styles.gateTitle}>Report {reportingPaper?.subjectCode}</Text>
-          <Text style={styles.gateSubtitle}>
+          <Text style={[styles.gateTitle, { color: colors.textPrimary }]}>Report {reportingPaper?.subjectCode}</Text>
+          <Text style={[styles.gateSubtitle, { color: colors.textSecondary }]}>
             Help us maintain clean, authentic academic resources. Select a reason:
           </Text>
 
           <TouchableOpacity
-            style={styles.reportOption}
+            style={[styles.reportOption, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
             onPress={() => handleSendReport('Incomplete or blurred scan')}
           >
-            <Text style={styles.reportOptionText}>Incomplete, low resolution or blurred scan</Text>
+            <Text style={[styles.reportOptionText, { color: colors.textPrimary }]}>Incomplete, low resolution or blurred scan</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.reportOption}
+            style={[styles.reportOption, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
             onPress={() => handleSendReport('Incorrect subject or semester')}
           >
-            <Text style={styles.reportOptionText}>Incorrect subject or semester label</Text>
+            <Text style={[styles.reportOptionText, { color: colors.textPrimary }]}>Incorrect subject or semester label</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.reportOption}
+            style={[styles.reportOption, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
             onPress={() => handleSendReport('Copyright / Takedown request')}
           >
-            <Text style={styles.reportOptionText}>Copyright / Takedown request</Text>
+            <Text style={[styles.reportOptionText, { color: colors.textPrimary }]}>Copyright / Takedown request</Text>
           </TouchableOpacity>
 
-          <Text style={styles.takedownEmailNote}>
+          <Text style={[styles.takedownEmailNote, { color: colors.textTertiary }]}>
             Takedown inquiries: student.gbuone@gmail.com
           </Text>
         </View>
@@ -440,7 +438,6 @@ export default function PYQScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -453,20 +450,16 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 22,
-    color: theme.colors.ivory,
   },
   headerSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   uploadBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.accentSoft,
     borderWidth: 1,
-    borderColor: 'rgba(255, 106, 43, 0.25)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
@@ -475,7 +468,6 @@ const styles = StyleSheet.create({
   uploadBtnText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 12,
-    color: theme.colors.accent,
   },
   searchSection: {
     paddingHorizontal: theme.spacing.lg,
@@ -484,16 +476,13 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.chip,
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     paddingHorizontal: 14,
     height: 42,
   },
   searchInput: {
     flex: 1,
-    color: theme.colors.ivory,
     fontFamily: 'Inter-Regular',
     fontSize: 14,
     height: '100%',
@@ -512,7 +501,6 @@ const styles = StyleSheet.create({
   filterDivider: {
     width: 1,
     height: 20,
-    backgroundColor: 'rgba(17, 24, 39, 0.12)',
     marginHorizontal: 8,
   },
   scrollContent: {
@@ -531,7 +519,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
-    color: theme.colors.ivory,
   },
   trendingScroll: {
     paddingRight: theme.spacing.lg,
@@ -544,12 +531,10 @@ const styles = StyleSheet.create({
   trendDownloads: {
     fontFamily: 'Inter-Medium',
     fontSize: 10,
-    color: theme.colors.accent,
   },
   trendTitle: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 12,
-    color: theme.colors.ivory,
     marginVertical: 4,
   },
   allPapersHeaderRow: {
@@ -561,7 +546,6 @@ const styles = StyleSheet.create({
   resultsCount: {
     fontFamily: 'Inter-Medium',
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
   grid: {
     flexDirection: 'row',
@@ -574,9 +558,6 @@ const styles = StyleSheet.create({
     minHeight: 145,
     justifyContent: 'space-between',
   },
-  cardSelected: {
-    backgroundColor: theme.colors.accentSoft,
-  },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -584,7 +565,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   badge: {
-    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -592,12 +572,10 @@ const styles = StyleSheet.create({
   badgeText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 10,
-    color: theme.colors.accent,
   },
   subjectName: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
-    color: theme.colors.ivory,
     lineHeight: 18,
     marginBottom: 6,
   },
@@ -607,12 +585,10 @@ const styles = StyleSheet.create({
   typeText: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
   },
   programmeTag: {
     fontFamily: 'Inter-Regular',
     fontSize: 10,
-    color: 'rgba(17, 24, 39, 0.40)',
     marginTop: 2,
   },
   downloadRow: {
@@ -623,52 +599,44 @@ const styles = StyleSheet.create({
   downloadCount: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
   },
   takedownSection: {
     marginTop: 24,
     padding: 12,
-    backgroundColor: 'rgba(17, 24, 39, 0.03)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.06)',
   },
   takedownText: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: 'rgba(17, 24, 39, 0.40)',
     lineHeight: 16,
   },
   floatingActionBar: {
     position: 'absolute',
-    bottom: 84,
+    bottom: 96,
     left: theme.spacing.lg,
     right: theme.spacing.lg,
-    backgroundColor: 'rgba(20, 20, 24, 0.95)',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: theme.colors.accent,
     paddingHorizontal: 16,
     paddingVertical: 10,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    elevation: 8,
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  selectedCountBadge: {
-    backgroundColor: theme.colors.accentSoft,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  selectedCountText: {
+  floatingCountText: {
     fontFamily: 'Inter-SemiBold',
-    fontSize: 12,
-    color: theme.colors.accent,
+    fontSize: 13,
+  },
+  floatingClearText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    marginTop: 2,
   },
   sheetContent: {
     paddingVertical: 8,
@@ -676,80 +644,65 @@ const styles = StyleSheet.create({
   gateTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: theme.colors.ivory,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   gateSubtitle: {
     fontFamily: 'Inter-Regular',
     fontSize: 13,
-    color: theme.colors.textSecondary,
-    lineHeight: 19,
+    lineHeight: 18,
     marginBottom: 12,
   },
   uploadFormLabel: {
     fontFamily: 'Inter-SemiBold',
-    fontSize: 11,
-    color: theme.colors.textSecondary,
+    fontSize: 12,
+    marginBottom: 6,
     marginTop: 10,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   formInput: {
-    backgroundColor: theme.colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.10)',
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: theme.colors.ivory,
+    paddingVertical: 8,
     fontFamily: 'Inter-Regular',
     fontSize: 14,
   },
   formChipRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginVertical: 4,
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 6,
   },
   formChip: {
-    marginBottom: 0,
+    marginBottom: 4,
   },
   moderationDisclaimer: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderRadius: 8,
     padding: 10,
-    marginTop: 14,
-    borderLeftWidth: 2,
-    borderLeftColor: theme.colors.warning,
+    borderRadius: 10,
+    marginVertical: 12,
   },
   moderationDisclaimerText: {
-    flex: 1,
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.warning,
+    flex: 1,
     lineHeight: 16,
   },
   reportOption: {
-    backgroundColor: theme.colors.surface,
+    padding: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.08)',
-    padding: 12,
     marginBottom: 8,
   },
   reportOptionText: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
-    color: theme.colors.ivory,
   },
   takedownEmailNote: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 10,
   },
 });

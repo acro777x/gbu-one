@@ -9,12 +9,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { motion } from '../../lib/motion';
 import { theme } from '../../lib/theme';
+import { useAppTheme } from '../../lib/ThemeContext';
 
 export interface ToastProps {
   message: string;
   visible: boolean;
   onDismiss: () => void;
   duration?: number;
+  bottomOffset?: number;
 }
 
 export const Toast: React.FC<ToastProps> = ({
@@ -22,7 +24,9 @@ export const Toast: React.FC<ToastProps> = ({
   visible,
   onDismiss,
   duration = 2500,
+  bottomOffset = 96,
 }) => {
+  const { colors, isDark } = useAppTheme();
   const translateY = useSharedValue(60);
   const opacity = useSharedValue(0);
 
@@ -56,9 +60,21 @@ export const Toast: React.FC<ToastProps> = ({
   if (!visible) return null;
 
   return (
-    <Animated.View style={[styles.container, animatedStyle]} pointerEvents="none">
-      <View style={styles.pill}>
-        <Text style={styles.text}>{message}</Text>
+    <Animated.View
+      style={[styles.container, { bottom: bottomOffset }, animatedStyle]}
+      pointerEvents="none"
+    >
+      <View
+        style={[
+          styles.pill,
+          {
+            backgroundColor: colors.surfaceAlt,
+            borderColor: colors.borderGlass,
+            shadowColor: isDark ? '#000000' : '#344054',
+          },
+        ]}
+      >
+        <Text style={[styles.text, { color: colors.textPrimary }]}>{message}</Text>
       </View>
     </Animated.View>
   );
@@ -67,27 +83,22 @@ export const Toast: React.FC<ToastProps> = ({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 96,
     left: 0,
     right: 0,
     alignItems: 'center',
     zIndex: 9999,
   },
   pill: {
-    backgroundColor: theme.colors.surface,
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: 10,
     borderRadius: theme.radius.pill,
-    shadowColor: '#344054',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 6,
   },
   text: {
-    color: theme.colors.textPrimary,
     fontFamily: 'Inter-Medium',
     fontSize: 14,
   },

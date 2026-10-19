@@ -8,7 +8,8 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { theme } from '../../lib/theme';
+import { useAppTheme } from '../../lib/ThemeContext';
+import { useReduceMotion } from '../../lib/useReduceMotion';
 
 export interface SkeletonProps {
   width?: DimensionValue;
@@ -23,9 +24,12 @@ export const Skeleton: React.FC<SkeletonProps> = ({
   borderRadius = 8,
   style,
 }) => {
+  const { colors, isDark } = useAppTheme();
+  const reduceMotion = useReduceMotion();
   const translateX = useSharedValue(-200);
 
   useEffect(() => {
+    if (reduceMotion) return;
     translateX.value = withRepeat(
       withTiming(400, {
         duration: 1200,
@@ -34,11 +38,15 @@ export const Skeleton: React.FC<SkeletonProps> = ({
       -1,
       false,
     );
-  }, []);
+  }, [reduceMotion]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
+
+  const shimmerColors = isDark
+    ? (['transparent', 'rgba(255, 255, 255, 0.12)', 'transparent'] as const)
+    : (['transparent', 'rgba(255, 255, 255, 0.75)', 'transparent'] as const);
 
   return (
     <View
@@ -48,25 +56,27 @@ export const Skeleton: React.FC<SkeletonProps> = ({
           width,
           height,
           borderRadius,
+          backgroundColor: colors.skeletonBg,
         },
         style,
       ]}
     >
-      <Animated.View style={[styles.shimmer, animatedStyle]}>
-        <LinearGradient
-          colors={['transparent', 'rgba(255, 255, 255, 0.75)', 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
+      {!reduceMotion && (
+        <Animated.View style={[styles.shimmer, animatedStyle]}>
+          <LinearGradient
+            colors={shimmerColors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   skeleton: {
-    backgroundColor: theme.colors.surfaceMuted,
     overflow: 'hidden',
     position: 'relative',
   },

@@ -1,14 +1,14 @@
 import React from 'react';
-import { StyleSheet, View, Text, Image, ViewStyle } from 'react-native';
+import { StyleSheet, View, Text, Image, ViewStyle, StyleProp } from 'react-native';
 import { User } from 'lucide-react-native';
-import { theme } from '../../lib/theme';
+import { useAppTheme } from '../../lib/ThemeContext';
 
 export interface AvatarProps {
   url?: string | null;
   name?: string;
   size?: number;
   isGuest?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
 export const Avatar: React.FC<AvatarProps> = ({
@@ -18,6 +18,8 @@ export const Avatar: React.FC<AvatarProps> = ({
   isGuest = false,
   style,
 }) => {
+  const { colors } = useAppTheme();
+
   const getInitials = (n?: string) => {
     if (!n) return 'G';
     const parts = n.trim().split(/\s+/);
@@ -37,6 +39,8 @@ export const Avatar: React.FC<AvatarProps> = ({
           width: size,
           height: size,
           borderRadius: squircleRadius,
+          backgroundColor: colors.avatarBg,
+          borderColor: colors.borderGlass,
         },
         style,
       ]}
@@ -47,9 +51,14 @@ export const Avatar: React.FC<AvatarProps> = ({
           style={[styles.image, { borderRadius: squircleRadius }]}
         />
       ) : isGuest || !name ? (
-        <User size={size * 0.55} color={theme.colors.textSecondary} />
+        <User size={size * 0.55} color={colors.textSecondary} />
       ) : (
-        <Text style={[styles.initials, { fontSize: size * 0.4 }]}>
+        <Text
+          style={[
+            styles.initials,
+            { fontSize: size * 0.4, color: colors.textPrimary },
+          ]}
+        >
           {getInitials(name)}
         </Text>
       )}
@@ -59,9 +68,7 @@ export const Avatar: React.FC<AvatarProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: theme.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -71,7 +78,6 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   initials: {
-    color: theme.colors.ivory,
     fontFamily: 'Poppins-Bold',
     fontWeight: '700',
   },

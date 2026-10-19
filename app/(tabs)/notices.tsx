@@ -14,11 +14,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Share2, BellRing, X, ExternalLink } from 'lucide-react-native';
 import { NoticeCard, Chip, BottomSheet, PillButton, EmptyState } from '../../src/components/ui';
 import { MOCK_NOTICES, NoticeItem } from '../../src/features/notices/noticeService';
+import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
 const CATEGORIES = ['All', 'For me', 'datesheet', 'fees', 'scholarship', 'hostel', 'exam', 'event'];
 
 export default function NoticesScreen() {
+  const { colors, isDark } = useAppTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [activeNotice, setActiveNotice] = useState<NoticeItem | null>(null);
@@ -57,40 +59,40 @@ export default function NoticesScreen() {
         await Share.share({
           message: `[GBU One] ${activeNotice.cleanTitle}\nLink: ${activeNotice.fileUrl}`,
         });
-      } catch (err) {
+      } catch {
         // ignore
       }
     }
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Top Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Notices</Text>
-        <Text style={styles.headerSub}>Aggregated from test.gbu.ac.in & exams portal</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Notices</Text>
+        <Text style={[styles.headerSub, { color: colors.textSecondary }]}>Aggregated from test.gbu.ac.in & exams portal</Text>
       </View>
 
       {/* Search Input */}
       <View style={styles.searchSection}>
-        <View style={styles.searchBar}>
-          <Search size={18} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
+        <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
+          <Search size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search notices, exams, fee dates..."
-            placeholderTextColor={theme.colors.textTertiary}
-            style={styles.searchInput}
+            placeholderTextColor={colors.textTertiary}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <X size={16} color={theme.colors.textSecondary} />
+              <X size={16} color={colors.textSecondary} />
             </TouchableOpacity>
           ) : null}
         </View>
       </View>
 
-      {/* Filter Chips (N99-style) */}
+      {/* Filter Chips */}
       <View style={styles.filterSection}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
           {CATEGORIES.map((cat) => (
@@ -113,7 +115,7 @@ export default function NoticesScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={theme.colors.accent}
+            tintColor={colors.accent}
           />
         }
       >
@@ -143,7 +145,7 @@ export default function NoticesScreen() {
         )}
       </ScrollView>
 
-      {/* Notice Detail Bottom Sheet (N99 warm/cream glass style) */}
+      {/* Notice Detail Bottom Sheet */}
       <BottomSheet
         visible={sheetVisible}
         onClose={() => setSheetVisible(false)}
@@ -151,50 +153,50 @@ export default function NoticesScreen() {
       >
         {activeNotice && (
           <View style={styles.sheetBody}>
-            <Text style={styles.sheetTitle}>{activeNotice.cleanTitle}</Text>
-            <Text style={styles.sheetMeta}>
+            <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>{activeNotice.cleanTitle}</Text>
+            <Text style={[styles.sheetMeta, { color: colors.textSecondary }]}>
               Posted by {activeNotice.source.toUpperCase()} • {new Date(activeNotice.postedAt).toLocaleDateString()}
             </Text>
 
-            <View style={styles.sheetSummaryCard}>
-              <Text style={styles.sheetSummaryHeader}>ORIGINAL NOTICE DETAILS</Text>
-              <Text style={styles.sheetRawTitle}>{activeNotice.title}</Text>
+            <View style={[styles.sheetSummaryCard, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
+              <Text style={[styles.sheetSummaryHeader, { color: colors.accent }]}>ORIGINAL NOTICE DETAILS</Text>
+              <Text style={[styles.sheetRawTitle, { color: colors.textPrimary }]}>{activeNotice.title}</Text>
               {activeNotice.threadUpdateCount ? (
-                <Text style={styles.sheetThreadNote}>
+                <Text style={[styles.sheetThreadNote, { color: colors.warning }]}>
                   • This notice has been extended or updated {activeNotice.threadUpdateCount} times.
                 </Text>
               ) : null}
             </View>
 
-            {/* Actions */}
+            {/* Non-overlapping Actions Bar */}
             <View style={styles.sheetActions}>
               <PillButton
-                label="View Original"
+                label="Original"
                 onPress={() => {
                   if (activeNotice?.fileUrl) {
                     Linking.openURL(activeNotice.fileUrl).catch(() => {});
                   }
                 }}
-                variant="white"
+                variant={isDark ? 'dark' : 'white'}
                 size="sm"
-                icon={<ExternalLink size={15} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />}
-                style={{ flex: 1, marginRight: 6 }}
+                icon={<ExternalLink size={14} color={colors.textPrimary} style={{ marginRight: 4 }} />}
+                style={styles.sheetActionButton}
               />
               <PillButton
                 label="Share"
                 onPress={handleShare}
                 variant="outline"
                 size="sm"
-                icon={<Share2 size={15} color={theme.colors.accent} style={{ marginRight: 6 }} />}
-                style={{ flex: 1, marginRight: 6 }}
+                icon={<Share2 size={14} color={colors.accent} style={{ marginRight: 4 }} />}
+                style={styles.sheetActionButton}
               />
               <PillButton
                 label="Remind"
                 onPress={() => setSheetVisible(false)}
                 variant="primary"
                 size="sm"
-                icon={<BellRing size={15} color={theme.colors.onAccent} style={{ marginRight: 6 }} />}
-                style={{ flex: 1 }}
+                icon={<BellRing size={14} color={colors.onAccent} style={{ marginRight: 4 }} />}
+                style={styles.sheetActionButton}
               />
             </View>
           </View>
@@ -207,7 +209,6 @@ export default function NoticesScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
   header: {
     paddingHorizontal: theme.spacing.lg,
@@ -217,12 +218,10 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 22,
-    color: theme.colors.ivory,
   },
   headerSub: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   searchSection: {
@@ -232,16 +231,13 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.chip,
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     paddingHorizontal: 14,
     height: 44,
   },
   searchInput: {
     flex: 1,
-    color: theme.colors.ivory,
     fontFamily: 'Inter-Regular',
     fontSize: 14,
     height: '100%',
@@ -266,44 +262,44 @@ const styles = StyleSheet.create({
   sheetTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: theme.colors.ivory,
     lineHeight: 24,
     marginBottom: 4,
   },
   sheetMeta: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginBottom: 16,
   },
   sheetSummaryCard: {
-    backgroundColor: theme.colors.surfaceMuted,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.08)',
     padding: 14,
     marginBottom: 20,
   },
   sheetSummaryHeader: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 10,
-    color: theme.colors.accent,
     letterSpacing: 0.5,
     marginBottom: 6,
   },
   sheetRawTitle: {
     fontFamily: 'Inter-Regular',
     fontSize: 13,
-    color: theme.colors.textPrimary,
     lineHeight: 18,
   },
   sheetThreadNote: {
     fontFamily: 'Inter-Medium',
     fontSize: 12,
-    color: theme.colors.warning,
     marginTop: 8,
   },
   sheetActions: {
     flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sheetActionButton: {
+    flex: 1,
+    minWidth: 90,
   },
 });

@@ -34,9 +34,11 @@ import { useAuthStore } from '../../src/store/useAuthStore';
 import { useMailStore } from '../../src/store/useMailStore';
 import { GBUTimetableProvider, Slot } from '../../src/features/timetable/timetableProvider';
 import { MOCK_NOTICES } from '../../src/features/notices/noticeService';
+import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
 export default function HomeScreen() {
+  const { colors, isDark } = useAppTheme();
   const { user, isGuest, classSelection } = useAuthStore();
   const { emails, getUnreadCount } = useMailStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -90,28 +92,34 @@ export default function HomeScreen() {
   }));
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Top Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.bg, borderBottomColor: colors.divider }]}>
         <View style={styles.headerLeft}>
           <LogoMark size={32} />
           <View style={styles.wordmarkRow}>
-            <Text style={styles.brandGBU}>GBU </Text>
-            <Text style={styles.brandOne}>One</Text>
+            <Text style={[styles.brandGBU, { color: colors.textPrimary }]}>GBU </Text>
+            <Text style={[styles.brandOne, { color: colors.accent }]}>One</Text>
           </View>
         </View>
 
         <View style={styles.headerRight}>
           {/* GBU Webmail Button */}
           <TouchableOpacity
-            style={styles.mailButton}
+            style={[
+              styles.mailButton,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)',
+                borderColor: colors.borderGlass,
+              },
+            ]}
             onPress={() => router.push('/mail' as never)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityLabel="GBU Webmail"
           >
-            <Mail size={19} color={theme.colors.ivory} />
+            <Mail size={19} color={colors.textPrimary} />
             {unreadMails > 0 && (
-              <View style={styles.mailBadge}>
+              <View style={[styles.mailBadge, { borderColor: colors.bg }]}>
                 <Text style={styles.mailBadgeText}>{unreadMails}</Text>
               </View>
             )}
@@ -119,13 +127,19 @@ export default function HomeScreen() {
 
           {/* Notifications Bell */}
           <TouchableOpacity
-            style={styles.bellButton}
+            style={[
+              styles.bellButton,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)',
+                borderColor: colors.borderGlass,
+              },
+            ]}
             onPress={() => router.push('/notices' as never)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityLabel="Notifications"
           >
-            <Bell size={19} color={theme.colors.ivory} />
-            <View style={styles.unreadDot} />
+            <Bell size={19} color={colors.textPrimary} />
+            <View style={[styles.unreadDot, { borderColor: colors.bg }]} />
           </TouchableOpacity>
 
           {/* User Avatar */}
@@ -151,11 +165,11 @@ export default function HomeScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={theme.colors.accent}
+            tintColor={colors.accent}
           />
         }
       >
-        {/* Full-bleed Hero Carousel (Signal Bloom style) */}
+        {/* Full-bleed Hero Carousel */}
         <HeroCarousel slides={heroSlides} />
 
         <View style={styles.bodyContent}>
@@ -165,52 +179,60 @@ export default function HomeScreen() {
               style={styles.quickHubItem}
               onPress={() => router.push('/mail' as never)}
             >
-              <View style={[styles.quickHubIcon, { backgroundColor: theme.colors.accentSoft }]}>
-                <Mail size={18} color={theme.colors.accent} />
+              <View style={[styles.quickHubIcon, { backgroundColor: colors.accentSoft, borderColor: colors.borderGlass }]}>
+                <Mail size={18} color={colors.accent} />
                 {unreadMails > 0 && <View style={styles.quickHubDot} />}
               </View>
-              <Text style={styles.quickHubLabel}>GBU Mail</Text>
+              <Text style={[styles.quickHubLabel, { color: colors.textPrimary }]}>GBU Mail</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.quickHubItem}
               onPress={() => router.push('/timetable' as never)}
             >
-              <View style={[styles.quickHubIcon, { backgroundColor: theme.colors.successSoft }]}>
-                <Calendar size={18} color={theme.colors.success} />
+              <View style={[styles.quickHubIcon, { backgroundColor: colors.successSoft, borderColor: colors.borderGlass }]}>
+                <Calendar size={18} color={colors.success} />
               </View>
-              <Text style={styles.quickHubLabel}>Schedule</Text>
+              <Text style={[styles.quickHubLabel, { color: colors.textPrimary }]}>Schedule</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.quickHubItem}
               onPress={() => router.push('/exams' as never)}
             >
-              <View style={[styles.quickHubIcon, { backgroundColor: theme.colors.warningSoft }]}>
-                <GraduationCap size={18} color={theme.colors.warning} />
+              <View style={[styles.quickHubIcon, { backgroundColor: colors.warningSoft, borderColor: colors.borderGlass }]}>
+                <GraduationCap size={18} color={colors.warning} />
               </View>
-              <Text style={styles.quickHubLabel}>Exam Hub</Text>
+              <Text style={[styles.quickHubLabel, { color: colors.textPrimary }]}>Exam Hub</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.quickHubItem}
               onPress={() => router.push('/calendar' as never)}
             >
-              <View style={[styles.quickHubIcon, { backgroundColor: '#F3EEFD' }]}>
-                <Clock size={18} color="#7C3AED" />
+              <View
+                style={[
+                  styles.quickHubIcon,
+                  {
+                    backgroundColor: isDark ? 'rgba(167, 139, 250, 0.16)' : '#F3EEFD',
+                    borderColor: colors.borderGlass,
+                  },
+                ]}
+              >
+                <Clock size={18} color="#8B5CF6" />
               </View>
-              <Text style={styles.quickHubLabel}>Calendar</Text>
+              <Text style={[styles.quickHubLabel, { color: colors.textPrimary }]}>Calendar</Text>
             </TouchableOpacity>
           </View>
 
           {/* Academic Attendance Battery Meter */}
           <AttendanceBatteryCard onPressDetails={() => router.push('/profile' as never)} />
 
-          {/* Next Class Card (Continue Watching style) */}
+          {/* Next Class Card */}
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Up Next</Text>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Up Next</Text>
             <TouchableOpacity onPress={() => router.push('/timetable' as never)}>
-              <Text style={styles.seeAllText}>Full Schedule</Text>
+              <Text style={[styles.seeAllText, { color: colors.accent }]}>Full Schedule</Text>
             </TouchableOpacity>
           </View>
 
@@ -228,16 +250,16 @@ export default function HomeScreen() {
           {hasTimetableChange && (
             <GlassCard style={styles.changeBanner} accentBorder onPress={() => router.push('/timetable' as never)}>
               <View style={styles.changeRow}>
-                <View style={styles.changeIconCircle}>
-                  <AlertTriangle size={18} color={theme.colors.accent} />
+                <View style={[styles.changeIconCircle, { backgroundColor: `${colors.accent}20` }]}>
+                  <AlertTriangle size={18} color={colors.accent} />
                 </View>
                 <View style={styles.changeTextCol}>
-                  <Text style={styles.changeTitle}>Timetable Changed</Text>
-                  <Text style={styles.changeSubtitle}>
+                  <Text style={[styles.changeTitle, { color: colors.textPrimary }]}>Timetable Changed</Text>
+                  <Text style={[styles.changeSubtitle, { color: colors.textSecondary }]}>
                     Tomorrow: Data Structures moved 09:30 → 10:30 (Room 208)
                   </Text>
                 </View>
-                <ChevronRight size={16} color={theme.colors.textSecondary} />
+                <ChevronRight size={16} color={colors.textSecondary} />
               </View>
             </GlassCard>
           )}
@@ -247,15 +269,15 @@ export default function HomeScreen() {
             <View style={styles.mailSpotlightSection}>
               <View style={styles.sectionHeaderRow}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.sectionTitle}>University Dispatch</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>University Dispatch</Text>
                   {unreadMails > 0 && (
-                    <View style={styles.miniUnreadPill}>
-                      <Text style={styles.miniUnreadPillText}>{unreadMails} unread</Text>
+                    <View style={[styles.miniUnreadPill, { borderColor: colors.accent, backgroundColor: `${colors.accent}20` }]}>
+                      <Text style={[styles.miniUnreadPillText, { color: colors.accent }]}>{unreadMails} unread</Text>
                     </View>
                   )}
                 </View>
                 <TouchableOpacity onPress={() => router.push('/mail' as never)}>
-                  <Text style={styles.seeAllText}>Open Webmail</Text>
+                  <Text style={[styles.seeAllText, { color: colors.accent }]}>Open Webmail</Text>
                 </TouchableOpacity>
               </View>
 
@@ -270,16 +292,16 @@ export default function HomeScreen() {
                     <Text style={styles.mailAvatarText}>{topMail.avatarInitial}</Text>
                   </View>
                   <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.mailSenderName}>{topMail.senderName}</Text>
-                    <Text style={styles.mailSenderRole}>{topMail.senderRole}</Text>
+                    <Text style={[styles.mailSenderName, { color: colors.textPrimary }]}>{topMail.senderName}</Text>
+                    <Text style={[styles.mailSenderRole, { color: colors.textSecondary }]}>{topMail.senderRole}</Text>
                   </View>
-                  <Text style={styles.mailDate}>{topMail.dateStr}</Text>
+                  <Text style={[styles.mailDate, { color: colors.textSecondary }]}>{topMail.dateStr}</Text>
                 </View>
-                <Text style={styles.mailSubject} numberOfLines={1}>{topMail.subject}</Text>
-                <Text style={styles.mailSnippet} numberOfLines={2}>{topMail.preview}</Text>
+                <Text style={[styles.mailSubject, { color: colors.textPrimary }]} numberOfLines={1}>{topMail.subject}</Text>
+                <Text style={[styles.mailSnippet, { color: colors.textSecondary }]} numberOfLines={2}>{topMail.preview}</Text>
                 <View style={styles.mailActionRow}>
-                  <Text style={styles.mailActionLink}>Tap to view official communication</Text>
-                  <ArrowRight size={14} color={theme.colors.accent} />
+                  <Text style={[styles.mailActionLink, { color: colors.accent }]}>Tap to view official communication</Text>
+                  <ArrowRight size={14} color={colors.accent} />
                 </View>
               </GlassCard>
             </View>
@@ -287,88 +309,88 @@ export default function HomeScreen() {
 
           {/* Deadlines Section */}
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Active Deadlines</Text>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Active Deadlines</Text>
             <TouchableOpacity onPress={() => router.push('/calendar' as never)}>
-              <Text style={styles.seeAllText}>Academic Calendar</Text>
+              <Text style={[styles.seeAllText, { color: colors.accent }]}>Academic Calendar</Text>
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.deadlineRow}>
             <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notices' as never)}>
               <View style={styles.deadlineBadge}>
-                <Clock size={12} color={theme.colors.warning} />
-                <Text style={styles.deadlineBadgeText}>2 days left</Text>
+                <Clock size={12} color={colors.warning} />
+                <Text style={[styles.deadlineBadgeText, { color: colors.warning }]}>2 days left</Text>
               </View>
-              <Text style={styles.deadlineCardTitle}>Monsoon Fee Submission</Text>
-              <Text style={styles.deadlineCardDate}>Due 31 Oct 2026</Text>
+              <Text style={[styles.deadlineCardTitle, { color: colors.textPrimary }]}>Monsoon Fee Submission</Text>
+              <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>Due 31 Oct 2026</Text>
             </GlassCard>
 
             <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notices' as never)}>
               <View style={styles.deadlineBadge}>
-                <Clock size={12} color={theme.colors.warning} />
-                <Text style={styles.deadlineBadgeText}>12 days left</Text>
+                <Clock size={12} color={colors.warning} />
+                <Text style={[styles.deadlineBadgeText, { color: colors.warning }]}>12 days left</Text>
               </View>
-              <Text style={styles.deadlineCardTitle}>UP Scholarship Portal</Text>
-              <Text style={styles.deadlineCardDate}>Due 10 Nov 2026</Text>
+              <Text style={[styles.deadlineCardTitle, { color: colors.textPrimary }]}>UP Scholarship Portal</Text>
+              <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>Due 10 Nov 2026</Text>
             </GlassCard>
 
             <GlassCard style={styles.deadlineCard} onPress={() => router.push('/notices' as never)}>
               <View style={styles.deadlineBadge}>
-                <Clock size={12} color={theme.colors.success} />
-                <Text style={styles.deadlineBadgeText}>18 days left</Text>
+                <Clock size={12} color={colors.success} />
+                <Text style={[styles.deadlineBadgeText, { color: colors.success }]}>18 days left</Text>
               </View>
-              <Text style={styles.deadlineCardTitle}>Back Paper Exam Form</Text>
-              <Text style={styles.deadlineCardDate}>Due 16 Nov 2026</Text>
+              <Text style={[styles.deadlineCardTitle, { color: colors.textPrimary }]}>Back Paper Exam Form</Text>
+              <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>Due 16 Nov 2026</Text>
             </GlassCard>
           </ScrollView>
 
           {/* Exam Countdown Card */}
           <GlassCard style={styles.examCard} onPress={() => router.push('/exams' as never)}>
             <View style={styles.examCardRow}>
-              <View>
-                <Text style={styles.examSubtitle}>AUTUMN 2026</Text>
-                <Text style={styles.examTitle}>Mid Semester Examinations</Text>
-                <Text style={styles.examDate}>Starts Monday, 3 Nov 2026 • Tap for Date Sheet</Text>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={[styles.examSubtitle, { color: colors.accent }]}>AUTUMN 2026</Text>
+                <Text style={[styles.examTitle, { color: colors.textPrimary }]}>Mid Semester Examinations</Text>
+                <Text style={[styles.examDate, { color: colors.textSecondary }]}>Starts Monday, 3 Nov 2026 • Tap for Date Sheet</Text>
               </View>
-              <View style={styles.countdownBox}>
-                <CountUp value={14} style={styles.countdownNumber} />
-                <Text style={styles.countdownLabel}>DAYS LEFT</Text>
+              <View style={[styles.countdownBox, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}44` }]}>
+                <CountUp value={14} style={{ ...styles.countdownNumber, color: colors.accent }} />
+                <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>DAYS LEFT</Text>
               </View>
             </View>
           </GlassCard>
 
           {/* Trending PYQs */}
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Trending PYQs</Text>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Trending PYQs</Text>
             <TouchableOpacity onPress={() => router.push('/pyq' as never)}>
-              <Text style={styles.seeAllText}>Browse all</Text>
+              <Text style={[styles.seeAllText, { color: colors.accent }]}>Browse all</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.pyqGrid}>
             <GlassCard style={styles.pyqCard} onPress={() => router.push('/pyq' as never)}>
-              <View style={styles.pyqBadge}>
-                <Text style={styles.pyqBadgeText}>CSE205</Text>
+              <View style={[styles.pyqBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+                <Text style={[styles.pyqBadgeText, { color: colors.accent }]}>CSE205</Text>
               </View>
-              <Text style={styles.pyqTitle} numberOfLines={2}>Data Structures & Algorithms</Text>
+              <Text style={[styles.pyqTitle, { color: colors.textPrimary }]} numberOfLines={2}>Data Structures & Algorithms</Text>
               <View style={styles.pyqMeta}>
-                <Text style={styles.pyqYear}>2025 Mid Sem</Text>
+                <Text style={[styles.pyqYear, { color: colors.textSecondary }]}>2025 Mid Sem</Text>
                 <View style={styles.downloadCount}>
-                  <Download size={12} color={theme.colors.textSecondary} />
-                  <Text style={styles.downloadText}>320</Text>
+                  <Download size={12} color={colors.textSecondary} />
+                  <Text style={[styles.downloadText, { color: colors.textSecondary }]}>320</Text>
                 </View>
               </View>
             </GlassCard>
 
             <GlassCard style={styles.pyqCard} onPress={() => router.push('/pyq' as never)}>
-              <View style={styles.pyqBadge}>
-                <Text style={styles.pyqBadgeText}>CSE209</Text>
+              <View style={[styles.pyqBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+                <Text style={[styles.pyqBadgeText, { color: colors.accent }]}>CSE209</Text>
               </View>
-              <Text style={styles.pyqTitle} numberOfLines={2}>Operating Systems</Text>
+              <Text style={[styles.pyqTitle, { color: colors.textPrimary }]} numberOfLines={2}>Operating Systems</Text>
               <View style={styles.pyqMeta}>
-                <Text style={styles.pyqYear}>2025 End Sem</Text>
+                <Text style={[styles.pyqYear, { color: colors.textSecondary }]}>2025 End Sem</Text>
                 <View style={styles.downloadCount}>
-                  <Download size={12} color={theme.colors.textSecondary} />
-                  <Text style={styles.downloadText}>294</Text>
+                  <Download size={12} color={colors.textSecondary} />
+                  <Text style={[styles.downloadText, { color: colors.textSecondary }]}>294</Text>
                 </View>
               </View>
             </GlassCard>
@@ -379,8 +401,8 @@ export default function HomeScreen() {
             style={styles.devLink}
             onPress={() => router.push('/dev/motion' as never)}
           >
-            <Sparkles size={14} color={theme.colors.accent} />
-            <Text style={styles.devLinkText}>Motion Playground (/dev/motion)</Text>
+            <Sparkles size={14} color={colors.accent} />
+            <Text style={[styles.devLinkText, { color: colors.accent }]}>Motion Playground (/dev/motion)</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -391,7 +413,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -399,9 +420,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.sm,
-    backgroundColor: theme.colors.bg,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(17, 24, 39, 0.05)',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -415,12 +434,10 @@ const styles = StyleSheet.create({
   brandGBU: {
     fontFamily: 'Poppins-Bold',
     fontSize: 20,
-    color: theme.colors.ivory,
   },
   brandOne: {
     fontFamily: 'Poppins-Bold',
     fontSize: 20,
-    color: theme.colors.accent,
   },
   headerRight: {
     flexDirection: 'row',
@@ -431,9 +448,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.10)',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -442,7 +457,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -2,
     right: -2,
-    backgroundColor: theme.colors.accent,
+    backgroundColor: '#FF6A2B',
     borderRadius: 9,
     minWidth: 16,
     height: 16,
@@ -450,7 +465,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: theme.colors.bg,
   },
   mailBadgeText: {
     color: '#FFF',
@@ -461,9 +475,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.10)',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -472,12 +484,11 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: theme.colors.accent,
+    backgroundColor: '#FF6A2B',
     position: 'absolute',
     top: 8,
     right: 8,
     borderWidth: 1.5,
-    borderColor: theme.colors.bg,
   },
   scrollContent: {
     paddingBottom: 110, // Safe padding for floating bottom bar
@@ -502,7 +513,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(17, 24, 39, 0.08)',
     marginBottom: 6,
     position: 'relative',
   },
@@ -513,12 +523,11 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: theme.colors.accent,
+    backgroundColor: '#FF6A2B',
   },
   quickHubLabel: {
     fontFamily: 'Inter-Medium',
     fontSize: 11,
-    color: theme.colors.ivory,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -530,17 +539,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: theme.colors.ivory,
   },
   seeAllText: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
-    color: theme.colors.accent,
   },
   changeBanner: {
     marginBottom: theme.spacing.lg,
-    backgroundColor: theme.colors.accentSoft,
-    borderColor: theme.colors.accent,
   },
   changeRow: {
     flexDirection: 'row',
@@ -550,7 +555,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(232, 91, 34, 0.20)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -561,29 +565,24 @@ const styles = StyleSheet.create({
   changeTitle: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 14,
-    color: theme.colors.ivory,
   },
   changeSubtitle: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   mailSpotlightSection: {
     marginBottom: theme.spacing.lg,
   },
   miniUnreadPill: {
-    backgroundColor: 'rgba(232, 91, 34, 0.20)',
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: theme.radius.chip,
     borderWidth: 1,
-    borderColor: theme.colors.accent,
   },
   miniUnreadPillText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 10,
-    color: theme.colors.accent,
   },
   mailSpotlightCard: {
     padding: theme.spacing.md,
@@ -608,28 +607,23 @@ const styles = StyleSheet.create({
   mailSenderName: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
-    color: theme.colors.ivory,
   },
   mailSenderRole: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
   },
   mailDate: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
   },
   mailSubject: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 14,
-    color: theme.colors.ivory,
     marginBottom: 4,
   },
   mailSnippet: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
     lineHeight: 18,
     marginBottom: 8,
   },
@@ -641,7 +635,6 @@ const styles = StyleSheet.create({
   mailActionLink: {
     fontFamily: 'Inter-Medium',
     fontSize: 12,
-    color: theme.colors.accent,
   },
   deadlineRow: {
     flexDirection: 'row',
@@ -663,7 +656,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   deadlineBadgeText: {
-    color: theme.colors.warning,
     fontFamily: 'Inter-Medium',
     fontSize: 11,
     marginLeft: 4,
@@ -671,13 +663,11 @@ const styles = StyleSheet.create({
   deadlineCardTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 14,
-    color: theme.colors.ivory,
     marginBottom: 4,
   },
   deadlineCardDate: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
   examCard: {
     padding: theme.spacing.lg,
@@ -691,25 +681,20 @@ const styles = StyleSheet.create({
   examSubtitle: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 11,
-    color: theme.colors.accent,
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   examTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 17,
-    color: theme.colors.ivory,
     marginBottom: 4,
   },
   examDate: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textSecondary,
   },
   countdownBox: {
-    backgroundColor: theme.colors.accentSoft,
     borderWidth: 1,
-    borderColor: 'rgba(255, 106, 43, 0.3)',
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -719,12 +704,10 @@ const styles = StyleSheet.create({
   countdownNumber: {
     fontFamily: 'Poppins-Bold',
     fontSize: 24,
-    color: theme.colors.accent,
   },
   countdownLabel: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 9,
-    color: theme.colors.textSecondary,
     letterSpacing: 0.5,
     marginTop: 2,
   },
@@ -738,7 +721,6 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
   },
   pyqBadge: {
-    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
@@ -748,12 +730,10 @@ const styles = StyleSheet.create({
   pyqBadgeText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 10,
-    color: theme.colors.accent,
   },
   pyqTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 14,
-    color: theme.colors.ivory,
     marginBottom: 8,
     minHeight: 38,
   },
@@ -765,7 +745,6 @@ const styles = StyleSheet.create({
   pyqYear: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: theme.colors.textSecondary,
   },
   downloadCount: {
     flexDirection: 'row',
@@ -775,7 +754,6 @@ const styles = StyleSheet.create({
   downloadText: {
     fontFamily: 'Inter-Medium',
     fontSize: 11,
-    color: theme.colors.textSecondary,
   },
   devLink: {
     flexDirection: 'row',
@@ -788,6 +766,5 @@ const styles = StyleSheet.create({
   devLinkText: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
-    color: theme.colors.accent,
   },
 });

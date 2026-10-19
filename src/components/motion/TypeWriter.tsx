@@ -1,20 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { Text, TextStyle, StyleSheet, View } from 'react-native';
+import { Text, TextStyle, StyleSheet, View, StyleProp } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
   withSequence,
   withTiming,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import { theme } from '../../lib/theme';
+import { useReduceMotion } from '../../lib/useReduceMotion';
 
 export interface TypeWriterProps {
   text: string;
   speed?: number; // ms per char
   delay?: number;
   cursor?: boolean;
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
   reduceMotion?: boolean;
   onDone?: () => void;
 }
@@ -25,14 +27,23 @@ export const TypeWriter: React.FC<TypeWriterProps> = ({
   delay = 0,
   cursor = true,
   style,
-  reduceMotion = false,
+  reduceMotion,
   onDone,
 }) => {
-  const [displayedText, setDisplayedText] = useState(reduceMotion ? text : '');
-  const [isDone, setIsDone] = useState(reduceMotion);
+  const systemReduce = useReduceMotion();
+  const effectiveReduce = reduceMotion ?? systemReduce;
+
+  const [displayedText, setDisplayedText] = useState(effectiveReduce ? text : '');
+  const [isDone, setIsDone] = useState(effectiveReduce);
   const cursorOpacity = useSharedValue(1);
 
   useEffect(() => {
+    if (isDone) {
+      cancelAnimation(cursorOpacity);
+      cursorOpacity.value = withTiming(0, { duration: 600 });
+      return;
+    }
+
     cursorOpacity.value = withRepeat(
       withSequence(
         withTiming(1, { duration: 400 }),
@@ -41,10 +52,10 @@ export const TypeWriter: React.FC<TypeWriterProps> = ({
       -1,
       true,
     );
-  }, []);
+  }, [isDone]);
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (effectiveReduce) {
       setDisplayedText(text);
       setIsDone(true);
       onDone?.();
@@ -55,33 +66,36 @@ export const TypeWriter: React.FC<TypeWriterProps> = ({
     setIsDone(false);
 
     let currentIndex = 0;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
     const startTimeout = setTimeout(() => {
-      const interval = setInterval(() => {
+      interval = setInterval(() => {
         if (currentIndex < text.length) {
           currentIndex++;
           setDisplayedText(text.slice(0, currentIndex));
         } else {
-          clearInterval(interval);
+          if (interval) clearInterval(interval);
           setIsDone(true);
           onDone?.();
         }
       }, speed);
-
-      return () => clearInterval(interval);
     }, delay);
 
-    return () => clearTimeout(startTimeout);
-  }, [text, speed, delay, reduceMotion]);
+    return () => {
+      clearTimeout(startTimeout);
+      if (interval) clearInterval(interval);
+    };
+  }, [text, speed, delay, effectiveReduce]);
 
   const animatedCursorStyle = useAnimatedStyle(() => ({
-    opacity: isDone ? withTiming(0, { duration: 800 }) : cursorOpacity.value,
+    opacity: cursorOpacity.value,
   }));
 
   return (
     <View style={styles.container} accessible accessibilityLabel={text}>
       <Text style={[styles.text, style]}>
         {displayedText}
-        {cursor && (
+        {cursor && !isDone && (
           <Animated.Text style={[styles.cursor, style, animatedCursorStyle]}>
             |
           </Animated.Text>
@@ -99,11 +113,11 @@ const styles = StyleSheet.create({
   text: {
     color: theme.colors.textPrimary,
     fontFamily: 'Inter-Regular',
-    fontSize: 15,
+    fontSize: 14,
   },
   cursor: {
     color: theme.colors.accent,
-    fontWeight: 'bold',
+    fontFamily: 'Inter-Regular',
   },
 });
 

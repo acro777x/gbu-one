@@ -15,4 +15,5 @@ module.exports = {
     node: true,
     jest: true,
   },
+  ignorePatterns: ['android/**', 'ios/**', 'dist/**', 'node_modules/**', '.expo/**', 'checklist_extracted/**', 'docs/**'],
 };

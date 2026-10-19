@@ -15,6 +15,8 @@ import { AnimatedLogo } from './AnimatedLogo';
 import { LetterRise } from '../motion/LetterRise';
 import { TypeWriter } from '../motion/TypeWriter';
 import { OfficialSeal } from './OfficialSeal';
+import { useAppTheme } from '../../lib/ThemeContext';
+import { useReduceMotion } from '../../lib/useReduceMotion';
 import { theme } from '../../lib/theme';
 
 export interface SplashScreenViewProps {
@@ -25,11 +27,15 @@ export interface SplashScreenViewProps {
 
 export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
   isWarmStart = false,
-  reduceMotion = false,
+  reduceMotion,
   onFinish,
 }) => {
-  const [showWordmark, setShowWordmark] = useState(isWarmStart || reduceMotion);
-  const [showTagline, setShowTagline] = useState(isWarmStart || reduceMotion);
+  const { colors } = useAppTheme();
+  const systemReduce = useReduceMotion();
+  const effectiveReduce = reduceMotion ?? systemReduce;
+
+  const [showWordmark, setShowWordmark] = useState(isWarmStart || effectiveReduce);
+  const [showTagline, setShowTagline] = useState(isWarmStart || effectiveReduce);
   const containerOpacity = useSharedValue(1);
   const hasFinishedRef = useRef(false);
 
@@ -48,42 +54,42 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
     });
     setTimeout(() => {
       triggerFinish();
-    }, 300);
+    }, 280);
   };
 
   useEffect(() => {
-    if (reduceMotion) {
-      const timer = setTimeout(finishHandoff, 400);
+    if (effectiveReduce) {
+      const timer = setTimeout(finishHandoff, 350);
       return () => clearTimeout(timer);
     }
 
     if (isWarmStart) {
-      const timer = setTimeout(finishHandoff, 700);
+      const timer = setTimeout(finishHandoff, 650);
       return () => clearTimeout(timer);
     }
 
     // Cold start timings:
-    // 1000ms: Wordmark starts
+    // 250ms: Wordmark starts rising
     const wordmarkTimer = setTimeout(() => {
       setShowWordmark(true);
-    }, 1000);
+    }, 250);
 
-    // 1500ms: Tagline typewriter starts
+    // 650ms: Tagline typewriter starts
     const taglineTimer = setTimeout(() => {
       setShowTagline(true);
-    }, 1500);
+    }, 650);
 
-    // 2200ms: Handoff fades out and navigates
+    // 1950ms: Handoff fades out and navigates
     const handoffTimer = setTimeout(() => {
       finishHandoff();
-    }, 2250);
+    }, 1950);
 
     return () => {
       clearTimeout(wordmarkTimer);
       clearTimeout(taglineTimer);
       clearTimeout(handoffTimer);
     };
-  }, [isWarmStart, reduceMotion]);
+  }, [isWarmStart, effectiveReduce]);
 
   const animatedContainerStyle = useAnimatedStyle(() => ({
     opacity: containerOpacity.value,
@@ -94,32 +100,32 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
   };
 
   return (
-    <Animated.View style={[styles.container, animatedContainerStyle]}>
+    <Animated.View style={[styles.container, { backgroundColor: colors.bg }, animatedContainerStyle]}>
       <Pressable style={styles.pressableArea} onPress={handleTapToSkip}>
         {/* Animated Brand Mark */}
         <AnimatedLogo
-          size={140}
+          size={144}
           mode={isWarmStart ? 'static' : 'intro'}
           glow
-          reduceMotion={reduceMotion}
+          reduceMotion={effectiveReduce}
         />
 
-        {/* Live Wordmark: Poppins Bold "GBU" ivory + "One" orange */}
+        {/* Live Wordmark: Poppins Bold "GBU" ivory/dark + "One" orange */}
         <View style={styles.wordmarkContainer}>
           {showWordmark && (
             <View style={styles.wordmarkRow}>
               <LetterRise
                 text="GBU "
-                style={styles.wordmarkGBU}
-                stagger={28}
-                reduceMotion={reduceMotion}
+                style={[styles.wordmarkGBU, { color: colors.textPrimary }]}
+                stagger={24}
+                reduceMotion={effectiveReduce}
               />
               <LetterRise
                 text="One"
-                style={styles.wordmarkOne}
-                stagger={28}
-                delay={90}
-                reduceMotion={reduceMotion}
+                style={[styles.wordmarkOne, { color: colors.accent }]}
+                stagger={24}
+                delay={70}
+                reduceMotion={effectiveReduce}
               />
             </View>
           )}
@@ -130,9 +136,9 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
           {showTagline && (
             <TypeWriter
               text="Everything GBU. One app."
-              speed={35}
-              style={styles.taglineText}
-              reduceMotion={reduceMotion}
+              speed={32}
+              style={[styles.taglineText, { color: colors.textSecondary }]}
+              reduceMotion={effectiveReduce}
             />
           )}
         </View>
@@ -141,7 +147,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
         <OfficialSeal />
 
         {/* Skip hint */}
-        <Text style={styles.skipHint}>Tap anywhere to skip</Text>
+        <Text style={[styles.skipHint, { color: colors.textTertiary }]}>Tap anywhere to skip</Text>
       </Pressable>
     </Animated.View>
   );
@@ -150,20 +156,19 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: theme.colors.bg,
     zIndex: 99999,
   },
   pressableArea: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: theme.spacing.xl,
+    paddingHorizontal: theme.spacing.xl,
   },
   wordmarkContainer: {
-    marginTop: theme.spacing.lg,
-    minHeight: 40,
-    alignItems: 'center',
+    marginTop: 22,
+    height: 40,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   wordmarkRow: {
     flexDirection: 'row',
@@ -172,33 +177,29 @@ const styles = StyleSheet.create({
   wordmarkGBU: {
     fontFamily: 'Poppins-Bold',
     fontSize: 32,
-    color: theme.colors.ivory,
     letterSpacing: -0.5,
   },
   wordmarkOne: {
     fontFamily: 'Poppins-Bold',
     fontSize: 32,
-    color: theme.colors.accent,
     letterSpacing: -0.5,
   },
   taglineContainer: {
-    marginTop: theme.spacing.xs,
-    minHeight: 24,
-    alignItems: 'center',
+    marginTop: 10,
+    height: 24,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   taglineText: {
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter-Medium',
     fontSize: 14,
-    color: theme.colors.textSecondary,
-    letterSpacing: 0.2,
+    letterSpacing: -0.1,
   },
   skipHint: {
     position: 'absolute',
     bottom: 40,
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: theme.colors.textTertiary,
   },
 });
 

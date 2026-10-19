@@ -3,7 +3,7 @@ import {
   StyleSheet,
   View,
   Text,
-  Dimensions,
+  useWindowDimensions,
   FlatList,
   NativeSyntheticEvent,
   NativeScrollEvent,
@@ -11,6 +11,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { PillButton } from './PillButton';
 import { LetterRise } from '../motion/LetterRise';
+import { useAppTheme } from '../../lib/ThemeContext';
 import { theme } from '../../lib/theme';
 
 export interface HeroSlideItem {
@@ -27,12 +28,12 @@ export interface HeroCarouselProps {
   autoAdvanceInterval?: number;
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 export const HeroCarousel: React.FC<HeroCarouselProps> = ({
   slides,
   autoAdvanceInterval = 6000,
 }) => {
+  const { colors, isDark } = useAppTheme();
+  const { width: screenWidth } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const isInteracting = useRef(false);
@@ -55,7 +56,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
 
   const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
-    const newIdx = Math.round(x / SCREEN_WIDTH);
+    const newIdx = Math.round(x / screenWidth);
     setActiveIndex(newIdx);
     isInteracting.current = false;
   };
@@ -77,10 +78,14 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
           const isCurrent = index === activeIndex;
 
           return (
-            <View style={styles.slide}>
+            <View style={[styles.slide, { width: screenWidth }]}>
               {/* Subtle background glow & gradient */}
               <LinearGradient
-                colors={[theme.colors.accentWarmCream, theme.colors.surface, theme.colors.bg]}
+                colors={
+                  isDark
+                    ? [colors.accentWarmBrown, colors.surface, colors.bg]
+                    : [colors.accentWarmCream, colors.surface, colors.bg]
+                }
                 start={{ x: 0, y: 0 }}
                 end={{ x: 0, y: 1 }}
                 style={StyleSheet.absoluteFill}
@@ -89,10 +94,14 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
               <View style={styles.slideContent}>
                 {/* Meta / Category pill */}
                 <View style={styles.metaRow}>
-                  <View style={styles.categoryPill}>
-                    <Text style={styles.categoryText}>{item.category}</Text>
+                  <View style={[styles.categoryPill, { backgroundColor: colors.accentSoft }]}>
+                    <Text style={[styles.categoryText, { color: colors.accent }]}>
+                      {item.category}
+                    </Text>
                   </View>
-                  <Text style={styles.metaText}>{item.meta}</Text>
+                  <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+                    {item.meta}
+                  </Text>
                 </View>
 
                 {/* Main Headline */}
@@ -100,11 +109,13 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
                   {isCurrent ? (
                     <LetterRise
                       text={item.title}
-                      style={styles.heroTitle}
+                      style={[styles.heroTitle, { color: colors.textPrimary }]}
                       stagger={20}
                     />
                   ) : (
-                    <Text style={styles.heroTitle}>{item.title}</Text>
+                    <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>
+                      {item.title}
+                    </Text>
                   )}
                 </View>
 
@@ -133,7 +144,16 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
                 key={`dot-${i}`}
                 style={[
                   styles.dot,
-                  isActive ? styles.dotActive : styles.dotInactive,
+                  isActive
+                    ? [styles.dotActive, { backgroundColor: colors.accent }]
+                    : [
+                        styles.dotInactive,
+                        {
+                          backgroundColor: isDark
+                            ? 'rgba(255, 255, 255, 0.25)'
+                            : 'rgba(17, 24, 39, 0.25)',
+                        },
+                      ],
                 ]}
               />
             );
@@ -151,7 +171,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   slide: {
-    width: SCREEN_WIDTH,
     height: 250,
     justifyContent: 'flex-end',
     padding: theme.spacing.xl,
@@ -166,20 +185,17 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   categoryPill: {
-    backgroundColor: 'rgba(232, 91, 34, 0.20)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
     marginRight: 8,
   },
   categoryText: {
-    color: theme.colors.accent,
     fontFamily: 'Inter-SemiBold',
     fontSize: 11,
     textTransform: 'uppercase',
   },
   metaText: {
-    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     fontSize: 12,
   },
@@ -191,7 +207,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Bold',
     fontSize: 22,
     lineHeight: 28,
-    color: theme.colors.ivory,
   },
   actionRow: {
     flexDirection: 'row',
@@ -211,11 +226,9 @@ const styles = StyleSheet.create({
   },
   dotInactive: {
     width: 6,
-    backgroundColor: 'rgba(17, 24, 39, 0.25)',
   },
   dotActive: {
     width: 24,
-    backgroundColor: theme.colors.accent,
   },
 });
 

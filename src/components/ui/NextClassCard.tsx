@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 import { MapPin, Clock, BookOpen } from 'lucide-react-native';
 import { GlassCard } from './GlassCard';
+import { useAppTheme } from '../../lib/ThemeContext';
 import { theme } from '../../lib/theme';
 
 export interface NextClassCardProps {
@@ -23,13 +24,17 @@ export const NextClassCard: React.FC<NextClassCardProps> = ({
   faculty,
   onPress,
 }) => {
+  const { colors } = useAppTheme();
+
   if (!subject) {
     return (
       <GlassCard style={styles.card} onPress={onPress}>
         <View style={styles.emptyContainer}>
-          <BookOpen size={24} color={theme.colors.accent} />
-          <Text style={styles.emptyTitle}>No more classes today</Text>
-          <Text style={styles.emptySubtitle}>You're all caught up with your schedule.</Text>
+          <BookOpen size={24} color={colors.accent} />
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No more classes today</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+            You're all caught up with your schedule.
+          </Text>
         </View>
       </GlassCard>
     );
@@ -39,46 +44,57 @@ export const NextClassCard: React.FC<NextClassCardProps> = ({
     <GlassCard style={styles.card} onPress={onPress} glow>
       {/* Top row: Next Class label + Time Left badge */}
       <View style={styles.topRow}>
-        <View style={styles.pillLabel}>
-          <Text style={styles.pillLabelText}>NEXT CLASS</Text>
+        <View style={[styles.pillLabel, { backgroundColor: colors.accentSoft }]}>
+          <Text style={[styles.pillLabelText, { color: colors.accent }]}>NEXT CLASS</Text>
         </View>
         {timeLeftBadge && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{timeLeftBadge}</Text>
+          <View style={[styles.badge, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
+            <Text style={[styles.badgeText, { color: colors.textPrimary }]}>{timeLeftBadge}</Text>
           </View>
         )}
       </View>
 
       {/* Main Info */}
-      <Text style={styles.subject} numberOfLines={1}>
+      <Text style={[styles.subject, { color: colors.textPrimary }]} numberOfLines={1}>
         {subject}
       </Text>
 
       <View style={styles.detailsRow}>
         {room && (
           <View style={styles.detailItem}>
-            <MapPin size={14} color={theme.colors.accent} />
-            <Text style={styles.detailText}>{room}</Text>
+            <MapPin size={14} color={colors.accent} />
+            <Text style={[styles.detailText, { color: colors.textSecondary }]}>{room}</Text>
           </View>
         )}
-
         {time && (
           <View style={styles.detailItem}>
-            <Clock size={14} color={theme.colors.textSecondary} />
-            <Text style={styles.detailText}>{time}</Text>
+            <Clock size={14} color={colors.accent} />
+            <Text style={[styles.detailText, { color: colors.textSecondary }]}>{time}</Text>
           </View>
-        )}
-
-        {faculty && (
-          <Text style={styles.facultyText} numberOfLines={1}>
-            • {faculty}
-          </Text>
         )}
       </View>
 
-      {/* Progress Bar */}
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${Math.min(100, Math.max(0, progressPercent))}%` }]} />
+      {/* Bottom Row: Faculty & Progress Indicator */}
+      <View style={styles.bottomRow}>
+        {faculty ? (
+          <Text style={[styles.facultyText, { color: colors.textSecondary }]} numberOfLines={1}>
+            {faculty}
+          </Text>
+        ) : (
+          <View />
+        )}
+        {progressPercent > 0 && (
+          <View style={styles.progressContainer}>
+            <View style={[styles.progressTrack, { backgroundColor: colors.surfaceAlt }]}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${Math.min(100, Math.max(0, progressPercent))}%`, backgroundColor: colors.accent },
+                ]}
+              />
+            </View>
+          </View>
+        )}
       </View>
     </GlassCard>
   );
@@ -86,8 +102,7 @@ export const NextClassCard: React.FC<NextClassCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
   },
   topRow: {
     flexDirection: 'row',
@@ -96,34 +111,28 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   pillLabel: {
-    backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: theme.radius.chip,
+    borderRadius: 999,
   },
   pillLabelText: {
-    color: theme.colors.accent,
     fontFamily: 'Inter-SemiBold',
     fontSize: 10,
     letterSpacing: 0.5,
   },
   badge: {
-    backgroundColor: theme.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: theme.radius.chip,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   badgeText: {
-    color: theme.colors.ivory,
     fontFamily: 'Inter-Medium',
     fontSize: 11,
   },
   subject: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: theme.colors.ivory,
     marginBottom: 6,
   },
   detailsRow: {
@@ -138,25 +147,32 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   detailText: {
-    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Medium',
     fontSize: 13,
     marginLeft: 4,
   },
   facultyText: {
-    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     fontSize: 12,
+    flex: 1,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  progressContainer: {
+    width: 80,
+    marginLeft: 12,
   },
   progressTrack: {
     height: 4,
-    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     borderRadius: 2,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: theme.colors.accent,
     borderRadius: 2,
   },
   emptyContainer: {
@@ -166,14 +182,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: theme.colors.ivory,
     marginTop: 8,
     marginBottom: 2,
   },
   emptySubtitle: {
     fontFamily: 'Inter-Regular',
     fontSize: 13,
-    color: theme.colors.textSecondary,
   },
 });
 
