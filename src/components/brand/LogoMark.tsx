@@ -10,7 +10,7 @@ export interface LogoMarkProps {
   mono?: boolean;
   monoColor?: string;
   numeralColor?: string;
-  variant?: 'mark' | 'tile' | 'vector';
+  variant?: 'mark' | 'tile' | 'vector' | 'dark' | 'light' | 'transparent';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -77,8 +77,16 @@ export const LogoMark: React.FC<LogoMarkProps> = ({
   }
 
   // Authentic tile format with the user's exact lighting, frame, and glow
-  if (variant === 'tile') {
-    const tileSource = isDark ? TILE_DARK_IMAGE : TILE_LIGHT_IMAGE;
+  if (variant === 'tile' || variant === 'dark' || variant === 'light') {
+    const tileSource =
+      variant === 'dark'
+        ? TILE_DARK_IMAGE
+        : variant === 'light'
+          ? TILE_LIGHT_IMAGE
+          : isDark
+            ? TILE_DARK_IMAGE
+            : TILE_LIGHT_IMAGE;
+
     return (
       <View style={[{ width: size, height: size }, styles.center, style]}>
         <Image

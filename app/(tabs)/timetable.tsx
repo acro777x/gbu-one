@@ -9,7 +9,7 @@ import {
   Modal,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   MapPin,
   User,
@@ -87,6 +87,7 @@ const provider = new GBUTimetableProvider();
 
 export default function TimetableScreen() {
   const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { classSelection } = useAuthStore();
   const currentSection = classSelection?.section || 'BCS-II B';
   const { markAttended, markMissed } = useAttendanceStore();
@@ -270,7 +271,7 @@ export default function TimetableScreen() {
       )}
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

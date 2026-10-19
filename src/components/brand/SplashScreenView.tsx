@@ -107,6 +107,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
           size={144}
           mode={isWarmStart ? 'static' : 'intro'}
           glow
+          variant="tile"
           reduceMotion={effectiveReduce}
         />
 
@@ -166,7 +167,7 @@ const styles = StyleSheet.create({
   },
   wordmarkContainer: {
     marginTop: 22,
-    height: 40,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
   },

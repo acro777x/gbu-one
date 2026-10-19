@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Search,
   Download,
@@ -30,6 +30,7 @@ const SEMESTER_FILTERS = ['All', 'Sem I', 'Sem II', 'Sem IV'];
 
 export default function PYQScreen() {
   const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { isGuest } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSchool, setSelectedSchool] = useState('All');
@@ -169,7 +170,7 @@ export default function PYQScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]} showsVerticalScrollIndicator={false}>
         {/* Trending Spotlight */}
         {searchQuery === '' && selectedSchool === 'All' && selectedSemester === 'All' && (
           <View style={styles.trendingSection}>

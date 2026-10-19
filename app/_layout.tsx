@@ -71,10 +71,17 @@ function AppShell() {
 
   const handleSplashFinish = useCallback(() => {
     setSplashFinished(true);
-    if (hasCheckedOnboarding && !hasSeenOnboarding) {
-      router.replace('/onboarding');
+  }, []);
+
+  // Guarantee onboarding routing for first-time launch as soon as storage and splash are ready
+  useEffect(() => {
+    if (splashFinished && hasCheckedOnboarding && !hasSeenOnboarding) {
+      const navTimer = setTimeout(() => {
+        router.replace('/onboarding');
+      }, 60);
+      return () => clearTimeout(navTimer);
     }
-  }, [hasCheckedOnboarding, hasSeenOnboarding]);
+  }, [splashFinished, hasCheckedOnboarding, hasSeenOnboarding]);
 
   // Failsafe timer: ensures animated splash never hangs
   useEffect(() => {
@@ -100,6 +107,9 @@ function AppShell() {
       >
         <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
         <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+        <Stack.Screen name="goal" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="boost" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="teamwork-preview" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="mail" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="exams" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="calendar" options={{ animation: 'slide_from_right' }} />

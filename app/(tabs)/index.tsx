@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
   Bell,
@@ -39,6 +39,7 @@ import { theme } from '../../src/lib/theme';
 
 export default function HomeScreen() {
   const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { user, isGuest, classSelection } = useAuthStore();
   const { emails, getUnreadCount } = useMailStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -159,7 +160,7 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

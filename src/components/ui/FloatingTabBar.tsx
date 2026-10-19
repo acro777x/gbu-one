@@ -7,6 +7,7 @@ import {
   useWindowDimensions,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -125,6 +126,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
   isGuest = true,
 }) => {
   const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const activeIndex = Math.max(0, TABS.findIndex((t) => t.key === activeTab));
   const translateX = useSharedValue(0);
@@ -154,8 +156,10 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
     transform: [{ translateX: translateX.value }],
   }));
 
+  const dynamicBottom = Math.max(16, insets.bottom + 6);
+
   return (
-    <View style={styles.outerContainer} pointerEvents="box-none">
+    <View style={[styles.outerContainer, { bottom: dynamicBottom }]} pointerEvents="box-none">
       <View
         style={[
           styles.bar,

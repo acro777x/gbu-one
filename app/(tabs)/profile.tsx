@@ -8,7 +8,7 @@ import {
   Switch,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import {
@@ -40,6 +40,7 @@ import { theme } from '../../src/lib/theme';
 
 export default function ProfileScreen() {
   const { colors, isDark, themeMode, setThemeMode } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { user, isGuest, classSelection, logout } = useAuthStore();
 
   // Notification toggles
@@ -72,7 +73,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]} showsVerticalScrollIndicator={false}>
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <Avatar

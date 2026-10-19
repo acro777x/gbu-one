@@ -18,7 +18,7 @@ export interface AnimatedLogoProps {
   size?: number;
   mode?: 'intro' | 'loading' | 'static';
   glow?: boolean;
-  variant?: 'mark' | 'tile';
+  variant?: 'mark' | 'tile' | 'vector' | 'dark' | 'light' | 'transparent';
   reduceMotion?: boolean;
   onAnimationComplete?: () => void;
 }

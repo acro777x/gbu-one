@@ -10,7 +10,7 @@ import {
   Share,
   Linking,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, Share2, BellRing, X, ExternalLink } from 'lucide-react-native';
 import { NoticeCard, Chip, BottomSheet, PillButton, EmptyState } from '../../src/components/ui';
 import { MOCK_NOTICES, NoticeItem } from '../../src/features/notices/noticeService';
@@ -21,6 +21,7 @@ const CATEGORIES = ['All', 'For me', 'datesheet', 'fees', 'scholarship', 'hostel
 
 export default function NoticesScreen() {
   const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [activeNotice, setActiveNotice] = useState<NoticeItem | null>(null);
@@ -110,7 +111,7 @@ export default function NoticesScreen() {
 
       {/* Notices List */}
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
