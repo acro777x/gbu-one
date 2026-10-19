@@ -4,6 +4,7 @@ import {
   View,
   Text,
   Pressable,
+  TouchableOpacity,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -47,19 +48,19 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
 
   const finishHandoff = () => {
     if (hasFinishedRef.current) return;
-    containerOpacity.value = withTiming(0, { duration: 250 }, (finished) => {
+    containerOpacity.value = withTiming(0, { duration: 280 }, (finished) => {
       if (finished) {
         runOnJS(triggerFinish)();
       }
     });
     setTimeout(() => {
       triggerFinish();
-    }, 280);
+    }, 320);
   };
 
   useEffect(() => {
     if (isWarmStart) {
-      const timer = setTimeout(finishHandoff, 650);
+      const timer = setTimeout(finishHandoff, 700);
       return () => clearTimeout(timer);
     }
 
@@ -69,15 +70,15 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
       setShowWordmark(true);
     }, 200);
 
-    // 550ms: Tagline typewriter starts
+    // 450ms: Tagline typewriter starts at brisk 24ms per character
     const taglineTimer = setTimeout(() => {
       setShowTagline(true);
-    }, 550);
+    }, 450);
 
-    // 2200ms: Handoff fades out and navigates
+    // 3400ms: Ample time to appreciate the full animated mark, wordmark, and tagline
     const handoffTimer = setTimeout(() => {
       finishHandoff();
-    }, 2200);
+    }, 3400);
 
     return () => {
       clearTimeout(wordmarkTimer);
@@ -96,8 +97,26 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
 
   return (
     <Animated.View style={[styles.container, { backgroundColor: colors.bg }, animatedContainerStyle]}>
+      {/* Dedicated Skip Pill in Top-Right Corner */}
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          style={[
+            styles.skipPill,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(17, 24, 39, 0.08)',
+              borderColor: colors.borderGlass,
+            },
+          ]}
+          onPress={finishHandoff}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          accessibilityLabel="Skip intro animation"
+        >
+          <Text style={[styles.skipPillText, { color: colors.textPrimary }]}>Skip →</Text>
+        </TouchableOpacity>
+      </View>
+
       <Pressable style={styles.pressableArea} onPress={handleTapToSkip}>
-        {/* Animated Brand Mark */}
+        {/* Animated Brand Mark: clean orange mark on light mode, dark mark on dark mode */}
         <AnimatedLogo
           size={144}
           mode={isWarmStart ? 'static' : 'intro'}
@@ -132,7 +151,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
           {showTagline && (
             <TypeWriter
               text="Everything GBU. One app."
-              speed={32}
+              speed={24}
               style={[styles.taglineText, { color: colors.textSecondary }]}
               reduceMotion={effectiveReduce}
             />
@@ -153,6 +172,26 @@ const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 99999,
+  },
+  topBar: {
+    position: 'absolute',
+    top: 54,
+    right: 20,
+    zIndex: 100000,
+  },
+  skipPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    minHeight: 44,
+    minWidth: 70,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  skipPillText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
   },
   pressableArea: {
     flex: 1,

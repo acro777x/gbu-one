@@ -44,17 +44,12 @@ function AppShell() {
     };
   }, []);
 
-  // Hide native splash screen as soon as fonts are resolved or JS mounts
-  const hideNativeSplash = useCallback(() => {
-    SplashScreen.hideAsync().catch(() => {});
-  }, []);
-
+  // Hide native splash screen as soon as custom fonts are fully loaded into memory
   useEffect(() => {
-    hideNativeSplash();
     if (fontsLoaded || fontError) {
-      hideNativeSplash();
+      SplashScreen.hideAsync().catch(() => {});
     }
-  }, [fontsLoaded, fontError, hideNativeSplash]);
+  }, [fontsLoaded, fontError]);
 
   const handleSplashFinish = useCallback(() => {
     setSplashFinished(true);
@@ -78,9 +73,14 @@ function AppShell() {
   useEffect(() => {
     const safetyTimer = setTimeout(() => {
       handleSplashFinish();
-    }, 3000);
+    }, 4500);
     return () => clearTimeout(safetyTimer);
   }, [handleSplashFinish]);
+
+  // Hold mount until fonts are guaranteed in memory to eliminate system font fallback
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
 
   return (
     <SafeAreaProvider style={[styles.container, { backgroundColor: colors.bg }]}>
