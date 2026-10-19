@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   badgeChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   },
   guestCtaCard: {
     marginBottom: theme.spacing.lg,
-    backgroundColor: 'rgba(255, 106, 43, 0.08)',
+    backgroundColor: theme.colors.accentSoft,
     borderColor: theme.colors.accent,
   },
   guestCtaTitle: {
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
   subjectList: {
     marginTop: 14,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    borderTopColor: 'rgba(17, 24, 39, 0.06)',
     paddingTop: 10,
     gap: 8,
   },
@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
   },
   settingDivider: {
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     marginVertical: 10,
   },
   settingRow: {
@@ -507,7 +507,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
+    borderBottomColor: 'rgba(17, 24, 39, 0.04)',
   },
   toggleLabel: {
     fontFamily: 'Inter-Regular',
@@ -528,7 +528,7 @@ const styles = StyleSheet.create({
   aboutDisclaimer: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.35)',
+    color: theme.colors.textTertiary,
     textAlign: 'center',
     lineHeight: 16,
   },

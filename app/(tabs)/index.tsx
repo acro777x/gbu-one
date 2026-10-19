@@ -40,8 +40,8 @@ export default function HomeScreen() {
   const { user, isGuest, classSelection } = useAuthStore();
   const { emails, getUnreadCount } = useMailStore();
   const [refreshing, setRefreshing] = useState(false);
-  const [hasTimetableChange] = useState(true);
   const [nextSlot, setNextSlot] = useState<Slot | null>(null);
+  const hasTimetableChange = Boolean(nextSlot?.isChanged);
 
   const unreadMails = getUnreadCount();
   const topMail = emails[0];
@@ -106,6 +106,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.mailButton}
             onPress={() => router.push('/mail' as never)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityLabel="GBU Webmail"
           >
             <Mail size={19} color={theme.colors.ivory} />
@@ -120,6 +121,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.bellButton}
             onPress={() => router.push('/notices' as never)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityLabel="Notifications"
           >
             <Bell size={19} color={theme.colors.ivory} />
@@ -129,6 +131,7 @@ export default function HomeScreen() {
           {/* User Avatar */}
           <TouchableOpacity
             onPress={() => router.push('/profile' as never)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityLabel="Profile"
           >
             <Avatar
@@ -162,7 +165,7 @@ export default function HomeScreen() {
               style={styles.quickHubItem}
               onPress={() => router.push('/mail' as never)}
             >
-              <View style={[styles.quickHubIcon, { backgroundColor: 'rgba(255, 106, 43, 0.15)' }]}>
+              <View style={[styles.quickHubIcon, { backgroundColor: theme.colors.accentSoft }]}>
                 <Mail size={18} color={theme.colors.accent} />
                 {unreadMails > 0 && <View style={styles.quickHubDot} />}
               </View>
@@ -173,8 +176,8 @@ export default function HomeScreen() {
               style={styles.quickHubItem}
               onPress={() => router.push('/timetable' as never)}
             >
-              <View style={[styles.quickHubIcon, { backgroundColor: 'rgba(61, 214, 140, 0.15)' }]}>
-                <Calendar size={18} color="#3DD68C" />
+              <View style={[styles.quickHubIcon, { backgroundColor: theme.colors.successSoft }]}>
+                <Calendar size={18} color={theme.colors.success} />
               </View>
               <Text style={styles.quickHubLabel}>Schedule</Text>
             </TouchableOpacity>
@@ -183,8 +186,8 @@ export default function HomeScreen() {
               style={styles.quickHubItem}
               onPress={() => router.push('/exams' as never)}
             >
-              <View style={[styles.quickHubIcon, { backgroundColor: 'rgba(245, 184, 61, 0.15)' }]}>
-                <GraduationCap size={18} color="#F5B83D" />
+              <View style={[styles.quickHubIcon, { backgroundColor: theme.colors.warningSoft }]}>
+                <GraduationCap size={18} color={theme.colors.warning} />
               </View>
               <Text style={styles.quickHubLabel}>Exam Hub</Text>
             </TouchableOpacity>
@@ -193,8 +196,8 @@ export default function HomeScreen() {
               style={styles.quickHubItem}
               onPress={() => router.push('/calendar' as never)}
             >
-              <View style={[styles.quickHubIcon, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
-                <Clock size={18} color="#8B5CF6" />
+              <View style={[styles.quickHubIcon, { backgroundColor: '#F3EEFD' }]}>
+                <Clock size={18} color="#7C3AED" />
               </View>
               <Text style={styles.quickHubLabel}>Calendar</Text>
             </TouchableOpacity>
@@ -398,7 +401,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
     backgroundColor: theme.colors.bg,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: 'rgba(17, 24, 39, 0.05)',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -428,9 +431,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(17, 24, 39, 0.10)',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -458,9 +461,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(17, 24, 39, 0.10)',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -499,7 +502,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(17, 24, 39, 0.08)',
     marginBottom: 6,
     position: 'relative',
   },
@@ -536,7 +539,7 @@ const styles = StyleSheet.create({
   },
   changeBanner: {
     marginBottom: theme.spacing.lg,
-    backgroundColor: 'rgba(255, 106, 43, 0.08)',
+    backgroundColor: theme.colors.accentSoft,
     borderColor: theme.colors.accent,
   },
   changeRow: {
@@ -547,7 +550,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 106, 43, 0.2)',
+    backgroundColor: 'rgba(232, 91, 34, 0.20)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -570,7 +573,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.lg,
   },
   miniUnreadPill: {
-    backgroundColor: 'rgba(255, 106, 43, 0.2)',
+    backgroundColor: 'rgba(232, 91, 34, 0.20)',
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: theme.radius.chip,
@@ -704,7 +707,7 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
   },
   countdownBox: {
-    backgroundColor: 'rgba(255, 106, 43, 0.15)',
+    backgroundColor: theme.colors.accentSoft,
     borderWidth: 1,
     borderColor: 'rgba(255, 106, 43, 0.3)',
     borderRadius: 16,
@@ -735,7 +738,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
   },
   pyqBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,

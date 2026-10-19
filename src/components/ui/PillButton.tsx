@@ -114,7 +114,7 @@ export const PillButton: React.FC<PillButtonProps> = ({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variant === 'white' ? theme.colors.bg : theme.colors.ivory}
+          color={variant === 'primary' ? theme.colors.onAccent : (variant === 'white' ? theme.colors.bg : theme.colors.ivory)}
         />
       ) : (
         <>
@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
   sizeSm: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: 8,
-    minHeight: 38,
+    minHeight: 44,
   },
   sizeMd: {
     paddingHorizontal: theme.spacing.xl,
@@ -173,10 +173,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   textPrimary: {
-    color: theme.colors.ivory,
+    color: theme.colors.onAccent,
   },
   textWhite: {
-    color: '#0B0B0C',
+    color: theme.colors.bg,
   },
   textDark: {
     color: theme.colors.textPrimary,

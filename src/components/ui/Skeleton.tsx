@@ -8,6 +8,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import { theme } from '../../lib/theme';
 
 export interface SkeletonProps {
   width?: DimensionValue;
@@ -53,7 +54,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
     >
       <Animated.View style={[styles.shimmer, animatedStyle]}>
         <LinearGradient
-          colors={['transparent', 'rgba(255, 255, 255, 0.08)', 'transparent']}
+          colors={['transparent', 'rgba(255, 255, 255, 0.75)', 'transparent']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={StyleSheet.absoluteFill}
@@ -65,7 +66,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
 
 const styles = StyleSheet.create({
   skeleton: {
-    backgroundColor: '#1C1C20',
+    backgroundColor: theme.colors.surfaceMuted,
     overflow: 'hidden',
     position: 'relative',
   },

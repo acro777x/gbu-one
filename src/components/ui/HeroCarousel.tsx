@@ -80,7 +80,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
             <View style={styles.slide}>
               {/* Subtle background glow & gradient */}
               <LinearGradient
-                colors={['#1F1714', '#161618', '#0B0B0C']}
+                colors={[theme.colors.accentWarmCream, theme.colors.surface, theme.colors.bg]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 0, y: 1 }}
                 style={StyleSheet.absoluteFill}
@@ -112,7 +112,7 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
                 <View style={styles.actionRow}>
                   <PillButton
                     label="View details"
-                    variant="white"
+                    variant="primary"
                     size="sm"
                     onPress={item.onPress}
                   />
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   categoryPill: {
-    backgroundColor: 'rgba(255, 106, 43, 0.2)',
+    backgroundColor: 'rgba(232, 91, 34, 0.20)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
   },
   dotInactive: {
     width: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    backgroundColor: 'rgba(17, 24, 39, 0.25)',
   },
   dotActive: {
     width: 24,

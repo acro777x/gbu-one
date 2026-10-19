@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
   progressTrack: {
     width: 180,
     height: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: theme.colors.borderGlass,
     borderRadius: 1,
     overflow: 'hidden',
     marginBottom: theme.spacing.lg,

@@ -96,10 +96,10 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(17, 24, 39, 0.45)',
   },
   sheet: {
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: theme.radius.sheet,
     borderTopRightRadius: theme.radius.sheet,
     borderWidth: 1,
@@ -108,16 +108,16 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.xxl,
     paddingHorizontal: theme.spacing.xl,
     maxHeight: SCREEN_HEIGHT * 0.85,
-    shadowColor: '#000000',
+    shadowColor: '#344054',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.14,
     shadowRadius: 16,
-    elevation: 20,
+    elevation: 12,
   },
   handle: {
     width: 40,
     height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(17, 24, 39, 0.20)',
     borderRadius: 2,
     alignSelf: 'center',
     marginBottom: theme.spacing.md,
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
   header: {
     paddingBottom: theme.spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+    borderBottomColor: 'rgba(17, 24, 39, 0.06)',
     marginBottom: theme.spacing.md,
   },
   title: {

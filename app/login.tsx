@@ -81,7 +81,7 @@ export default function LoginScreen() {
                   setErrorMessage(null);
                 }}
                 placeholder="e.g. 22/BCS/048"
-                placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                placeholderTextColor={theme.colors.textTertiary}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 style={styles.textInput}
@@ -101,7 +101,7 @@ export default function LoginScreen() {
                   setErrorMessage(null);
                 }}
                 placeholder="Enter password"
-                placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                placeholderTextColor={theme.colors.textTertiary}
                 secureTextEntry={!showPassword}
                 style={styles.textInput}
               />
@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   card: {
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.card,
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F0F11',
+    backgroundColor: theme.colors.surfaceMuted,
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
     borderRadius: 12,
@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
   },
   dividerText: {
     paddingHorizontal: 12,
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
   },
   guestBtn: {
-    backgroundColor: '#202024',
+    backgroundColor: theme.colors.surfaceMuted,
   },
   footer: {
     marginTop: theme.spacing.xxl,
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
   securityNote: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.35)',
+    color: theme.colors.textTertiary,
     textAlign: 'center',
     lineHeight: 18,
     maxWidth: 300,

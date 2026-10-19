@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   chipUnselected: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(17, 24, 39, 0.05)',
     borderColor: theme.colors.borderGlass,
   },
   chipSelected: {

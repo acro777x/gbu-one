@@ -58,9 +58,9 @@ export default function CalendarScreen() {
       case 'vacation':
         return { backgroundColor: 'rgba(16, 185, 129, 0.15)', color: theme.colors.success };
       case 'exam':
-        return { backgroundColor: 'rgba(255, 106, 43, 0.15)', color: theme.colors.accent };
+        return { backgroundColor: theme.colors.accentSoft, color: theme.colors.accent };
       case 'academic':
-        return { backgroundColor: 'rgba(255, 255, 255, 0.08)', color: theme.colors.ivory };
+        return { backgroundColor: 'rgba(17, 24, 39, 0.08)', color: theme.colors.ivory };
     }
   };
 
@@ -77,6 +77,7 @@ export default function CalendarScreen() {
         <TouchableOpacity
           onPress={() => router.back()}
           style={styles.backBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Back"
         >
           <ArrowLeft size={20} color={theme.colors.ivory} />
@@ -155,7 +156,7 @@ export default function CalendarScreen() {
             onPress={openOfficialCalendarPdf}
             variant="outline"
             size="sm"
-            icon={<ExternalLink size={14} color={theme.colors.ivory} style={{ marginRight: 6 }} />}
+            icon={<ExternalLink size={14} color={theme.colors.accent} style={{ marginRight: 6 }} />}
           />
         </View>
       </ScrollView>
@@ -180,7 +181,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -201,7 +202,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(255, 106, 43, 0.12)',
+    backgroundColor: theme.colors.accentSoft,
     borderWidth: 1,
     borderColor: 'rgba(255, 106, 43, 0.25)',
     paddingHorizontal: 10,
@@ -273,10 +274,10 @@ const styles = StyleSheet.create({
   sourceCallout: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: 'rgba(17, 24, 39, 0.03)',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(17, 24, 39, 0.08)',
     padding: 14,
     marginTop: 20,
     gap: 12,

@@ -1,11 +1,6 @@
 import React from 'react';
 import { StyleSheet, Pressable, ViewStyle, StyleProp, View } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-} from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { theme } from '../../lib/theme';
 
 export interface GlassCardProps {
@@ -21,121 +16,45 @@ export interface GlassCardProps {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export const GlassCard: React.FC<GlassCardProps> = ({
-  children,
-  style,
-  contentStyle,
-  onPress,
-  accentBorder = false,
-  glow = false,
-  variant = 'default',
+  children, style, contentStyle, onPress, accentBorder = false, glow = false, variant = 'default',
 }) => {
   const scale = useSharedValue(1);
-
-  const handlePressIn = () => {
-    if (onPress) {
-      scale.value = withTiming(0.98, { duration: 120 });
-    }
-  };
-
-  const handlePressOut = () => {
-    if (onPress) {
-      scale.value = withTiming(1, { duration: 120 });
-    }
-  };
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  // Determine gradient colors based on variant & state
-  const gradientColors: [string, string, ...string[]] = accentBorder || variant === 'accent'
-    ? ['rgba(255, 106, 43, 0.16)', 'rgba(22, 22, 24, 0.90)', 'rgba(255, 106, 43, 0.04)']
-    : variant === 'elevated'
-    ? ['rgba(255, 255, 255, 0.12)', 'rgba(26, 26, 29, 0.88)', 'rgba(18, 18, 20, 0.96)']
-    : variant === 'subtle'
-    ? ['rgba(255, 255, 255, 0.05)', 'rgba(18, 18, 20, 0.70)']
-    : ['rgba(255, 255, 255, 0.09)', 'rgba(22, 22, 24, 0.86)', 'rgba(15, 15, 17, 0.92)'];
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const surface = variant === 'subtle' ? theme.colors.surfaceMuted : theme.colors.surface;
+  const borderColor = accentBorder || variant === 'accent' ? `${theme.colors.accent}88` : theme.colors.borderGlass;
 
   return (
     <AnimatedPressable
       onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
+      onPressIn={() => onPress && (scale.value = withTiming(0.985, { duration: 120 }))}
+      onPressOut={() => onPress && (scale.value = withTiming(1, { duration: 160 }))}
       disabled={!onPress}
-      style={[
-        styles.cardOuter,
-        accentBorder && styles.cardAccentBorder,
-        glow && styles.cardGlow,
-        style,
-        animatedStyle,
-      ]}
+      style={[styles.card, { backgroundColor: surface, borderColor }, glow && styles.glow, style, animatedStyle]}
+      accessibilityRole={onPress ? 'button' : undefined}
     >
-      {/* Ambient background glow if requested */}
-      {glow && <View style={styles.ambientGlow} />}
-
-      <LinearGradient
-        colors={gradientColors}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={[styles.gradientContent, contentStyle]}
-      >
-        {/* Subtle glass top highlight rim */}
-        <View style={styles.topRimHighlight} pointerEvents="none" />
-        {children}
-      </LinearGradient>
+      {glow && <View pointerEvents="none" style={styles.ambientGlow} />}
+      <View style={[styles.content, contentStyle]}>{children}</View>
     </AnimatedPressable>
   );
 };
 
 const styles = StyleSheet.create({
-  cardOuter: {
+  card: {
     borderRadius: theme.radius.card,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: 'rgba(20, 20, 23, 0.82)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
+    shadowColor: '#344054',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.08,
     shadowRadius: 14,
-    elevation: 4,
+    elevation: 2,
   },
-  gradientContent: {
-    padding: theme.spacing.lg,
-    borderRadius: theme.radius.card,
-    position: 'relative',
-  },
-  topRimHighlight: {
-    position: 'absolute',
-    top: 0,
-    left: 20,
-    right: 20,
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-  },
+  content: { padding: theme.spacing.lg, position: 'relative' },
+  glow: { shadowColor: theme.colors.accent, shadowOpacity: 0.16, shadowRadius: 18, elevation: 5 },
   ambientGlow: {
-    position: 'absolute',
-    top: -20,
-    right: -20,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255, 106, 43, 0.16)',
-  },
-  cardAccentBorder: {
-    borderColor: 'rgba(255, 106, 43, 0.65)',
-    shadowColor: theme.colors.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-  },
-  cardGlow: {
-    shadowColor: theme.colors.accent,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.32,
-    shadowRadius: 18,
-    elevation: 8,
+    position: 'absolute', top: -30, right: -30, width: 130, height: 130,
+    borderRadius: 65, backgroundColor: theme.colors.accentGlow,
   },
 });
 

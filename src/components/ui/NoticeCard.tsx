@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   categoryBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: theme.radius.chip,
@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   threadBadge: {
-    backgroundColor: 'rgba(255, 106, 43, 0.15)',
+    backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,

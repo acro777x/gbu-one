@@ -131,7 +131,7 @@ export default function PYQScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search by subject name or code..."
-            placeholderTextColor="rgba(255, 255, 255, 0.3)"
+            placeholderTextColor={theme.colors.textTertiary}
             style={styles.searchInput}
           />
           {searchQuery ? (
@@ -235,7 +235,7 @@ export default function PYQScreen() {
                         }}
                         hitSlop={8}
                       >
-                        <Flag size={13} color="rgba(255, 255, 255, 0.3)" />
+                        <Flag size={13} color={theme.colors.textTertiary} />
                       </TouchableOpacity>
                       {isSelected && (
                         <CheckCircle2 size={16} color={theme.colors.accent} />
@@ -292,7 +292,7 @@ export default function PYQScreen() {
               onPress={handleBulkDownload}
               variant="primary"
               size="sm"
-              icon={<Download size={15} color={theme.colors.ivory} style={{ marginRight: 6 }} />}
+              icon={<Download size={15} color={theme.colors.onAccent} style={{ marginRight: 6 }} />}
             />
           </View>
         </View>
@@ -338,7 +338,7 @@ export default function PYQScreen() {
             value={uploadSubjectCode}
             onChangeText={setUploadSubjectCode}
             placeholder="e.g. CSE205"
-            placeholderTextColor="rgba(255, 255, 255, 0.3)"
+            placeholderTextColor={theme.colors.textTertiary}
             style={styles.formInput}
             autoCapitalize="characters"
           />
@@ -348,7 +348,7 @@ export default function PYQScreen() {
             value={uploadSubjectName}
             onChangeText={setUploadSubjectName}
             placeholder="e.g. Data Structures & Algorithms"
-            placeholderTextColor="rgba(255, 255, 255, 0.3)"
+            placeholderTextColor={theme.colors.textTertiary}
             style={styles.formInput}
           />
 
@@ -391,7 +391,7 @@ export default function PYQScreen() {
             onPress={handleSubmitUpload}
             variant="primary"
             size="md"
-            icon={<FileText size={16} color={theme.colors.ivory} style={{ marginRight: 6 }} />}
+            icon={<FileText size={16} color={theme.colors.onAccent} style={{ marginRight: 6 }} />}
             style={{ marginTop: 14 }}
           />
         </View>
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
   uploadBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 106, 43, 0.12)',
+    backgroundColor: theme.colors.accentSoft,
     borderWidth: 1,
     borderColor: 'rgba(255, 106, 43, 0.25)',
     paddingHorizontal: 12,
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.chip,
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
@@ -512,7 +512,7 @@ const styles = StyleSheet.create({
   filterDivider: {
     width: 1,
     height: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(17, 24, 39, 0.12)',
     marginHorizontal: 8,
   },
   scrollContent: {
@@ -575,7 +575,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   cardSelected: {
-    backgroundColor: 'rgba(255, 106, 43, 0.12)',
+    backgroundColor: theme.colors.accentSoft,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   badge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -612,7 +612,7 @@ const styles = StyleSheet.create({
   programmeTag: {
     fontFamily: 'Inter-Regular',
     fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.4)',
+    color: 'rgba(17, 24, 39, 0.40)',
     marginTop: 2,
   },
   downloadRow: {
@@ -628,15 +628,15 @@ const styles = StyleSheet.create({
   takedownSection: {
     marginTop: 24,
     padding: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: 'rgba(17, 24, 39, 0.03)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(17, 24, 39, 0.06)',
   },
   takedownText: {
     fontFamily: 'Inter-Regular',
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.4)',
+    color: 'rgba(17, 24, 39, 0.40)',
     lineHeight: 16,
   },
   floatingActionBar: {
@@ -660,7 +660,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   selectedCountBadge: {
-    backgroundColor: 'rgba(255, 106, 43, 0.15)',
+    backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
@@ -696,10 +696,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   formInput: {
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(17, 24, 39, 0.10)',
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: theme.colors.ivory,
@@ -733,10 +733,10 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   reportOption: {
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(17, 24, 39, 0.08)',
     padding: 12,
     marginBottom: 8,
   },

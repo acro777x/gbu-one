@@ -79,7 +79,7 @@ export default function NoticesScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search notices, exams, fee dates..."
-            placeholderTextColor="rgba(255, 255, 255, 0.3)"
+            placeholderTextColor={theme.colors.textTertiary}
             style={styles.searchInput}
           />
           {searchQuery ? (
@@ -177,7 +177,7 @@ export default function NoticesScreen() {
                 }}
                 variant="white"
                 size="sm"
-                icon={<ExternalLink size={15} color="#0B0B0C" style={{ marginRight: 6 }} />}
+                icon={<ExternalLink size={15} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />}
                 style={{ flex: 1, marginRight: 6 }}
               />
               <PillButton
@@ -185,7 +185,7 @@ export default function NoticesScreen() {
                 onPress={handleShare}
                 variant="outline"
                 size="sm"
-                icon={<Share2 size={15} color={theme.colors.ivory} style={{ marginRight: 6 }} />}
+                icon={<Share2 size={15} color={theme.colors.accent} style={{ marginRight: 6 }} />}
                 style={{ flex: 1, marginRight: 6 }}
               />
               <PillButton
@@ -193,7 +193,7 @@ export default function NoticesScreen() {
                 onPress={() => setSheetVisible(false)}
                 variant="primary"
                 size="sm"
-                icon={<BellRing size={15} color={theme.colors.ivory} style={{ marginRight: 6 }} />}
+                icon={<BellRing size={15} color={theme.colors.onAccent} style={{ marginRight: 6 }} />}
                 style={{ flex: 1 }}
               />
             </View>
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.chip,
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
@@ -277,10 +277,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sheetSummaryCard: {
-    backgroundColor: '#0F0F11',
+    backgroundColor: theme.colors.surfaceMuted,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(17, 24, 39, 0.08)',
     padding: 14,
     marginBottom: 20,
   },

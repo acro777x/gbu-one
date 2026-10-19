@@ -38,6 +38,7 @@ export default function MotionPlayground() {
         <TouchableOpacity
           onPress={() => router.back()}
           style={styles.backButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Back"
         >
           <ArrowLeft size={22} color={theme.colors.ivory} />
@@ -46,6 +47,7 @@ export default function MotionPlayground() {
         <TouchableOpacity
           onPress={handleReplay}
           style={styles.replayButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Replay animations"
         >
           <RotateCcw size={20} color={theme.colors.accent} />
@@ -246,7 +248,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    borderBottomColor: 'rgba(17, 24, 39, 0.08)',
   },
   backButton: {
     padding: 8,
@@ -303,10 +305,10 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
   },
   previewBox: {
-    backgroundColor: '#0F0F11',
+    backgroundColor: theme.colors.surfaceMuted,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(17, 24, 39, 0.06)',
     padding: theme.spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
@@ -338,7 +340,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   badgePill: {
-    backgroundColor: 'rgba(255, 106, 43, 0.15)',
+    backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,

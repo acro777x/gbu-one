@@ -153,7 +153,7 @@ export default function OnboardingScreen() {
           size="md"
           icon={
             currentIndex < SLIDES.length - 1 ? (
-              <ChevronRight size={18} color={theme.colors.ivory} style={{ marginLeft: 6 }} />
+              <ChevronRight size={18} color={theme.colors.onAccent} style={{ marginLeft: 6 }} />
             ) : undefined
           }
         />
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: 'rgba(255, 106, 43, 0.1)',
+    backgroundColor: theme.colors.accentSoft,
     borderWidth: 1,
     borderColor: 'rgba(255, 106, 43, 0.25)',
     justifyContent: 'center',
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xl,
   },
   tagPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 999,
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
   },
   dotInactive: {
     width: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(17, 24, 39, 0.20)',
   },
   dotActive: {
     width: 26,

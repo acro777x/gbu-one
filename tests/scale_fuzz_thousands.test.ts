@@ -139,11 +139,18 @@ describe('Thousands of Test Case Scenarios (Scale, Fuzzing & Property-Based Veri
   // Test Suite 4: Design & Motion Token Invariants
   describe('Design & Motion Tokens Consistency', () => {
     it('maintains strict UI_SPEC color and typography contract', () => {
-      expect(theme.colors.bg).toBe('#0B0B0C');
-      expect(theme.colors.accent).toBe('#FF6A2B');
-      expect(theme.colors.ivory).toBe('#F8F8F6');
-      expect(theme.radius.card).toBe(24);
-      expect(theme.radius.sheet).toBe(32);
+      expect(theme.colors.bg).toBe('#F6F7FB');
+      expect(theme.colors.accent).toBe('#E85B22');
+      expect(theme.colors.onAccent).toBe('#FFFFFF');
+      expect(theme.colors.ivory).toBe('#111827');
+      expect(theme.colors.textPrimary).toBe('#111827');
+      expect(theme.colors.textSecondary).toBe('#667085');
+      expect(theme.colors.textTertiary).toBe('#98A2B3');
+      expect(theme.colors.success).toBe('#168A5B');
+      expect(theme.colors.warning).toBe('#A96800');
+      expect(theme.colors.danger).toBe('#C53030');
+      expect(theme.radius.card).toBe(20);
+      expect(theme.radius.sheet).toBe(28);
       expect(theme.radius.chip).toBe(999);
     });
   });

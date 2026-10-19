@@ -126,7 +126,7 @@ export const AttendanceBatteryCard: React.FC<AttendanceBatteryCardProps> = ({
               onPress={handleQuickPresent}
               activeOpacity={0.8}
             >
-              <Plus size={12} color="#3DD68C" />
+              <Plus size={12} color={theme.colors.success} />
               <Text style={styles.quickActionText}>Present</Text>
             </TouchableOpacity>
 
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
     height: 30,
     borderRadius: 8,
     borderWidth: 1.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: 'rgba(17, 24, 39, 0.04)',
     overflow: 'hidden',
     position: 'relative',
     justifyContent: 'center',
@@ -225,10 +225,10 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(17, 24, 39, 0.12)',
   },
   benchmarkLine: {
-    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+    backgroundColor: theme.colors.textTertiary,
     borderStyle: 'dashed',
   },
   batteryTextContainer: {
@@ -270,9 +270,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: 'rgba(61, 214, 140, 0.15)',
+    backgroundColor: theme.colors.successSoft,
     borderWidth: 1,
-    borderColor: 'rgba(61, 214, 140, 0.35)',
+    borderColor: `${theme.colors.success}44`,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -280,12 +280,12 @@ const styles = StyleSheet.create({
   quickActionText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 11,
-    color: '#3DD68C',
+    color: theme.colors.success,
   },
   quickAbsentBtn: {
-    backgroundColor: 'rgba(255, 92, 92, 0.12)',
+    backgroundColor: theme.colors.dangerSoft,
     borderWidth: 1,
-    borderColor: 'rgba(255, 92, 92, 0.3)',
+    borderColor: `${theme.colors.danger}44`,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
   quickAbsentText: {
     fontFamily: 'Inter-Medium',
     fontSize: 11,
-    color: '#FF5C5C',
+    color: theme.colors.danger,
   },
 });
 

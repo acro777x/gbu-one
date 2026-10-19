@@ -132,6 +132,7 @@ export default function MailScreen() {
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityLabel="Go Back"
           >
             <ArrowLeft size={20} color={theme.colors.ivory} />
@@ -169,7 +170,7 @@ export default function MailScreen() {
           <TextInput
             style={styles.searchInput}
             placeholder="Search communications, circulars, senders..."
-            placeholderTextColor={theme.colors.textSecondary}
+            placeholderTextColor={theme.colors.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
@@ -263,8 +264,8 @@ export default function MailScreen() {
                     >
                       <Star
                         size={16}
-                        color={email.isStarred ? '#F5B83D' : theme.colors.textSecondary}
-                        fill={email.isStarred ? '#F5B83D' : 'transparent'}
+                        color={email.isStarred ? theme.colors.warning : theme.colors.textSecondary}
+                        fill={email.isStarred ? theme.colors.warning : 'transparent'}
                       />
                     </TouchableOpacity>
                   </View>
@@ -339,8 +340,8 @@ export default function MailScreen() {
                   >
                     <Star
                       size={18}
-                      color={activeEmail.isStarred ? '#F5B83D' : theme.colors.textSecondary}
-                      fill={activeEmail.isStarred ? '#F5B83D' : 'transparent'}
+                      color={activeEmail.isStarred ? theme.colors.warning : theme.colors.textSecondary}
+                      fill={activeEmail.isStarred ? theme.colors.warning : 'transparent'}
                     />
                   </TouchableOpacity>
 
@@ -437,7 +438,7 @@ export default function MailScreen() {
                     <TextInput
                       style={styles.composerInput}
                       placeholder="Write your official response..."
-                      placeholderTextColor={theme.colors.textSecondary}
+                      placeholderTextColor={theme.colors.textTertiary}
                       multiline
                       numberOfLines={4}
                       value={replyText}
@@ -468,7 +469,7 @@ export default function MailScreen() {
                     <TextInput
                       style={styles.forwardInput}
                       placeholder="Recipient GBU Email (e.g. rollno@gbu.ac.in)..."
-                      placeholderTextColor={theme.colors.textSecondary}
+                      placeholderTextColor={theme.colors.textTertiary}
                       value={forwardRecipient}
                       onChangeText={setForwardRecipient}
                     />
@@ -554,7 +555,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
     justifyContent: 'center',
@@ -571,7 +572,7 @@ const styles = StyleSheet.create({
     color: theme.colors.ivory,
   },
   unreadCountBadge: {
-    backgroundColor: 'rgba(255, 106, 43, 0.2)',
+    backgroundColor: 'rgba(232, 91, 34, 0.20)',
     borderWidth: 1,
     borderColor: theme.colors.accent,
     borderRadius: theme.radius.chip,
@@ -593,7 +594,7 @@ const styles = StyleSheet.create({
   markAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 106, 43, 0.12)',
+    backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: theme.radius.chip,
@@ -613,7 +614,7 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     borderRadius: theme.radius.pill,
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
@@ -741,7 +742,7 @@ const styles = StyleSheet.create({
   attachmentChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: theme.radius.chip,
@@ -774,7 +775,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContainer: {
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     borderWidth: 1,
@@ -788,13 +789,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: theme.spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    borderBottomColor: 'rgba(17, 24, 39, 0.08)',
   },
   modalCloseBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -806,7 +807,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -826,7 +827,7 @@ const styles = StyleSheet.create({
   readerSenderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: 'rgba(17, 24, 39, 0.04)',
     padding: 12,
     borderRadius: 16,
     marginBottom: 16,
@@ -872,7 +873,7 @@ const styles = StyleSheet.create({
   },
   attachmentsSection: {
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    borderTopColor: 'rgba(17, 24, 39, 0.08)',
     paddingTop: 16,
     marginBottom: 20,
   },
@@ -885,7 +886,7 @@ const styles = StyleSheet.create({
   attachmentCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
     borderRadius: 14,
@@ -904,7 +905,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   composerBox: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
@@ -970,7 +971,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    borderTopColor: 'rgba(17, 24, 39, 0.08)',
     gap: 12,
   },
   quickActionButton: {
@@ -978,7 +979,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
     borderRadius: theme.radius.pill,

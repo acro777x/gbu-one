@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -31,16 +31,24 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
   const [showWordmark, setShowWordmark] = useState(isWarmStart || reduceMotion);
   const [showTagline, setShowTagline] = useState(isWarmStart || reduceMotion);
   const containerOpacity = useSharedValue(1);
+  const hasFinishedRef = useRef(false);
+
+  const triggerFinish = () => {
+    if (hasFinishedRef.current) return;
+    hasFinishedRef.current = true;
+    onFinish();
+  };
 
   const finishHandoff = () => {
+    if (hasFinishedRef.current) return;
     containerOpacity.value = withTiming(0, { duration: 250 }, (finished) => {
       if (finished) {
-        runOnJS(onFinish)();
+        runOnJS(triggerFinish)();
       }
     });
     setTimeout(() => {
-      onFinish();
-    }, 280);
+      triggerFinish();
+    }, 300);
   };
 
   useEffect(() => {
@@ -190,7 +198,7 @@ const styles = StyleSheet.create({
     bottom: 40,
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.2)',
+    color: theme.colors.textTertiary,
   },
 });
 

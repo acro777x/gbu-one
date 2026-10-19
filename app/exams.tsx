@@ -69,6 +69,7 @@ export default function ExamsScreen() {
         <TouchableOpacity
           onPress={() => router.back()}
           style={styles.backBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Back"
         >
           <ArrowLeft size={20} color={theme.colors.ivory} />
@@ -206,7 +207,7 @@ export default function ExamsScreen() {
                   value={rollQuery}
                   onChangeText={setRollQuery}
                   placeholder="Enter Roll Number (e.g. 22/ICS/042)"
-                  placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                  placeholderTextColor={theme.colors.textTertiary}
                   style={styles.searchInput}
                   autoCapitalize="characters"
                 />
@@ -307,7 +308,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -326,7 +327,7 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     marginHorizontal: theme.spacing.lg,
     marginTop: theme.spacing.sm,
     borderRadius: 999,
@@ -356,7 +357,7 @@ const styles = StyleSheet.create({
   },
   countdownCard: {
     marginBottom: theme.spacing.md,
-    backgroundColor: 'rgba(255, 106, 43, 0.08)',
+    backgroundColor: theme.colors.accentSoft,
   },
   countdownRow: {
     flexDirection: 'row',
@@ -413,7 +414,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 106, 43, 0.12)',
+    backgroundColor: theme.colors.accentSoft,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -462,7 +463,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   examEntryCodeBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 4,
@@ -528,10 +529,10 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(17, 24, 39, 0.10)',
     paddingHorizontal: 12,
     height: 44,
   },
@@ -606,7 +607,7 @@ const styles = StyleSheet.create({
   },
   gpaDivider: {
     width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(17, 24, 39, 0.10)',
   },
   gradesTableTitle: {
     fontFamily: 'Inter-SemiBold',
@@ -622,7 +623,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: 'rgba(17, 24, 39, 0.05)',
   },
   gradeSubjectName: {
     fontFamily: 'Inter-Medium',
@@ -639,7 +640,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 106, 43, 0.12)',
+    backgroundColor: theme.colors.accentSoft,
     justifyContent: 'center',
     alignItems: 'center',
   },

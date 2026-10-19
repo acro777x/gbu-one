@@ -102,6 +102,8 @@ export default function ClassSetupScreen() {
         <TouchableOpacity
           onPress={() => (step > 1 ? setStep(((step - 1) as 1 | 2 | 3 | 4)) : router.back())}
           style={styles.backBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel="Back"
         >
           <ArrowLeft size={22} color={theme.colors.ivory} />
         </TouchableOpacity>
@@ -287,7 +289,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.accent,
   },
   stepBarInactive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(17, 24, 39, 0.12)',
   },
   scrollContent: {
     padding: theme.spacing.xl,

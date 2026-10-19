@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   pillLabel: {
-    backgroundColor: 'rgba(255, 106, 43, 0.15)',
+    backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: theme.radius.chip,
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   badge: {
-    backgroundColor: '#202024',
+    backgroundColor: theme.colors.surfaceMuted,
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
     paddingHorizontal: 10,
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   },
   progressTrack: {
     height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     borderRadius: 2,
     overflow: 'hidden',
   },

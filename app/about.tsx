@@ -39,6 +39,7 @@ export default function AboutScreen() {
         <TouchableOpacity
           onPress={() => router.back()}
           style={styles.backBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Back"
         >
           <ArrowLeft size={20} color={theme.colors.ivory} />
@@ -135,7 +136,7 @@ export default function AboutScreen() {
             onPress={handleEmailContact}
             variant="outline"
             size="sm"
-            icon={<ExternalLink size={14} color={theme.colors.ivory} style={{ marginRight: 6 }} />}
+            icon={<ExternalLink size={14} color={theme.colors.accent} style={{ marginRight: 6 }} />}
             style={{ marginTop: 8 }}
           />
         </GlassCard>
@@ -171,7 +172,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -210,7 +211,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   versionBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 999,

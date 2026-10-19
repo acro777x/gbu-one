@@ -132,10 +132,10 @@ export default function TimetableScreen() {
 
   const getSlotStatus = (index: number) => {
     if (index === 0) {
-      return { label: 'LIVE NOW', color: '#FF6A2B', isLive: true };
+      return { label: 'LIVE NOW', color: theme.colors.accent, isLive: true };
     }
     if (index === 1) {
-      return { label: 'UP NEXT', color: '#F5B83D', isLive: false };
+      return { label: 'UP NEXT', color: theme.colors.warning, isLive: false };
     }
     return { label: 'SCHEDULED', color: theme.colors.textSecondary, isLive: false };
   };
@@ -541,7 +541,7 @@ export default function TimetableScreen() {
                       showToast('Marked Present (+1 class attended)');
                     }}
                   >
-                    <CheckCircle size={16} color="#3DD68C" />
+                    <CheckCircle size={16} color={theme.colors.success} />
                     <Text style={styles.presentBtnText}>+ Present</Text>
                   </TouchableOpacity>
 
@@ -559,7 +559,7 @@ export default function TimetableScreen() {
                       showToast('Marked Absent');
                     }}
                   >
-                    <XCircle size={16} color="#FF5C5C" />
+                    <XCircle size={16} color={theme.colors.danger} />
                     <Text style={styles.absentBtnText}>+ Absent</Text>
                   </TouchableOpacity>
                 </View>
@@ -626,7 +626,7 @@ const styles = StyleSheet.create({
   },
   toggleGroup: {
     flexDirection: 'row',
-    backgroundColor: '#1C1C20',
+    backgroundColor: theme.colors.surfaceMuted,
     borderRadius: 999,
     padding: 3,
     borderWidth: 1,
@@ -646,13 +646,13 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
   },
   toggleTextActive: {
-    color: theme.colors.ivory,
+    color: theme.colors.onAccent,
     fontFamily: 'Inter-SemiBold',
   },
   offlineBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 184, 61, 0.1)',
+    backgroundColor: theme.colors.warningSoft,
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: 6,
     gap: 6,
@@ -665,7 +665,7 @@ const styles = StyleSheet.create({
   daySelectorWrapper: {
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: 'rgba(17, 24, 39, 0.05)',
   },
   dayScroll: {
     paddingHorizontal: theme.spacing.lg,
@@ -675,15 +675,15 @@ const styles = StyleSheet.create({
     width: 52,
     height: 64,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(17, 24, 39, 0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(17, 24, 39, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 6,
   },
   dayCardActive: {
-    backgroundColor: 'rgba(255, 106, 43, 0.18)',
+    backgroundColor: theme.colors.accentSoft,
     borderColor: theme.colors.accent,
     shadowColor: theme.colors.accent,
     shadowOffset: { width: 0, height: 4 },
@@ -757,7 +757,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   railPeriodPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 4,
@@ -774,7 +774,7 @@ const styles = StyleSheet.create({
     bottom: -16,
     left: 20,
     width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
   },
   cardCol: {
     flex: 1,
@@ -810,7 +810,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#FF6A2B',
+    backgroundColor: theme.colors.accent,
   },
   statusChipText: {
     fontFamily: 'Inter-SemiBold',
@@ -818,7 +818,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   codeTag: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -868,7 +868,7 @@ const styles = StyleSheet.create({
   roomBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 106, 43, 0.12)',
+    backgroundColor: theme.colors.accentSoft,
     borderWidth: 1,
     borderColor: 'rgba(255, 106, 43, 0.25)',
     paddingHorizontal: 8,
@@ -890,7 +890,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   timeTag: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(17, 24, 39, 0.06)',
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 6,
@@ -903,7 +903,7 @@ const styles = StyleSheet.create({
   compactDivider: {
     width: 1,
     height: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(17, 24, 39, 0.10)',
     marginHorizontal: 10,
   },
   compactSubject: {
@@ -953,7 +953,7 @@ const styles = StyleSheet.create({
   weekDayEmpty: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.3)',
+    color: theme.colors.textTertiary,
     fontStyle: 'italic',
     paddingLeft: 4,
   },
@@ -1018,7 +1018,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#161618',
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     borderWidth: 1,
@@ -1030,7 +1030,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(17, 24, 39, 0.20)',
     alignSelf: 'center',
     marginBottom: 14,
   },
@@ -1041,7 +1041,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   typeBadgePill: {
-    backgroundColor: 'rgba(255, 106, 43, 0.15)',
+    backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: theme.radius.chip,
@@ -1055,7 +1055,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1073,10 +1073,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalGrid: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: 'rgba(17, 24, 39, 0.04)',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(17, 24, 39, 0.08)',
     padding: 12,
     gap: 12,
     marginBottom: 18,
@@ -1120,28 +1120,28 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   presentBtn: {
-    backgroundColor: 'rgba(61, 214, 140, 0.12)',
-    borderColor: 'rgba(61, 214, 140, 0.3)',
+    backgroundColor: theme.colors.successSoft,
+    borderColor: `${theme.colors.success}44`,
   },
   presentBtnText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
-    color: '#3DD68C',
+    color: theme.colors.success,
   },
   absentBtn: {
-    backgroundColor: 'rgba(255, 92, 92, 0.12)',
-    borderColor: 'rgba(255, 92, 92, 0.3)',
+    backgroundColor: theme.colors.dangerSoft,
+    borderColor: `${theme.colors.danger}44`,
   },
   absentBtnText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
-    color: '#FF5C5C',
+    color: theme.colors.danger,
   },
   reminderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(17, 24, 39, 0.08)',
     borderWidth: 1,
     borderColor: theme.colors.borderGlass,
     borderRadius: theme.radius.pill,
