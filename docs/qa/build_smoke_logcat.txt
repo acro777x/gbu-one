@@ -1,0 +1,22 @@
+
+10-20 12:32:55.873  6829  6829 I ReactNativeJNI: Error occurred, shutting down websocket connection: WebSocket 
+exception Failed to connect to /10.0.2.2:8081
+10-20 12:32:59.919  6829  6829 I ReactNativeJNI: Error occurred, shutting down websocket connection: WebSocket 
+exception Failed to connect to /10.0.2.2:8081
+10-20 12:33:03.971  6829  6829 I ReactNativeJNI: Error occurred, shutting down websocket connection: WebSocket 
+exception Failed to connect to /10.0.2.2:8081
+10-20 12:33:08.028  6829  6829 I ReactNativeJNI: Error occurred, shutting down websocket connection: WebSocket 
+exception Failed to connect to /10.0.2.2:8081
+10-20 12:33:12.190  6829  6829 I ReactNativeJNI: Error occurred, shutting down websocket connection: WebSocket 
+exception Failed to connect to /10.0.2.2:8081
+10-20 12:33:16.254  6829  6829 I ReactNativeJNI: Error occurred, shutting down websocket connection: WebSocket 
+exception Failed to connect to /10.0.2.2:8081
+10-20 12:33:20.311  6829  6829 I ReactNativeJNI: Error occurred, shutting down websocket connection: WebSocket 
+exception Failed to connect to /10.0.2.2:8081
+10-20 12:33:24.456  6829  6829 I ReactNativeJNI: Error occurred, shutting down websocket connection: WebSocket 
+exception Failed to connect to /10.0.2.2:8081
+10-20 12:33:28.597  6829  6829 I ReactNativeJNI: Error occurred, shutting down websocket connection: WebSocket 
+exception Failed to connect to /10.0.2.2:8081
+
+
+
