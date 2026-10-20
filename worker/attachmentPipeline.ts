@@ -33,7 +33,11 @@ export interface ExtractionOutcome {
   kind: AttachmentKind;
 }
 
-/** Only GBU hosts are ever fetched. */
+/**
+ * Only university hosts are ever fetched. The regex has to accept the
+ * subdomains the university actually serves from (`www.gbu.ac.in`,
+ * `test.gbu.ac.in`, `exams.gbu.ac.in`, `samay.mygbu.in`, `gbuexam.in`).
+ */
 const ALLOWED_HOST_RE = /(^|\.)(gbu\.ac\.in|mygbu\.in|gbuexam\.in)$/i;
 
 /** Never download more than this in one go (guard against a runaway file). */
