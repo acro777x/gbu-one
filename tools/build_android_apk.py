@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 SOURCE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 BUILD = os.environ.get('GBU_BUILD_DIR', r'C:\gbuone-build')
@@ -66,11 +67,18 @@ def find_apksigner():
     return None
 
 
-def run(command: list[str], cwd: str) -> None:
+def run(command: list[str], cwd: str, retries: int = 1) -> None:
+    """Runs a command, retrying once: the first Gradle run after a source
+    change can fail while it reconfigures the native build."""
     print('>', ' '.join(command))
-    result = subprocess.run(command, cwd=cwd, shell=True)
-    if result.returncode != 0:
-        raise SystemExit(f'command failed: {" ".join(command)}')
+    for attempt in range(retries + 1):
+        result = subprocess.run(command, cwd=cwd, shell=True)
+        if result.returncode == 0:
+            return
+        if attempt < retries:
+            print(f'  (retrying, exit {result.returncode})')
+            time.sleep(5)
+    raise SystemExit(f'command failed: {" ".join(command)}')
 
 
 def main() -> None:

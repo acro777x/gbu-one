@@ -106,3 +106,24 @@ store release is possible but Play may flag the upload - see
 - Install the release APK on a device and walk through the app once
 - Check the About page still shows the right version
 - Never commit the keystore, its passwords or `google-services.json`
+
+## 7. On-device QA helpers
+
+Two scripts drive the emulator so a release is checked the same way every
+time. Both are in `tools/`.
+
+```bash
+# Build the APK from a space-free copy, install it and walk through the app,
+# saving a screenshot per step into docs/qa/release/
+python tools/build_android_apk.py --release
+python tools/emulator_qa.py --apk <path-to-apk> --fresh --shots docs/qa/release
+
+# Report every tappable node smaller than 44dp on the current screen
+python tools/audit_touch_targets.py
+```
+
+`emulator_qa.py` walks onboarding (including the notification permission
+prompt), the class setup, Home, all five tabs, a notice detail, the PYQ
+upload sheet and the moderation queue. It answers the Android 16 KB
+compatibility notice once, because that dialog would otherwise swallow the
+first taps.
