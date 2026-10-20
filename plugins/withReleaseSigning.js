@@ -100,6 +100,19 @@ function patchBuildGradle(source) {
     }
   }
 
+  // A standalone debug build must carry its own JS bundle, otherwise it
+  // only runs with a Metro dev server attached. This is what the on-device
+  // QA build relies on.
+  if (!/debuggableVariants\s*=\s*\[\]/.test(output)) {
+    const variantsRe = /(\n[ \t]*\/\* Variants \*\/[^\n]*\n)/;
+    if (variantsRe.test(output)) {
+      output = output.replace(
+        variantsRe,
+        `$1    // Ensure standalone debug builds also embed the JS bundle and assets\n    debuggableVariants = []\n`,
+      );
+    }
+  }
+
   return output;
 }
 

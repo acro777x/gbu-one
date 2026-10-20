@@ -51,6 +51,7 @@ export default function ProfileScreen() {
   const [notifyTimetable, setNotifyTimetable] = useState(true);
   const [notifyExams, setNotifyExams] = useState(true);
   const [notifyDeadlines, setNotifyDeadlines] = useState(true);
+  const [notifyResults, setNotifyResults] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -59,6 +60,7 @@ export default function ProfileScreen() {
       '@gbu_one_notify_timetable',
       '@gbu_one_notify_exams',
       '@gbu_one_notify_deadlines',
+      '@gbu_one_notify_results',
     ]).then((pairs) => {
       if (!mounted) return;
       pairs.forEach(([key, val]) => {
@@ -68,6 +70,7 @@ export default function ProfileScreen() {
           if (key === '@gbu_one_notify_timetable') setNotifyTimetable(parsed);
           if (key === '@gbu_one_notify_exams') setNotifyExams(parsed);
           if (key === '@gbu_one_notify_deadlines') setNotifyDeadlines(parsed);
+          if (key === '@gbu_one_notify_results') setNotifyResults(parsed);
         }
       });
     }).catch(() => {});
@@ -95,6 +98,11 @@ export default function ProfileScreen() {
   const toggleDeadlines = (val: boolean) => {
     setNotifyDeadlines(val);
     AsyncStorage.setItem('@gbu_one_notify_deadlines', String(val)).catch(() => {});
+  };
+
+  const toggleResults = (val: boolean) => {
+    setNotifyResults(val);
+    AsyncStorage.setItem('@gbu_one_notify_results', String(val)).catch(() => {});
   };
 
   // Connected local attendance store
@@ -432,6 +440,15 @@ export default function ProfileScreen() {
             <Switch
               value={notifyDeadlines}
               onValueChange={toggleDeadlines}
+              trackColor={{ false: colors.borderGlass, true: colors.accent }}
+            />
+          </View>
+
+          <View style={[styles.toggleRow, { borderBottomColor: colors.divider }]}>
+            <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Results & Admit Cards</Text>
+            <Switch
+              value={notifyResults}
+              onValueChange={toggleResults}
               trackColor={{ false: colors.borderGlass, true: colors.accent }}
             />
           </View>

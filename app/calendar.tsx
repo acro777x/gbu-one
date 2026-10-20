@@ -27,11 +27,12 @@ import {
 } from 'lucide-react-native';
 import { GlassCard, Chip, PillButton } from '../src/components/ui';
 import {
-  MOCK_CALENDAR_EVENTS,
   filterCalendarEvents,
   CalendarEvent,
 } from '../src/features/calendar/calendarService';
+import { useCalendarQuery } from '../src/features/calendar/useCalendarQuery';
 import { theme } from '../src/lib/theme';
+
 import { useAppTheme } from '../src/lib/ThemeContext';
 
 const CATEGORIES = ['All', 'Holiday', 'Exam', 'Academic', 'Vacation'];
@@ -40,7 +41,8 @@ export default function CalendarScreen() {
   const { colors, isDark } = useAppTheme();
   const [selectedCategory, setSelectedCategory] = useState('All');
 
-  const filteredEvents = filterCalendarEvents(MOCK_CALENDAR_EVENTS, selectedCategory);
+  const { data: calendarEvents } = useCalendarQuery();
+  const filteredEvents = filterCalendarEvents(calendarEvents, selectedCategory);
 
   const getCategoryIcon = (category: CalendarEvent['category']) => {
     switch (category) {

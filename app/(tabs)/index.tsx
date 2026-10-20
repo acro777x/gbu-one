@@ -34,7 +34,7 @@ import { useAuthStore } from '../../src/store/useAuthStore';
 import { useMailStore } from '../../src/store/useMailStore';
 import { Slot } from '../../src/features/timetable/timetableProvider';
 import { getSectionTimetable } from '../../src/features/timetable/timetableStore';
-import { MOCK_NOTICES } from '../../src/features/notices/noticeService';
+import { useNoticesQuery } from '../../src/features/notices/useNoticesQuery';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 import { TimetableChangeModal } from '../../src/components/timetable/TimetableChangeModal';
@@ -72,6 +72,7 @@ export default function HomeScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
+    void refetchNotices();
     getSectionTimetable(enrolledClassKey, '39', true).then((tt) => {
       if (tt.slots.length > 0) {
         const dayOfWeek = (new Date().getDay() || 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -84,7 +85,10 @@ export default function HomeScreen() {
     });
   };
 
-  const topNotices = MOCK_NOTICES.filter((n) => n.importance >= 3).slice(0, 4);
+  // Live notices drive the hero; the bundled seed is the offline fallback.
+  const { data: notices = [], refetch: refetchNotices } = useNoticesQuery();
+
+  const topNotices = notices.filter((n) => n.importance >= 3).slice(0, 4);
   const heroSlides = topNotices.map((n) => ({
     id: n.id,
     category: n.category === 'datesheet' ? 'Exam Alert' : n.category.toUpperCase(),

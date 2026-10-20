@@ -29,11 +29,11 @@ import {
 import { GlassCard, PillButton, Toast } from '../src/components/ui';
 import { CountUp } from '../src/components/motion/CountUp';
 import {
-  MOCK_DATESHEET,
   searchRollNumberResult,
   calculateExamCountdown,
   StudentResultRecord,
 } from '../src/features/exams/examService';
+import { useDatesheetQuery } from '../src/features/exams/useDatesheetQuery';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { theme } from '../src/lib/theme';
 import { useAppTheme } from '../src/lib/ThemeContext';
@@ -50,6 +50,11 @@ export default function ExamsScreen() {
   const [toastVisible, setToastVisible] = useState(false);
 
   const countdownDays = calculateExamCountdown('2026-11-03T04:00:00.000Z');
+
+  // The date sheet comes from the backend; the bundled seed is the fallback.
+  const programmeCode = classSelection?.programmeCode || 'BCS';
+  const semester = classSelection?.semester || 'II';
+  const { data: datesheet } = useDatesheetQuery(programmeCode, semester);
 
   const handleSearchRoll = () => {
     if (!rollQuery.trim()) return;
@@ -153,7 +158,7 @@ export default function ExamsScreen() {
             </View>
 
             <View style={styles.datesheetList}>
-              {MOCK_DATESHEET.map((entry, _idx) => (
+              {datesheet.map((entry, _idx) => (
                 <GlassCard key={entry.id} style={styles.examEntryCard}>
                   <View style={styles.examEntryTop}>
                     <View style={[styles.examEntryCodeBadge, { backgroundColor: subtleBg }]}>

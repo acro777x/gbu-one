@@ -10,9 +10,11 @@ import {
   ScrollView,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import { Bell, Calendar, BookOpen, ChevronRight, GraduationCap, Check } from 'lucide-react-native';
 import { WordReveal } from '../src/components/motion/WordReveal';
 import { PillButton } from '../src/components/ui/PillButton';
@@ -109,6 +111,24 @@ export default function OnboardingScreen() {
 
   const canFinish = selectedProgramme && selectedYear && selectedSection;
 
+  /**
+   * The spec asks for notification permission on the LAST slide with a plain
+   * explanation - not on launch. The class-setup step is that last step, so
+   * the request happens right before the student leaves onboarding.
+   */
+  const requestNotificationPermission = async () => {
+    if (Platform.OS === 'web') return;
+    try {
+      const current = await Notifications.getPermissionsAsync();
+      if (current.granted) return;
+      await Notifications.requestPermissionsAsync({
+        ios: { allowAlert: true, allowBadge: true, allowSound: true },
+      });
+    } catch {
+      // Permission is a nice-to-have; onboarding continues either way.
+    }
+  };
+
   const finishOnboarding = async () => {
     // Save class selection if complete
     if (selectedProgramme && selectedYear && selectedSection) {
@@ -129,6 +149,10 @@ export default function OnboardingScreen() {
     }
     completeOnboarding();
     router.replace('/(tabs)');
+
+    // Ask after the navigation so the system dialog never blocks the screen
+    // the student is looking at.
+    void requestNotificationPermission();
   };
 
   const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -196,6 +220,7 @@ export default function OnboardingScreen() {
       {isOnClassSetup ? (
         /* Class & Department Setup Step */
         <ScrollView
+          style={styles.classSetupScroll}
           contentContainerStyle={styles.classSetupContainer}
           showsVerticalScrollIndicator={false}
         >
@@ -213,6 +238,23 @@ export default function OnboardingScreen() {
           <Text style={[styles.slideSubtitle, { color: colors.textSecondary }]}>
             We&apos;ll personalise your timetable, notices, and exam schedule based on your selection.
           </Text>
+
+          {/* Permission explainer (docs/SCREENS_AUTH.md: ask on the last
+              slide with a clear explanation, not on launch). It sits above the
+              form so it is read before the action, never below the fold. */}
+          <View style={[styles.permissionNote, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
+            <View style={styles.permissionNoteHead}>
+              <Bell size={14} color={colors.accent} />
+              <Text style={[styles.permissionNoteTitle, { color: colors.textPrimary }]}>
+                STAY IN THE LOOP
+              </Text>
+            </View>
+            <Text style={[styles.permissionNoteText, { color: colors.textSecondary }]}>
+              We will ask for notification permission next, so you can get alerts
+              about new notices and timetable changes for your class. You can turn
+              them off any time in Profile.
+            </Text>
+          </View>
 
           {/* Programme Selection */}
           <View style={styles.sectionBlock}>
@@ -387,6 +429,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: theme.spacing.xxl,
   },
+  classSetupScroll: {
+    // The class step is longer than the screen; it has to scroll instead of
+    // clipping its last card.
+    flex: 1,
+  },
   classSetupContainer: {
     paddingHorizontal: theme.spacing.xl,
     paddingTop: theme.spacing.xl,
@@ -468,6 +515,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     marginTop: theme.spacing.sm,
+  },
+  permissionNote: {
+    width: '100%',
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    marginTop: theme.spacing.md,
+  },
+  permissionNoteHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  permissionNoteTitle: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 11,
+    letterSpacing: 0.6,
+  },
+  permissionNoteText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 18,
   },
   previewLabel: {
     fontFamily: 'Inter-Regular',
