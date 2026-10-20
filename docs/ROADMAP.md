@@ -58,7 +58,7 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Streamlined 1.7s splash with UI-thread TypeWriter & 512px native splash mark
 - [x] Supabase client config (`src/lib/supabase.ts`) + Create Account bottom sheet in login
 - [x] Error reporting without PII, privacy policy page, About/disclaimer
-- [ ] Android release build (EAS / production keystore)
+- [x] Android release build (EAS / production keystore) — release signing is wired through `plugins/withReleaseSigning.js` (owner keystore from `GBU_ANDROID_*` env vars, debug-key fallback for a fresh clone) and `eas.json` carries the `development` / `preview` / `production` profiles. A signed release APK was built and verified on the emulator (`apksigner` shows the owner DN, not the debug key). Full steps in `docs/RELEASE.md`. Remaining owner work: the upload keystore, the EAS project id (#11) and the FCM/APNs credentials (#12); the 16 KB page-size gap from React Native 0.76 prebuilts is recorded as #13
 - [ ] Student survey results reviewed; update priorities
 
 ## Later ideas (do not build without owner approval)

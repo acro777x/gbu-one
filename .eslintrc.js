@@ -15,6 +15,25 @@ module.exports = {
     node: true,
     jest: true,
   },
+  overrides: [
+    {
+      // The release-signing test drives a CommonJS Expo config plugin.
+      files: ['tests/release_signing.test.ts'],
+      rules: {
+        '@typescript-eslint/no-var-requires': 'off',
+        '@typescript-eslint/no-require-imports': 'off',
+      },
+    },
+    {
+      // Expo config plugins are CommonJS by contract.
+      files: ['plugins/**/*.js'],
+      rules: {
+        '@typescript-eslint/no-var-requires': 'off',
+        '@typescript-eslint/no-require-imports': 'off',
+        'no-regex-spaces': 'off',
+      },
+    },
+  ],
   ignorePatterns: [
     'android/**', 'ios/**', 'dist/**', 'node_modules/**', '.expo/**',
     'checklist_extracted/**', 'docs/**',

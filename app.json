@@ -56,7 +56,8 @@
           "defaultChannel": "timetable_changes",
           "color": "#4F46E5"
         }
-      ]
+      ],
+      "./plugins/withReleaseSigning"
     ],
     "scheme": "gbuone"
   }
