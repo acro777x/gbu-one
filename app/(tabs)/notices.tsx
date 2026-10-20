@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   FlatList,
   TouchableOpacity,
+  Pressable,
   RefreshControl,
   Share,
   Linking,
@@ -16,18 +17,22 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router';
 import { Search, Share2, BellRing, X, ExternalLink } from 'lucide-react-native';
 import { NoticeCard, Chip, BottomSheet, PillButton, EmptyState } from '../../src/components/ui';
-import { NoticeItem } from '../../src/features/notices/noticeService';
+import { NoticeItem, filterNotices } from '../../src/features/notices/noticeService';
 import { useNoticesQuery } from '../../src/features/notices/useNoticesQuery';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
-const CATEGORIES = ['All', 'For me', 'datesheet', 'fees', 'scholarship', 'hostel', 'exam', 'event'];
+// "For me" is a separate chip (it is not a category), so it is not listed here.
+const CATEGORIES = ['datesheet', 'fees', 'scholarship', 'hostel', 'exam', 'event'];
 
 export default function NoticesScreen() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  // N99-style removable filters: several can be active at once.
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedSchools, setSelectedSchools] = useState<string[]>([]);
+  const [forMeOnly, setForMeOnly] = useState(false);
   const [activeNotice, setActiveNotice] = useState<NoticeItem | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
 
@@ -35,19 +40,30 @@ export default function NoticesScreen() {
   // first launch), then refreshes from Supabase in the background.
   const { data: notices = [], isFetching, refetch } = useNoticesQuery();
 
-  const filteredNotices = notices.filter((n) => {
-    const matchesSearch =
-      searchQuery.trim() === '' ||
-      n.cleanTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      n.title.toLowerCase().includes(searchQuery.toLowerCase());
+  const availableSchools = useMemo(() => {
+    const schools = new Set<string>();
+    for (const n of notices) {
+      for (const s of n.audience.schools ?? []) schools.add(s.toUpperCase());
+    }
+    return [...schools].sort();
+  }, [notices]);
 
-    const matchesCategory =
-      selectedCategory === 'All' ||
-      (selectedCategory === 'For me' && (n.importance >= 2 || n.audience.all)) ||
-      n.category === selectedCategory;
+  const filteredNotices = useMemo(
+    () =>
+      filterNotices(notices, {
+        categories: selectedCategories,
+        schools: selectedSchools,
+        forMe: forMeOnly,
+        query: searchQuery,
+      }),
+    [notices, selectedCategories, selectedSchools, forMeOnly, searchQuery],
+  );
 
-    return matchesSearch && matchesCategory;
-  });
+  const toggleInList = (list: string[], value: string): string[] =>
+    list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+
+  const activeFilterCount =
+    selectedCategories.length + selectedSchools.length + (forMeOnly ? 1 : 0);
 
   const onRefresh = () => {
     void refetch();
@@ -101,21 +117,75 @@ export default function NoticesScreen() {
         </View>
       </View>
 
-      {/* Filter Chips */}
-      <View style={styles.filterSection}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-          {CATEGORIES.map((cat) => (
+        {/* Filter Chips - N99 style: removable, several active at once */}
+        <View style={styles.filterSection}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScroll}
+          >
             <Chip
-              key={cat}
-              label={cat === 'datesheet' ? 'Date Sheet' : cat.charAt(0).toUpperCase() + cat.slice(1)}
-              selected={selectedCategory === cat}
-              onPress={() => setSelectedCategory(cat)}
-              onRemove={selectedCategory === cat && cat !== 'All' ? () => setSelectedCategory('All') : undefined}
+              key="for-me"
+              label="For me"
+              selected={forMeOnly}
+              onPress={() => setForMeOnly((v) => !v)}
+              onRemove={forMeOnly ? () => setForMeOnly(false) : undefined}
               style={styles.filterChip}
             />
-          ))}
-        </ScrollView>
-      </View>
+
+            {CATEGORIES.map((cat) => {
+              const label =
+                cat === 'datesheet'
+                  ? 'Date Sheet'
+                  : cat.charAt(0).toUpperCase() + cat.slice(1);
+              const selected = selectedCategories.includes(cat);
+              return (
+                <Chip
+                  key={cat}
+                  label={label}
+                  selected={selected}
+                  onPress={() => setSelectedCategories((prev) => toggleInList(prev, cat))}
+                  onRemove={
+                    selected ? () => setSelectedCategories((prev) => prev.filter((c) => c !== cat)) : undefined
+                  }
+                  style={styles.filterChip}
+                />
+              );
+            })}
+
+            {availableSchools.map((school) => {
+              const selected = selectedSchools.includes(school);
+              return (
+                <Chip
+                  key={school}
+                  label={school}
+                  selected={selected}
+                  onPress={() => setSelectedSchools((prev) => toggleInList(prev, school))}
+                  onRemove={
+                    selected ? () => setSelectedSchools((prev) => prev.filter((s) => s !== school)) : undefined
+                  }
+                  style={styles.filterChip}
+                />
+              );
+            })}
+          </ScrollView>
+
+          {activeFilterCount > 0 && (
+            <Pressable
+              onPress={() => {
+                setSelectedCategories([]);
+                setSelectedSchools([]);
+                setForMeOnly(false);
+              }}
+              style={styles.clearFilters}
+              accessibilityRole="button"
+              accessibilityLabel="Clear all filters"
+            >
+              <Text style={styles.clearFiltersText}>Clear {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'}</Text>
+            </Pressable>
+          )}
+        </View>
+
 
       {/* Notices List */}
       <FlatList
@@ -263,6 +333,18 @@ const styles = StyleSheet.create({
   filterChip: {
     marginRight: 8,
     marginBottom: 0,
+  },
+  clearFilters: {
+    alignSelf: 'flex-start',
+    minHeight: 32,
+    justifyContent: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.xs,
+  },
+  clearFiltersText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+    color: theme.colors.accent,
   },
   scrollContent: {
     padding: theme.spacing.lg,

@@ -359,6 +359,59 @@ export function groupNoticeThreads(notices: NoticeItem[]): NoticeItem[] {
   });
 }
 
+export interface NoticeFilters {
+  /** Notice categories to keep, e.g. ['datesheet', 'fees']. Empty means all. */
+  categories?: string[];
+  /** Schools to keep, e.g. ['SOICT']. Empty means all. */
+  schools?: string[];
+  /** Semesters to keep, e.g. ['II']. Empty means all. */
+  semesters?: string[];
+  /** Keep only the notices that target this student. */
+  forMe?: boolean;
+  /** Free-text search over the title. */
+  query?: string;
+}
+
+/**
+ * Filters notices with the N99-style removable chips: several filters can be
+ * active at once, and a notice has to satisfy all of them.
+ */
+export function filterNotices(notices: NoticeItem[], filters: NoticeFilters = {}): NoticeItem[] {
+  const categories = (filters.categories ?? []).map((c) => c.toLowerCase());
+  const schools = (filters.schools ?? []).map((s) => s.toUpperCase());
+  const semesters = (filters.semesters ?? []).map((s) => s.toUpperCase());
+  const query = (filters.query ?? '').trim().toLowerCase();
+
+  return notices.filter((n) => {
+    if (query) {
+      const inTitle =
+        n.cleanTitle.toLowerCase().includes(query) || n.title.toLowerCase().includes(query);
+      const inText = (n.rawText ?? '').toLowerCase().includes(query);
+      if (!inTitle && !inText) return false;
+    }
+
+    if (categories.length > 0 && !categories.includes(n.category.toLowerCase())) {
+      return false;
+    }
+
+    if (schools.length > 0) {
+      const noticeSchools = (n.audience.schools ?? []).map((s) => s.toUpperCase());
+      if (!noticeSchools.some((s) => schools.includes(s))) return false;
+    }
+
+    if (semesters.length > 0) {
+      const noticeSemesters = (n.audience.semesters ?? []).map((s) => s.toUpperCase());
+      if (!noticeSemesters.some((s) => semesters.includes(s))) return false;
+    }
+
+    if (filters.forMe && !(n.importance >= 2 || n.audience.all)) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 export const MOCK_NOTICES: NoticeItem[] = [
   {
     id: 'not_revised_datesheet',
