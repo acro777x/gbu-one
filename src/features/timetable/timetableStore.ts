@@ -4,10 +4,11 @@
  * and 6-hour AsyncStorage caching per Section 6.1.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GBUTimetableProvider, Timetable, ClassRef } from './timetableProvider';
+import { SamayTimetableProvider, Timetable, ClassRef } from './timetableProvider';
+import { readCachedTimetable, writeCachedTimetable } from '../../lib/db';
 
 // Single shared provider instance for the entire application
-export const sharedTimetableProvider = new GBUTimetableProvider();
+export const sharedTimetableProvider = new SamayTimetableProvider();
 
 const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const KEY = (section: string, sem: string) => `@gbu_one_tt_${sem}_${section.trim().toUpperCase()}`;
@@ -28,13 +29,19 @@ export async function getSectionTimetable(
   }
 
   const p = (async () => {
-    // 1. Check local persistent cache if not forcing refresh
+    // 1. SQLite cache first (instant, survives restarts, works offline)
     if (!forceRefresh) {
+      const sqliteHit = readCachedTimetable(normSection, sem);
+      if (sqliteHit && Array.isArray(sqliteHit.slots)) {
+        const age = Date.now() - new Date(sqliteHit.fetchedAt).getTime();
+        if (Number.isFinite(age) && age < TTL_MS) return sqliteHit;
+      }
       try {
         const raw = await AsyncStorage.getItem(KEY(normSection, sem));
         if (raw) {
           const { at, data } = JSON.parse(raw) as { at: number; data: Timetable };
           if (Date.now() - at < TTL_MS && data && Array.isArray(data.slots)) {
+            writeCachedTimetable(normSection, sem, data);
             return data;
           }
         }
@@ -43,11 +50,12 @@ export async function getSectionTimetable(
       }
     }
 
-    // 2. Fetch fresh timetable
+    // 2. Fetch fresh timetable (live -> mock fallback inside provider)
     const fresh = await sharedTimetableProvider.getTimetable(normSection, sem);
 
     // 3. Persist live timetable data
-    if (fresh.source === 'live' || fresh.slots.length > 0) {
+    if (fresh.slots.length > 0) {
+      writeCachedTimetable(normSection, sem, fresh);
       try {
         await AsyncStorage.setItem(
           KEY(normSection, sem),
