@@ -20,7 +20,7 @@ import { Home, Calendar, Bell, FileText, User } from 'lucide-react-native';
 import { Avatar } from './Avatar';
 import { motion } from '../../lib/motion';
 import { useAppTheme } from '../../lib/ThemeContext';
-import { ColorSet } from '../../lib/theme';
+import { ColorSet, theme } from '../../lib/theme';
 
 export interface TabItem {
   key: string;
@@ -182,7 +182,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
               styles.capsulePill,
               {
                 backgroundColor: isDark ? 'rgba(255, 106, 43, 0.16)' : colors.accentSoft,
-                borderColor: `${colors.accent}40`,
+                borderColor: colors.accent,
               },
             ]}
           />
@@ -224,7 +224,8 @@ const styles = StyleSheet.create({
     position: 'relative',
     ...Platform.select({
       ios: {
-        shadowColor: '#344054',
+            shadowColor: theme.colors.borderStrong,
+
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.14,
         shadowRadius: 16,

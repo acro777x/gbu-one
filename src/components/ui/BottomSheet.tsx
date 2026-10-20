@@ -16,6 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { motion } from '../../lib/motion';
 import { theme } from '../../lib/theme';
+import { useAppTheme } from '../../lib/ThemeContext';
 
 export interface BottomSheetProps {
   visible: boolean;
@@ -33,6 +34,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   title,
   children,
 }) => {
+  const { colors } = useAppTheme();
   const translateY = useSharedValue(SCREEN_HEIGHT);
   const backdropOpacity = useSharedValue(0);
 
@@ -69,16 +71,24 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
       <View style={styles.overlay}>
         <TouchableWithoutFeedback onPress={handleClose}>
-          <Animated.View style={[styles.backdrop, animatedBackdropStyle]} />
+          <Animated.View
+            style={[styles.backdrop, animatedBackdropStyle]}
+          />
         </TouchableWithoutFeedback>
 
-        <Animated.View style={[styles.sheet, animatedSheetStyle]}>
+        <Animated.View
+          style={[
+            styles.sheet,
+            { backgroundColor: colors.surface, borderColor: colors.borderGlass },
+            animatedSheetStyle,
+          ]}
+        >
           {/* Grab handle */}
-          <View style={styles.handle} />
+          <View style={[styles.handle, { backgroundColor: colors.borderStrong }]} />
 
           {title && (
-            <View style={styles.header}>
-              <Text style={styles.title}>{title}</Text>
+            <View style={[styles.header, { borderBottomColor: colors.divider }]}>
+              <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
             </View>
           )}
 
@@ -99,16 +109,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(17, 24, 39, 0.45)',
   },
   sheet: {
-    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: theme.radius.sheet,
     borderTopRightRadius: theme.radius.sheet,
     borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
     paddingTop: theme.spacing.md,
     paddingBottom: theme.spacing.xxl,
     paddingHorizontal: theme.spacing.xl,
     maxHeight: SCREEN_HEIGHT * 0.85,
-    shadowColor: '#344054',
+    shadowColor: theme.colors.borderStrong,
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.14,
     shadowRadius: 16,
@@ -117,7 +125,6 @@ const styles = StyleSheet.create({
   handle: {
     width: 40,
     height: 4,
-    backgroundColor: 'rgba(17, 24, 39, 0.20)',
     borderRadius: 2,
     alignSelf: 'center',
     marginBottom: theme.spacing.md,
@@ -125,13 +132,11 @@ const styles = StyleSheet.create({
   header: {
     paddingBottom: theme.spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(17, 24, 39, 0.06)',
     marginBottom: theme.spacing.md,
   },
   title: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: theme.colors.ivory,
   },
   content: {
     paddingTop: theme.spacing.xs,

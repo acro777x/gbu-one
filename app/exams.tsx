@@ -96,7 +96,7 @@ export default function ExamsScreen() {
       {/* Tabs Switcher: Datesheet / Results */}
       <View style={[styles.tabBar, { backgroundColor: colors.surface }]}>
         <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'datesheet' && [styles.tabItemActive, { backgroundColor: colors.accent }]]}
+          style={[styles.tabItem, activeTab === 'datesheet' && [styles.tabItemActive, { backgroundColor: colors.accentFill }]]}
           onPress={() => setActiveTab('datesheet')}
         >
           <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'datesheet' && [styles.tabTextActive, { color: colors.onAccent }]]}>
@@ -104,7 +104,7 @@ export default function ExamsScreen() {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'results' && [styles.tabItemActive, { backgroundColor: colors.accent }]]}
+          style={[styles.tabItem, activeTab === 'results' && [styles.tabItemActive, { backgroundColor: colors.accentFill }]]}
           onPress={() => setActiveTab('results')}
         >
           <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'results' && [styles.tabTextActive, { color: colors.onAccent }]]}>
@@ -124,7 +124,16 @@ export default function ExamsScreen() {
                   <Text style={[styles.countdownTitle, { color: colors.textPrimary }]}>Mid Semester Exams</Text>
                   <Text style={[styles.countdownSub, { color: colors.textSecondary }]}>Starts Monday, 3 Nov 2026</Text>
                 </View>
-                <View style={styles.countdownBox}>
+                <View
+                  style={[
+                    styles.countdownBox,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.borderGlass,
+                      borderWidth: 1,
+                    },
+                  ]}
+                >
                   <CountUp value={countdownDays} style={[styles.countdownNumber, { color: colors.accent }]} />
                   <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>DAYS LEFT</Text>
                 </View>
@@ -252,7 +261,16 @@ export default function ExamsScreen() {
                 </View>
 
                 {/* GPA Stats */}
-                <View style={styles.gpaRow}>
+                <View
+                  style={[
+                    styles.gpaRow,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.borderGlass,
+                      borderWidth: 1,
+                    },
+                  ]}
+                >
                   <View style={styles.gpaBox}>
                     <Text style={[styles.gpaLabel, { color: colors.textSecondary }]}>SGPA</Text>
                     <Text style={[styles.gpaValue, { color: colors.accent }]}>{searchResult.sgpa.toFixed(2)}</Text>
@@ -384,7 +402,6 @@ const styles = StyleSheet.create({
   },
   countdownBox: {
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -465,7 +482,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   examShiftBadge: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    backgroundColor: theme.colors.warningSoft,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -550,12 +567,12 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   statusPass: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: theme.colors.successSoft,
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.4)',
   },
   statusPcp: {
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    backgroundColor: theme.colors.warningSoft,
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.4)',
   },
@@ -565,7 +582,6 @@ const styles = StyleSheet.create({
   },
   gpaRow: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,

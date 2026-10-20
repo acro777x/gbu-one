@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, Pressable, ViewStyle, TextStyle } from 'react-native';
 import { X } from 'lucide-react-native';
 import { theme } from '../../lib/theme';
+import { useAppTheme } from '../../lib/ThemeContext';
 
 export interface ChipProps {
   label: string;
@@ -20,21 +21,26 @@ export const Chip: React.FC<ChipProps> = ({
   style,
   textStyle,
 }) => {
+  const { colors } = useAppTheme();
+
   return (
     <Pressable
       onPress={onPress}
       style={[
         styles.chip,
-        selected ? styles.chipSelected : styles.chipUnselected,
+        selected
+          ? { backgroundColor: colors.accentFill, borderColor: colors.accentFill }
+          : { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass },
         style,
       ]}
       accessibilityRole="button"
       accessibilityState={{ selected }}
+      accessibilityLabel={label}
     >
       <Text
         style={[
           styles.text,
-          selected ? styles.textSelected : styles.textUnselected,
+          { color: selected ? colors.onAccent : colors.textSecondary },
           textStyle,
         ]}
       >
@@ -47,7 +53,7 @@ export const Chip: React.FC<ChipProps> = ({
           accessibilityLabel={`Remove ${label}`}
           accessibilityRole="button"
         >
-          <X size={14} color={selected ? theme.colors.bg : theme.colors.textSecondary} />
+          <X size={14} color={selected ? colors.onAccent : colors.textSecondary} />
         </Pressable>
       )}
     </Pressable>
@@ -69,24 +75,9 @@ const styles = StyleSheet.create({
     marginRight: theme.spacing.sm,
     marginBottom: theme.spacing.sm,
   },
-  chipUnselected: {
-    backgroundColor: 'rgba(17, 24, 39, 0.05)',
-    borderColor: theme.colors.borderGlass,
-  },
-  chipSelected: {
-    backgroundColor: theme.colors.accent,
-    borderColor: theme.colors.accent,
-  },
   text: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
-  },
-  textUnselected: {
-    color: theme.colors.textSecondary,
-  },
-  textSelected: {
-    color: theme.colors.ivory,
-    fontWeight: '600',
   },
   removeButton: {
     // The X glyph is small, so the touch target is widened around it and the

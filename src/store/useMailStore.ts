@@ -3,6 +3,13 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { StudentEmail, INITIAL_STUDENT_EMAILS } from '../features/mail/mailService';
 import { zustandStorage } from '../lib/storage';
 
+export interface MailActionResult {
+  success: boolean;
+  error?: string;
+  // This build has no mail-sending backend, so nothing ever leaves the device.
+  sent: boolean;
+}
+
 export interface MailState {
   emails: StudentEmail[];
   activeCategory: 'all' | 'official' | 'academics' | 'placements' | 'hostel';
@@ -17,10 +24,13 @@ export interface MailState {
   markAllAsRead: () => void;
   toggleStar: (emailId: string) => void;
   deleteEmail: (emailId: string) => void;
-  sendReply: (emailId: string, replyText: string) => { success: boolean };
-  forwardEmail: (emailId: string, recipient: string, note: string) => { success: boolean };
+  sendReply: (emailId: string, replyText: string) => MailActionResult;
+  forwardEmail: (emailId: string, recipient: string, note: string) => MailActionResult;
   getUnreadCount: () => number;
 }
+
+const formatStamp = (): string =>
+  new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 export const useMailStore = create<MailState>()(
   persist(
@@ -80,26 +90,55 @@ export const useMailStore = create<MailState>()(
     }));
   },
 
-  sendReply: (emailId: string, replyText: string) => {
-    if (!replyText.trim()) return { success: false };
-    // Optimistically update
+  sendReply: (emailId: string, replyText: string): MailActionResult => {
+    const trimmedReply = replyText.trim();
+    if (!trimmedReply) {
+      return { success: false, error: 'Write a reply before sending.', sent: false };
+    }
+
+    const target = get().emails.find((e) => e.id === emailId);
+    if (!target) {
+      return { success: false, error: 'That email is no longer in your inbox.', sent: false };
+    }
+
     set((state) => ({
       emails: state.emails.map((e) => {
         if (e.id === emailId) {
           return {
             ...e,
-            body: `${e.body}\n\n--- Your Reply (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}) ---\n${replyText}`,
+            body: `${e.body}\n\n--- Your Reply (${formatStamp()}) ---\n${trimmedReply}`,
           };
         }
         return e;
       }),
     }));
-    return { success: true };
+    return { success: true, sent: false };
   },
 
-  forwardEmail: (_emailId: string, recipient: string, _note: string) => {
-    if (!recipient.trim()) return { success: false };
-    return { success: true };
+  forwardEmail: (emailId: string, recipient: string, note: string): MailActionResult => {
+    const trimmedRecipient = recipient.trim();
+    if (!trimmedRecipient) {
+      return { success: false, error: 'Enter a recipient to forward to.', sent: false };
+    }
+
+    const target = get().emails.find((e) => e.id === emailId);
+    if (!target) {
+      return { success: false, error: 'That email is no longer in your inbox.', sent: false };
+    }
+
+    const noteBlock = note.trim() ? `\n${note.trim()}` : '';
+    set((state) => ({
+      emails: state.emails.map((e) => {
+        if (e.id === emailId) {
+          return {
+            ...e,
+            body: `${e.body}\n\n--- Forwarded to ${trimmedRecipient} (${formatStamp()}) ---${noteBlock}`,
+          };
+        }
+        return e;
+      }),
+    }));
+    return { success: true, sent: false };
   },
 
   getUnreadCount: () => {

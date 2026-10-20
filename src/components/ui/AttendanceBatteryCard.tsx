@@ -197,7 +197,7 @@ export const AttendanceBatteryCard: React.FC<AttendanceBatteryCardProps> = ({
                   styles.batteryCasing,
                   {
                     borderColor: `${batteryColor}66`,
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : theme.colors.surfaceMuted,
                   },
                 ]}
               >
@@ -222,7 +222,7 @@ export const AttendanceBatteryCard: React.FC<AttendanceBatteryCardProps> = ({
                 </View>
 
                 {/* 75% Requirement Milestone Indicator */}
-                <View style={[styles.milestoneMarker, { borderColor: isDark ? '#FFF' : '#000' }]} />
+                <View style={[styles.milestoneMarker, { borderColor: colors.borderStrong }]} />
               </View>
               {/* Positive Battery Terminal */}
               <View style={[styles.batteryNub, { backgroundColor: `${batteryColor}99` }]} />
@@ -235,7 +235,7 @@ export const AttendanceBatteryCard: React.FC<AttendanceBatteryCardProps> = ({
               styles.adviceBanner,
               {
                 backgroundColor: isHealthy ? colors.successSoft : colors.dangerSoft,
-                borderColor: isHealthy ? `${colors.success}33` : `${colors.danger}33`,
+                borderColor: isHealthy ? colors.success : colors.danger,
               },
             ]}
           >
@@ -277,7 +277,7 @@ export const AttendanceBatteryCard: React.FC<AttendanceBatteryCardProps> = ({
                   style={[
                     styles.quickBtn,
                     styles.quickBtnPresent,
-                    { backgroundColor: colors.successSoft, borderColor: `${colors.success}44` },
+                    { backgroundColor: colors.successSoft, borderColor: colors.success },
                   ]}
                   onPress={handleQuickPresent}
                   activeOpacity={0.75}
@@ -291,7 +291,7 @@ export const AttendanceBatteryCard: React.FC<AttendanceBatteryCardProps> = ({
                   style={[
                     styles.quickBtn,
                     styles.quickBtnAbsent,
-                    { backgroundColor: colors.dangerSoft, borderColor: `${colors.danger}44` },
+                    { backgroundColor: colors.dangerSoft, borderColor: colors.danger },
                   ]}
                   onPress={handleQuickMissed}
                   activeOpacity={0.75}

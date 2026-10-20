@@ -103,7 +103,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
           style={[
             styles.skipPill,
             {
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(17, 24, 39, 0.08)',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : colors.surfaceMuted,
               borderColor: colors.borderGlass,
             },
           ]}

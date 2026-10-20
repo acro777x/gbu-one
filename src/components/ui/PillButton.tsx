@@ -13,6 +13,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { theme } from '../../lib/theme';
+import { useAppTheme } from '../../lib/ThemeContext';
 
 export interface PillButtonProps {
   label: string;
@@ -39,6 +40,7 @@ export const PillButton: React.FC<PillButtonProps> = ({
   textStyle,
   icon,
 }) => {
+  const { colors } = useAppTheme();
   const scale = useSharedValue(1);
 
   const handlePressIn = () => {
@@ -55,31 +57,33 @@ export const PillButton: React.FC<PillButtonProps> = ({
     transform: [{ scale: scale.value }],
   }));
 
-  const getContainerVariantStyle = () => {
+  /** The background of the button for the current variant and palette. */
+  const containerStyle = (): ViewStyle => {
     switch (variant) {
       case 'white':
-        return styles.btnWhite;
+        return { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong };
       case 'dark':
-        return styles.btnDark;
+        return { backgroundColor: colors.textPrimary };
       case 'outline':
-        return styles.btnOutline;
+        return { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.accent };
       case 'primary':
       default:
-        return styles.btnPrimary;
+        return { backgroundColor: colors.accentFill };
     }
   };
 
-  const getTextVariantStyle = () => {
+  /** The label colour, chosen for contrast against the background above. */
+  const labelColor = (): string => {
     switch (variant) {
       case 'white':
-        return styles.textWhite;
+        return colors.textPrimary;
       case 'dark':
-        return styles.textDark;
+        return colors.bg;
       case 'outline':
-        return styles.textOutline;
+        return colors.accent;
       case 'primary':
       default:
-        return styles.textPrimary;
+        return colors.onAccent;
     }
   };
 
@@ -104,24 +108,20 @@ export const PillButton: React.FC<PillButtonProps> = ({
       style={[
         styles.button,
         getSizeStyle(),
-        getContainerVariantStyle(),
+        containerStyle(),
         (disabled || loading) && styles.disabled,
         style,
         animStyle,
       ]}
       accessibilityRole="button"
+      accessibilityLabel={label}
     >
       {loading ? (
-        <ActivityIndicator
-          size="small"
-          color={variant === 'primary' ? theme.colors.onAccent : (variant === 'white' ? theme.colors.bg : theme.colors.ivory)}
-        />
+        <ActivityIndicator size="small" color={labelColor()} />
       ) : (
         <>
           {icon}
-          <Text style={[styles.text, getTextVariantStyle(), textStyle]}>
-            {label}
-          </Text>
+          <Text style={[styles.text, { color: labelColor() }, textStyle]}>{label}</Text>
         </>
       )}
     </AnimatedPressable>
@@ -152,37 +152,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     minHeight: 56,
   },
-  btnPrimary: {
-    backgroundColor: theme.colors.accent,
-  },
-  btnWhite: {
-    backgroundColor: '#FFFFFF',
-  },
-  btnDark: {
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.borderGlass,
-  },
-  btnOutline: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: theme.colors.accent,
-  },
   text: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 15,
-  },
-  textPrimary: {
-    color: theme.colors.onAccent,
-  },
-  textWhite: {
-    color: theme.colors.bg,
-  },
-  textDark: {
-    color: theme.colors.textPrimary,
-  },
-  textOutline: {
-    color: theme.colors.accent,
   },
   disabled: {
     opacity: 0.5,

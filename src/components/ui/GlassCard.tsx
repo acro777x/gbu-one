@@ -38,7 +38,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
 
   const borderColor =
     accentBorder || variant === 'accent'
-      ? `${colors.accent}88`
+      ? colors.accent
       : colors.borderGlass;
 
   if (onPress) {
@@ -53,7 +53,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
           {
             backgroundColor: surface,
             borderColor,
-            shadowColor: isDark ? '#000000' : '#344054',
+            shadowColor: isDark ? '#000000' : colors.borderStrong,
           },
           glow && { shadowColor: colors.accent, shadowOpacity: 0.16, shadowRadius: 18, elevation: 5 },
           style,
@@ -78,7 +78,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
         {
           backgroundColor: surface,
           borderColor,
-          shadowColor: isDark ? '#000000' : '#344054',
+          shadowColor: isDark ? '#000000' : colors.borderStrong,
         },
         glow && { shadowColor: colors.accent, shadowOpacity: 0.16, shadowRadius: 18, elevation: 5 },
         style,

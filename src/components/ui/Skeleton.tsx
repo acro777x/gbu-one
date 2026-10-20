@@ -44,9 +44,10 @@ export const Skeleton: React.FC<SkeletonProps> = ({
     transform: [{ translateX: translateX.value }],
   }));
 
-  const shimmerColors = isDark
-    ? (['transparent', 'rgba(255, 255, 255, 0.12)', 'transparent'] as const)
-    : (['transparent', 'rgba(255, 255, 255, 0.75)', 'transparent'] as const);
+      const shimmerColors = isDark
+        ? (['transparent', 'rgba(255, 255, 255, 0.12)', 'transparent'] as const)
+        : (['transparent', 'rgba(0, 0, 0, 0.08)', 'transparent'] as const);
+
 
   return (
     <View

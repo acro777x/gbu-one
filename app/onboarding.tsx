@@ -224,11 +224,11 @@ export default function OnboardingScreen() {
           contentContainerStyle={styles.classSetupContainer}
           showsVerticalScrollIndicator={false}
         >
-          <View style={[styles.iconCircle, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}30` }]}>
+          <View style={[styles.iconCircle, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
             <GraduationCap size={42} color={colors.accent} />
           </View>
 
-          <View style={[styles.tagPill, { backgroundColor: `${colors.accent}15` }]}>
+          <View style={[styles.tagPill, { backgroundColor: colors.accentSoft }]}>
             <Text style={[styles.tagText, { color: colors.accent }]}>YOUR CLASS</Text>
           </View>
 
@@ -316,14 +316,14 @@ export default function OnboardingScreen() {
                   styles.iconCircle,
                   {
                     backgroundColor: colors.accentSoft,
-                    borderColor: `${colors.accent}30`,
+                    borderColor: colors.accent,
                   },
                 ]}
               >
                 {renderIcon(item.iconName)}
               </View>
 
-              <View style={[styles.tagPill, { backgroundColor: `${colors.accent}15` }]}>
+              <View style={[styles.tagPill, { backgroundColor: colors.accentSoft }]}>
                 <Text style={[styles.tagText, { color: colors.accent }]}>{item.tag}</Text>
               </View>
 

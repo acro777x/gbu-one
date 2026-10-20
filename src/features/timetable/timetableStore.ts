@@ -1,10 +1,18 @@
 /**
  * GBU One — Centralized Timetable Store & Caching Layer
  * Implements in-flight request deduplication, single provider singleton,
- * and 6-hour AsyncStorage caching per Section 6.1.
+ * 6-hour AsyncStorage caching per Section 6.1, and change detection that
+ * marks the slots the university actually changed.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SamayTimetableProvider, Timetable, ClassRef } from './timetableProvider';
+import {
+  SamayTimetableProvider,
+  Timetable,
+  ClassRef,
+  TimetableDiffItem,
+  applyDiffsToTimetable,
+  computeTimetableDiff,
+} from './timetableProvider';
 import { readCachedTimetable, writeCachedTimetable } from '../../lib/db';
 
 // Single shared provider instance for the entire application
@@ -12,9 +20,59 @@ export const sharedTimetableProvider = new SamayTimetableProvider();
 
 const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const KEY = (section: string, sem: string) => `@gbu_one_tt_${sem}_${section.trim().toUpperCase()}`;
+const CHANGES_KEY = (section: string, sem: string) =>
+  `@gbu_one_tt_changes_${sem}_${section.trim().toUpperCase()}`;
 
 const inflight = new Map<string, Promise<Timetable>>();
+const changesCache = new Map<string, TimetableDiffItem[]>();
 let cachedClassesList: ClassRef[] | null = null;
+
+/**
+ * The changes the university published for a class since the last snapshot.
+ * These are what make the "Changed" chips and the change banner real.
+ */
+export async function getTimetableChanges(
+  section: string,
+  sem = '39',
+): Promise<TimetableDiffItem[]> {
+  const key = CHANGES_KEY(section, sem);
+  const memo = changesCache.get(key);
+  if (memo) return memo;
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as TimetableDiffItem[];
+    if (!Array.isArray(parsed)) return [];
+    changesCache.set(key, parsed);
+    return parsed;
+  } catch {
+    return [];
+  }
+}
+
+async function writeTimetableChanges(
+  section: string,
+  sem: string,
+  diffs: TimetableDiffItem[],
+): Promise<void> {
+  const key = CHANGES_KEY(section, sem);
+  changesCache.set(key, diffs);
+  try {
+    await AsyncStorage.setItem(key, JSON.stringify(diffs));
+  } catch {
+    // Change history is a convenience; the timetable still renders without it.
+  }
+}
+
+/**
+ * Compares the freshly fetched timetable with the cached snapshot.
+ * The first snapshot of a class never reports changes, and mock data is
+ * never compared against live data (see computeTimetableDiff).
+ */
+function diffAgainstSnapshot(cached: Timetable | null, fresh: Timetable): TimetableDiffItem[] {
+  if (!cached || !Array.isArray(cached.slots) || cached.slots.length === 0) return [];
+  return computeTimetableDiff(cached, fresh);
+}
 
 export async function getSectionTimetable(
   section: string,
@@ -29,31 +87,48 @@ export async function getSectionTimetable(
   }
 
   const p = (async () => {
-    // 1. SQLite cache first (instant, survives restarts, works offline)
-    if (!forceRefresh) {
-      const sqliteHit = readCachedTimetable(normSection, sem);
-      if (sqliteHit && Array.isArray(sqliteHit.slots)) {
-        const age = Date.now() - new Date(sqliteHit.fetchedAt).getTime();
-        if (Number.isFinite(age) && age < TTL_MS) return sqliteHit;
-      }
-      try {
-        const raw = await AsyncStorage.getItem(KEY(normSection, sem));
-        if (raw) {
-          const { at, data } = JSON.parse(raw) as { at: number; data: Timetable };
-          if (Date.now() - at < TTL_MS && data && Array.isArray(data.slots)) {
-            writeCachedTimetable(normSection, sem, data);
-            return data;
-          }
+    // 1. SQLite cache first (instant, survives restarts, works offline).
+    //    It is also the snapshot the fresh timetable is compared against, so
+    //    it is read even when the caller forces a refresh.
+    let cached: Timetable | null = null;
+    let cachedAt = 0;
+
+    const sqliteHit = readCachedTimetable(normSection, sem);
+    if (sqliteHit && Array.isArray(sqliteHit.slots)) {
+      cached = sqliteHit;
+      cachedAt = new Date(sqliteHit.fetchedAt).getTime();
+    }
+    try {
+      const raw = await AsyncStorage.getItem(KEY(normSection, sem));
+      if (raw) {
+        const { at, data } = JSON.parse(raw) as { at: number; data: Timetable };
+        if (data && Array.isArray(data.slots) && (!cached || at > cachedAt)) {
+          cached = data;
+          cachedAt = at;
         }
-      } catch {
-        // Ignore cache read failures and proceed to fetch
       }
+    } catch {
+      // Ignore cache read failures and proceed to fetch
+    }
+
+    if (
+      !forceRefresh &&
+      cached &&
+      Number.isFinite(cachedAt) &&
+      Date.now() - cachedAt < TTL_MS
+    ) {
+      const changes = await getTimetableChanges(normSection, sem);
+      return applyDiffsToTimetable(cached, changes);
     }
 
     // 2. Fetch fresh timetable (live -> mock fallback inside provider)
     const fresh = await sharedTimetableProvider.getTimetable(normSection, sem);
 
-    // 3. Persist live timetable data
+    // 3. Compare with the cached snapshot so "Changed" markers are real
+    const changes = diffAgainstSnapshot(cached, fresh);
+    await writeTimetableChanges(normSection, sem, changes);
+
+    // 4. Persist the clean live timetable (change markers are not cached)
     if (fresh.slots.length > 0) {
       writeCachedTimetable(normSection, sem, fresh);
       try {
@@ -66,7 +141,7 @@ export async function getSectionTimetable(
       }
     }
 
-    return fresh;
+    return applyDiffsToTimetable(fresh, changes);
   })().finally(() => {
     inflight.delete(k);
   });

@@ -60,9 +60,9 @@ export default function CalendarScreen() {
   const getCategoryBadgeStyle = (category: CalendarEvent['category']) => {
     switch (category) {
       case 'holiday':
-        return { backgroundColor: 'rgba(245, 158, 11, 0.15)', color: colors.warning };
+        return { backgroundColor: colors.warningSoft, color: colors.warning };
       case 'vacation':
-        return { backgroundColor: 'rgba(16, 185, 129, 0.15)', color: colors.success };
+        return { backgroundColor: colors.successSoft, color: colors.success };
       case 'exam':
         return { backgroundColor: colors.accentSoft, color: colors.accent };
       case 'academic':

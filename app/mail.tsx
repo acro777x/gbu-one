@@ -17,14 +17,14 @@ import {
   MailCheck,
   Star,
   Paperclip,
-  Send,
   CornerUpLeft,
   CornerUpRight,
   Trash2,
   X,
   FileText,
-  Download,
+  Info,
   CheckCircle2,
+  AlertCircle,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { GlassCard, Chip, EmptyState } from '../src/components/ui';
@@ -63,9 +63,11 @@ export default function MailScreen() {
   const [isForwarding, setIsForwarding] = useState(false);
   const [forwardRecipient, setForwardRecipient] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastIsError, setToastIsError] = useState(false);
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, isError = false) => {
     setToastMessage(msg);
+    setToastIsError(isError);
     setTimeout(() => setToastMessage(null), 2400);
   };
 
@@ -112,21 +114,35 @@ export default function MailScreen() {
 
   const handleSendReply = () => {
     if (!activeEmail || !replyText.trim()) return;
-    sendReply(activeEmail.id, replyText);
+    const result = sendReply(activeEmail.id, replyText);
+    if (!result.success) {
+      showToast(result.error || 'Nothing to send.', true);
+      return;
+    }
     setReplyText('');
     setIsReplying(false);
-    showToast('Reply dispatched successfully');
+    setActiveEmail(
+      useMailStore.getState().emails.find((e) => e.id === activeEmail.id) || activeEmail
+    );
+    showToast('Reply saved locally. Sending is not available in this build.');
   };
 
   const handleSendForward = () => {
     if (!activeEmail || !forwardRecipient.trim()) return;
-    forwardEmail(activeEmail.id, forwardRecipient, '');
+    const result = forwardEmail(activeEmail.id, forwardRecipient, '');
+    if (!result.success) {
+      showToast(result.error || 'Forwarding is not available offline yet.', true);
+      return;
+    }
     setForwardRecipient('');
     setIsForwarding(false);
-    showToast(`Forwarded to ${forwardRecipient}`);
+    setActiveEmail(
+      useMailStore.getState().emails.find((e) => e.id === activeEmail.id) || activeEmail
+    );
+    showToast('Forward saved locally. Sending is not available in this build.');
   };
 
-  const chipBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+  const chipBg = isDark ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceMuted;
 
   if (activeEmail) {
     return (
@@ -197,7 +213,7 @@ export default function MailScreen() {
                 { backgroundColor: activeEmail.avatarColor },
               ]}
             >
-              <Text style={styles.avatarTextLarge}>
+              <Text style={[styles.avatarTextLarge, { color: colors.onAccent }]}>
                 {activeEmail.avatarInitial}
               </Text>
             </View>
@@ -230,14 +246,12 @@ export default function MailScreen() {
                   onPress={() => {
                     if (Platform.OS !== 'web') {
                       try {
-                        Haptics.notificationAsync(
-                          Haptics.NotificationFeedbackType.Success
-                        );
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       } catch (e) {
                         // ignore
                       }
                     }
-                    showToast(`Downloaded ${att.name}`);
+                    showToast(`${att.name} is listed only — no file is attached in this build.`);
                   }}
                 >
                   <FileText size={18} color={colors.accent} />
@@ -247,7 +261,7 @@ export default function MailScreen() {
                     </Text>
                     <Text style={[styles.attSize, { color: colors.textSecondary }]}>{att.size}</Text>
                   </View>
-                  <Download size={16} color={colors.textSecondary} />
+                  <Info size={16} color={colors.textSecondary} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -276,11 +290,11 @@ export default function MailScreen() {
                   <Text style={[styles.composerCancelText, { color: colors.textSecondary }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.composerSendBtn, { backgroundColor: colors.accent }]}
+                  style={[styles.composerSendBtn, { backgroundColor: colors.accentFill }]}
                   onPress={handleSendReply}
                 >
-                  <Send size={14} color="#FFF" />
-                  <Text style={styles.composerSendText}>Send</Text>
+                  <CornerUpLeft size={14} color={colors.onAccent} />
+                  <Text style={[styles.composerSendText, { color: colors.onAccent }]}>Save reply</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -305,11 +319,11 @@ export default function MailScreen() {
                   <Text style={[styles.composerCancelText, { color: colors.textSecondary }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.composerSendBtn, { backgroundColor: colors.accent }]}
+                  style={[styles.composerSendBtn, { backgroundColor: colors.accentFill }]}
                   onPress={handleSendForward}
                 >
-                  <CornerUpRight size={14} color="#FFF" />
-                  <Text style={styles.composerSendText}>Forward</Text>
+                  <CornerUpRight size={14} color={colors.onAccent} />
+                  <Text style={[styles.composerSendText, { color: colors.onAccent }]}>Save forward</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -344,8 +358,12 @@ export default function MailScreen() {
         {/* Floating Toast Notice */}
         {toastMessage && (
           <View style={styles.toastContainer} pointerEvents="none">
-            <View style={[styles.toastPill, { backgroundColor: isDark ? 'rgba(22, 22, 24, 0.95)' : 'rgba(255, 255, 255, 0.95)', borderColor: colors.accent }]}>
-              <CheckCircle2 size={15} color={colors.accent} />
+            <View style={[styles.toastPill, { backgroundColor: isDark ? 'rgba(22, 22, 24, 0.95)' : 'rgba(255, 255, 255, 0.95)', borderColor: toastIsError ? colors.danger : colors.accent }]}>
+              {toastIsError ? (
+                <AlertCircle size={15} color={colors.danger} />
+              ) : (
+                <CheckCircle2 size={15} color={colors.accent} />
+              )}
               <Text style={[styles.toastText, { color: colors.textPrimary }]}>{toastMessage}</Text>
             </View>
           </View>
@@ -381,7 +399,7 @@ export default function MailScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.markAllButton, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}40` }]}
+          style={[styles.markAllButton, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}
           onPress={() => {
             markAllAsRead();
             showToast('All emails marked as read');
@@ -450,7 +468,7 @@ export default function MailScreen() {
         renderItem={({ item: email }) => (
           <GlassCard
             key={email.id}
-            style={[styles.emailCard, email.isUnread && { borderColor: `${colors.accent}66` }]}
+            style={[styles.emailCard, email.isUnread && { borderColor: colors.accent }]}
             accentBorder={email.isUnread}
             onPress={() => handleOpenEmail(email)}
           >
@@ -463,7 +481,7 @@ export default function MailScreen() {
                     { backgroundColor: email.avatarColor },
                   ]}
                 >
-                  <Text style={styles.avatarText}>{email.avatarInitial}</Text>
+                  <Text style={[styles.avatarText, { color: colors.onAccent }]}>{email.avatarInitial}</Text>
                 </View>
                 <View style={styles.senderTextCol}>
                   <View style={styles.senderNameRow}>
@@ -493,9 +511,13 @@ export default function MailScreen() {
               <View style={styles.rightMeta}>
                 <Text style={[styles.dateText, { color: colors.textSecondary }]}>{email.dateStr}</Text>
                 <TouchableOpacity
-                  onPress={() => handleToggleStar(email.id)}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleToggleStar(email.id);
+                  }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   style={{ marginTop: 4 }}
+                  accessibilityLabel={email.isStarred ? 'Unstar email' : 'Star email'}
                 >
                   <Star
                     size={16}
@@ -676,7 +698,6 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   avatarText: {
-    color: '#FFF',
     fontFamily: 'Poppins-Bold',
     fontSize: 13,
   },
@@ -831,7 +852,6 @@ const styles = StyleSheet.create({
   avatarTextLarge: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
-    color: '#FFF',
   },
   readerSenderName: {
     fontFamily: 'Inter-SemiBold',

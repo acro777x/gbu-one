@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -15,7 +15,7 @@ import { LogoMark } from '../src/components/brand/LogoMark';
 import { OfficialSeal } from '../src/components/brand/OfficialSeal';
 import { PillButton } from '../src/components/ui/PillButton';
 import { BottomSheet } from '../src/components/ui/BottomSheet';
-import { useAuthStore } from '../src/store/useAuthStore';
+import { useAuthStore, MIN_PASSWORD_LENGTH } from '../src/store/useAuthStore';
 import { useAppTheme } from '../src/lib/ThemeContext';
 import { theme } from '../src/lib/theme';
 
@@ -26,6 +26,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
 
   // Registration sheet state
   const [registerVisible, setRegisterVisible] = useState(false);
@@ -36,20 +37,53 @@ export default function LoginScreen() {
   const [regError, setRegError] = useState<string | null>(null);
   const [regLoading, setRegLoading] = useState(false);
 
-  const { login, register, loginAsGuest } = useAuthStore();
+  // Password reset sheet state
+  const [resetVisible, setResetVisible] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetDone, setResetDone] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  const { login, register, requestPasswordReset, loginAsGuest } = useAuthStore();
+  const continueTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (continueTimer.current) {
+        clearTimeout(continueTimer.current);
+      }
+    };
+  }, []);
+
+  const scheduleContinue = (delayMs: number) => {
+    if (continueTimer.current) {
+      clearTimeout(continueTimer.current);
+    }
+    continueTimer.current = setTimeout(() => router.replace('/(tabs)'), delayMs);
+  };
 
   const handleLogin = async () => {
     setErrorMessage(null);
+    setNoticeMessage(null);
     setLoading(true);
 
     const result = await login(rollNo, password);
     setLoading(false);
 
-    if (result.success) {
-      router.replace('/(tabs)');
-    } else {
+    if (!result.success) {
       setErrorMessage(result.error || "That roll number or password doesn't match.");
+      return;
     }
+
+    if (result.offline) {
+      setNoticeMessage(
+        'Offline mode: the server is not configured, so this sign-in was not verified. Your profile is stored on this device only.'
+      );
+      scheduleContinue(2600);
+      return;
+    }
+
+    router.replace('/(tabs)');
   };
 
   const handleGuest = () => {
@@ -63,8 +97,8 @@ export default function LoginScreen() {
       setRegError('All fields are required.');
       return;
     }
-    if (regPassword.length < 6) {
-      setRegError('Password must be at least 6 characters.');
+    if (regPassword.length < MIN_PASSWORD_LENGTH) {
+      setRegError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
     setRegLoading(true);
@@ -76,12 +110,38 @@ export default function LoginScreen() {
     });
     setRegLoading(false);
 
-    if (result.success) {
-      setRegisterVisible(false);
-      router.replace('/(tabs)');
-    } else {
+    if (!result.success) {
       setRegError(result.error || 'Failed to create student account.');
+      return;
     }
+
+    setRegisterVisible(false);
+    if (result.offline) {
+      setNoticeMessage(
+        'Offline mode: the account was created on this device only and was not sent to the server.'
+      );
+      scheduleContinue(2600);
+      return;
+    }
+    router.replace('/(tabs)');
+  };
+
+  const handleResetPassword = async () => {
+    setResetError(null);
+    setResetDone(false);
+    if (!resetEmail.trim()) {
+      setResetError('Enter the email address on your account.');
+      return;
+    }
+    setResetLoading(true);
+    const result = await requestPasswordReset(resetEmail);
+    setResetLoading(false);
+
+    if (!result.success) {
+      setResetError(result.error || 'Could not start the password reset.');
+      return;
+    }
+    setResetDone(true);
   };
 
   return (
@@ -105,8 +165,14 @@ export default function LoginScreen() {
         {/* Input Card */}
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
           {errorMessage && (
-            <View style={[styles.errorBox, { backgroundColor: colors.dangerSoft, borderColor: `${colors.danger}40` }]}>
+            <View style={[styles.errorBox, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}>
               <Text style={[styles.errorText, { color: colors.danger }]}>{errorMessage}</Text>
+            </View>
+          )}
+
+          {noticeMessage && (
+            <View style={[styles.noticeBox, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+              <Text style={[styles.noticeText, { color: colors.accent }]}>{noticeMessage}</Text>
             </View>
           )}
 
@@ -161,7 +227,7 @@ export default function LoginScreen() {
                   setPassword(text);
                   setErrorMessage(null);
                 }}
-                placeholder="Enter password"
+                placeholder={`Min ${MIN_PASSWORD_LENGTH} characters`}
                 placeholderTextColor={colors.textTertiary}
                 secureTextEntry={!showPassword}
                 style={[styles.textInput, { color: colors.textPrimary }]}
@@ -170,6 +236,7 @@ export default function LoginScreen() {
                 onPress={() => setShowPassword(!showPassword)}
                 hitSlop={8}
                 style={styles.eyeBtn}
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? (
                   <EyeOff size={18} color={colors.textSecondary} />
@@ -178,6 +245,19 @@ export default function LoginScreen() {
                 )}
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              onPress={() => {
+                setResetError(null);
+                setResetDone(false);
+                setResetVisible(true);
+              }}
+              hitSlop={8}
+              style={styles.forgotRow}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.forgotLink, { color: colors.accent }]}>Forgot password?</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Login Button */}
@@ -238,7 +318,7 @@ export default function LoginScreen() {
       >
         <View style={styles.sheetContent}>
           {regError && (
-            <View style={[styles.errorBox, { backgroundColor: colors.dangerSoft, borderColor: `${colors.danger}40`, marginBottom: 12 }]}>
+            <View style={[styles.errorBox, { backgroundColor: colors.dangerSoft, borderColor: colors.danger, marginBottom: 12 }]}>
               <Text style={[styles.errorText, { color: colors.danger }]}>{regError}</Text>
             </View>
           )}
@@ -289,7 +369,7 @@ export default function LoginScreen() {
               setRegPassword(text);
               setRegError(null);
             }}
-            placeholder="Min 6 characters"
+            placeholder={`Min ${MIN_PASSWORD_LENGTH} characters`}
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             style={[styles.sheetInput, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass, color: colors.textPrimary }]}
@@ -306,6 +386,58 @@ export default function LoginScreen() {
 
           <Text style={[styles.sheetDisclaimer, { color: colors.textTertiary }]}>
             Never enter your official university web portal password.
+          </Text>
+        </View>
+      </BottomSheet>
+
+      {/* Password Reset Bottom Sheet */}
+      <BottomSheet
+        visible={resetVisible}
+        onClose={() => setResetVisible(false)}
+        title="Reset Password"
+      >
+        <View style={styles.sheetContent}>
+          {resetError && (
+            <View style={[styles.errorBox, { backgroundColor: colors.dangerSoft, borderColor: colors.danger, marginBottom: 12 }]}>
+              <Text style={[styles.errorText, { color: colors.danger }]}>{resetError}</Text>
+            </View>
+          )}
+
+          {resetDone && (
+            <View style={[styles.noticeBox, { backgroundColor: colors.accentSoft, borderColor: colors.accent, marginBottom: 12 }]}>
+              <Text style={[styles.noticeText, { color: colors.accent }]}>
+                If that address has a GBU One account, a reset link is on its way. Check your inbox, then set a new password.
+              </Text>
+            </View>
+          )}
+
+          <Text style={[styles.sheetLabel, { color: colors.textSecondary }]}>Account Email</Text>
+          <TextInput
+            value={resetEmail}
+            onChangeText={(text) => {
+              setResetEmail(text);
+              setResetError(null);
+              setResetDone(false);
+            }}
+            placeholder="e.g. student@gbu.ac.in"
+            placeholderTextColor={colors.textTertiary}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={[styles.sheetInput, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass, color: colors.textPrimary }]}
+          />
+
+          <PillButton
+            label="Send Reset Link"
+            onPress={handleResetPassword}
+            loading={resetLoading}
+            variant="primary"
+            size="md"
+            style={{ marginTop: 14 }}
+          />
+
+          <Text style={[styles.sheetDisclaimer, { color: colors.textTertiary }]}>
+            We email a reset link to the address on your account. We never ask for your university portal password.
           </Text>
         </View>
       </BottomSheet>
@@ -362,6 +494,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
+  noticeBox: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: theme.spacing.md,
+  },
+  noticeText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   fieldGroup: {
     marginBottom: theme.spacing.lg,
   },
@@ -389,6 +533,15 @@ const styles = StyleSheet.create({
   },
   eyeBtn: {
     padding: 6,
+  },
+  forgotRow: {
+    alignSelf: 'flex-end',
+    marginTop: 10,
+    paddingVertical: 4,
+  },
+  forgotLink: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
   },
   loginBtn: {
     marginTop: theme.spacing.sm,

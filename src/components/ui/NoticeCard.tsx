@@ -27,14 +27,14 @@ export const NoticeCard: React.FC<NoticeCardProps> = ({
   threadUpdateCount,
   onPress,
 }) => {
-  const { colors, isDark } = useAppTheme();
+  const { colors } = useAppTheme();
 
   return (
     <GlassCard style={styles.card} onPress={onPress}>
       {/* Top row: Category, Importance Dot, Deadline */}
       <View style={styles.topRow}>
         <View style={styles.categoryRow}>
-          <View style={[styles.categoryBadge, { backgroundColor: `${colors.accent}15` }]}>
+          <View style={[styles.categoryBadge, { backgroundColor: colors.accentSoft }]}>
             <Text style={[styles.categoryText, { color: colors.accent }]}>{category}</Text>
           </View>
           {importance > 1 && (
@@ -43,7 +43,8 @@ export const NoticeCard: React.FC<NoticeCardProps> = ({
         </View>
 
         {deadlineBadge && (
-          <View style={[styles.deadlineBadge, { backgroundColor: isDark ? 'rgba(245, 184, 61, 0.16)' : 'rgba(245, 184, 61, 0.12)' }]}>
+              <View style={[styles.deadlineBadge, { backgroundColor: colors.warningSoft }]}>
+
             <Clock size={12} color={colors.warning} />
             <Text style={[styles.deadlineText, { color: colors.warning }]}>{deadlineBadge}</Text>
           </View>

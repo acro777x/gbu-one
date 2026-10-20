@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -23,12 +23,22 @@ import {
   X,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import * as Notifications from 'expo-notifications';
 import { GlassCard, Skeleton, EmptyState } from '../../src/components/ui';
 import {
   Timetable,
   Slot,
 } from '../../src/features/timetable/timetableProvider';
 import { getSectionTimetable } from '../../src/features/timetable/timetableStore';
+import {
+  DayIndex,
+  computeSlotStatuses,
+  dayIndexForDate,
+  nextSlotDate,
+  slotDurationMinutes,
+  slotStartToday,
+} from '../../src/features/timetable/schedule';
+import { TIMETABLE_CHANNEL_ID } from '../../src/lib/pushNotifications';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { useAttendanceStore } from '../../src/features/attendance/attendanceStore';
 import { useAppTheme } from '../../src/lib/ThemeContext';
@@ -41,12 +51,12 @@ export function getCurrentWeekDays() {
   const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   monday.setDate(today.getDate() + diff);
 
-  const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   return labels.map((label, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return {
-      id: i + 1,
+      id: (i + 1) as DayIndex,
       label,
       dateNum: String(d.getDate()),
     };
@@ -56,12 +66,12 @@ export function getCurrentWeekDays() {
 const DAYS = getCurrentWeekDays();
 
 const FACULTY_COLORS = [
-  '#FF6A2B',
-  '#3DD68C',
-  '#8B5CF6',
-  '#06B6D4',
-  '#F5B83D',
-  '#EC4899',
+  '#C2410C',
+  '#0F6B46',
+  '#5B21B6',
+  '#0E7490',
+  '#8A5200',
+  '#A21C5C',
 ];
 
 function getFacultyInitials(name?: string): string {
@@ -91,12 +101,13 @@ export default function TimetableScreen() {
   const { markAttended, markMissed } = useAttendanceStore();
 
   // State
-  const [selectedDay, setSelectedDay] = useState<number>(1);
+  const [selectedDay, setSelectedDay] = useState<DayIndex>(() => dayIndexForDate(new Date()));
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'compact'>('day');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [timetable, setTimetable] = useState<Timetable | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const [now, setNow] = useState(() => new Date());
 
   // Slot Detail Modal
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
@@ -106,6 +117,12 @@ export default function TimetableScreen() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 2500);
   };
+
+  // Keeps LIVE NOW / UP NEXT honest as the clock moves.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const loadTimetable = async (forceRefresh = false) => {
     try {
@@ -137,15 +154,21 @@ export default function TimetableScreen() {
 
   const activeDaySlots = getDaySlots(selectedDay);
 
+  const todayIndex = dayIndexForDate(now);
+  const slotStatuses = useMemo(
+    () => computeSlotStatuses(timetable?.slots ?? [], now),
+    [timetable, now],
+  );
+
   const getSlotStatus = (slot: Slot) => {
-    const isToday = (new Date().getDay() || 1) === selectedDay;
-    if (isToday && slot.start.startsWith('08:30')) {
-      return { label: 'LIVE NOW', color: colors.success, isLive: true };
-    }
-    if (isToday && slot.start.startsWith('09:30')) {
-      return { label: 'UP NEXT', color: colors.accent, isLive: false };
-    }
-    return { label: 'SCHEDULED', color: colors.textSecondary, isLive: false };
+    const label = slotStatuses[slot.id] ?? 'SCHEDULED';
+    const isLive = label === 'LIVE NOW';
+    const color = isLive
+      ? colors.success
+      : label === 'UP NEXT'
+        ? colors.accent
+        : colors.textSecondary;
+    return { label, color, isLive };
   };
 
   const handleOpenSlot = (slot: Slot) => {
@@ -159,31 +182,96 @@ export default function TimetableScreen() {
     setSelectedSlot(slot);
   };
 
+  const handleScheduleReminder = async () => {
+    const slot = selectedSlot;
+    if (!slot) return;
+
+    if (Platform.OS === 'web') {
+      showToast('Class reminders are not available on web');
+      return;
+    }
+
+    const current = new Date();
+    const classDate =
+      slot.day === dayIndexForDate(current)
+        ? slotStartToday(slot, current)
+        : nextSlotDate(slot, current);
+    if (!classDate) {
+      showToast('This class has no valid start time');
+      return;
+    }
+
+    const fireAt = new Date(classDate.getTime() - 10 * 60 * 1000);
+    if (classDate.getTime() <= current.getTime() || fireAt.getTime() <= Date.now()) {
+      showToast('This class has already started — no reminder set');
+      return;
+    }
+
+    try {
+      const current = await Notifications.getPermissionsAsync();
+      let granted = current.granted;
+      if (!granted && current.canAskAgain) {
+        const asked = await Notifications.requestPermissionsAsync();
+        granted = asked.granted;
+      }
+      if (!granted) {
+        showToast('Notifications are off for GBU One — enable them in Settings to get reminders');
+        return;
+      }
+
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync(TIMETABLE_CHANNEL_ID, {
+          name: 'Timetable changes',
+          importance: Notifications.AndroidImportance.HIGH,
+        });
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `${slot.subject} starts in 10 minutes`,
+          body: `${slot.start} • ${slot.room || 'Room TBD'}`,
+          data: { type: 'class-reminder', slotId: slot.id, subject: slot.subject, start: slot.start },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: fireAt,
+          channelId: TIMETABLE_CHANNEL_ID,
+        },
+      });
+
+      showToast(`Reminder set for ${slot.start}`);
+    } catch {
+      showToast('Could not schedule the reminder — please try again');
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Top Header */}
       <View style={styles.header}>
         <View>
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Class Schedule</Text>
-          <Text style={[styles.headerSub, { color: colors.textSecondary }]}>{currentSection} • Semester 39 (Autumn)</Text>
+          <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
+            {currentSection} • Semester Session {timetable?.semesterSessionId ?? '39'}
+          </Text>
         </View>
 
         {/* View Mode Toggle: Day / Week / Compact */}
         <View style={[styles.toggleGroup, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
           <TouchableOpacity
-            style={[styles.toggleBtn, viewMode === 'day' && { backgroundColor: colors.accent }]}
+            style={[styles.toggleBtn, viewMode === 'day' && { backgroundColor: colors.accentFill }]}
             onPress={() => setViewMode('day')}
           >
             <Text style={[styles.toggleText, { color: viewMode === 'day' ? colors.onAccent : colors.textSecondary }]}>Day</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.toggleBtn, viewMode === 'week' && { backgroundColor: colors.accent }]}
+            style={[styles.toggleBtn, viewMode === 'week' && { backgroundColor: colors.accentFill }]}
             onPress={() => setViewMode('week')}
           >
             <Text style={[styles.toggleText, { color: viewMode === 'week' ? colors.onAccent : colors.textSecondary }]}>Week</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.toggleBtn, viewMode === 'compact' && { backgroundColor: colors.accent }]}
+            style={[styles.toggleBtn, viewMode === 'compact' && { backgroundColor: colors.accentFill }]}
             onPress={() => setViewMode('compact')}
           >
             <Text style={[styles.toggleText, { color: viewMode === 'compact' ? colors.onAccent : colors.textSecondary }]}>Compact</Text>
@@ -209,6 +297,7 @@ export default function TimetableScreen() {
           >
             {DAYS.map((d) => {
               const isSelected = selectedDay === d.id;
+              const isToday = d.id === todayIndex;
               const slotsCount = (timetable?.slots || []).filter((s) => s.day === d.id).length;
 
               return (
@@ -221,8 +310,8 @@ export default function TimetableScreen() {
                         ? colors.accentSoft
                         : isDark
                           ? 'rgba(255, 255, 255, 0.05)'
-                          : 'rgba(17, 24, 39, 0.05)',
-                      borderColor: isSelected ? colors.accent : colors.borderGlass,
+                          : colors.surfaceMuted,
+                      borderColor: isSelected ? colors.accent : isToday ? colors.accent : colors.borderGlass,
                     },
                   ]}
                   onPress={() => {
@@ -236,20 +325,26 @@ export default function TimetableScreen() {
                     setSelectedDay(d.id);
                   }}
                   activeOpacity={0.8}
+                  accessibilityLabel={`${d.label} ${d.dateNum}${isToday ? ', today' : ''}`}
+                  accessibilityState={{ selected: isSelected }}
                 >
-                  <Text style={[styles.dayLabel, { color: isSelected ? colors.accent : colors.textSecondary }]}>
+                  <Text style={[styles.dayLabel, { color: isSelected || isToday ? colors.accent : colors.textSecondary }]}>
                     {d.label}
                   </Text>
                   <Text style={[styles.dayNum, { color: isSelected ? colors.accent : colors.textPrimary }]}>
                     {d.dateNum}
                   </Text>
-                  <View
-                    style={
-                      slotsCount > 0
-                        ? [styles.dayDot, isSelected && [styles.dayDotActive, { backgroundColor: colors.accent }]]
-                        : styles.dayDotEmpty
-                    }
-                  />
+                  {isToday ? (
+                    <Text style={[styles.dayTodayTag, { color: colors.accent }]}>TODAY</Text>
+                  ) : (
+                    <View
+                      style={
+                        slotsCount > 0
+                          ? [styles.dayDot, isSelected && [styles.dayDotActive, { backgroundColor: colors.accent }]]
+                          : styles.dayDotEmpty
+                      }
+                    />
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -366,6 +461,9 @@ export default function TimetableScreen() {
                         <Text style={[styles.compactSubject, { color: colors.textPrimary }]} numberOfLines={1}>
                           {slot.subject}
                         </Text>
+                        {slot.isChanged && slot.changeNote ? (
+                          <Text style={[styles.changeNoteText, { color: colors.warning }]}>{slot.changeNote}</Text>
+                        ) : null}
                       </GlassCard>
                     ))
                   )}
@@ -463,7 +561,7 @@ export default function TimetableScreen() {
                               { backgroundColor: facultyColor },
                             ]}
                           >
-                            <Text style={styles.professorInitials}>{facultyInitials}</Text>
+                            <Text style={[styles.professorInitials, { color: colors.onAccent }]}>{facultyInitials}</Text>
                           </View>
                           <Text style={[styles.professorName, { color: colors.textPrimary }]} numberOfLines={1}>
                             {slot.faculty || 'Department Faculty'}
@@ -472,7 +570,7 @@ export default function TimetableScreen() {
 
                         {/* Room Badge */}
                         {slot.room && (
-                          <View style={[styles.roomBadge, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}44` }]}>
+                          <View style={[styles.roomBadge, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
                             <MapPin size={11} color={colors.accent} />
                             <Text style={[styles.roomBadgeText, { color: colors.accent }]}>{slot.room}</Text>
                           </View>
@@ -519,7 +617,7 @@ export default function TimetableScreen() {
               {/* Subject Title */}
               <Text style={[styles.modalSubject, { color: colors.textPrimary }]}>{selectedSlot.subject}</Text>
               <Text style={[styles.modalCode, { color: colors.textSecondary }]}>
-                {selectedSlot.subjectCode || currentSection} • Period {activeDaySlots.indexOf(selectedSlot) + 1}
+                {selectedSlot.subjectCode || currentSection} • Period {selectedSlot.period}
               </Text>
 
               {/* Time & Venue Grid */}
@@ -530,7 +628,10 @@ export default function TimetableScreen() {
                   <View style={{ marginLeft: 10 }}>
                     <Text style={[styles.gridLabel, { color: colors.textSecondary }]}>Time & Duration</Text>
                     <Text style={[styles.gridValue, { color: colors.textPrimary }]}>
-                      {selectedSlot.start} - {selectedSlot.end} (60 min)
+                      {selectedSlot.start} - {selectedSlot.end}
+                      {slotDurationMinutes(selectedSlot) !== null
+                        ? ` (${slotDurationMinutes(selectedSlot)} min)`
+                        : ''}
                     </Text>
                   </View>
                 </View>
@@ -541,7 +642,8 @@ export default function TimetableScreen() {
                   <View style={{ marginLeft: 10 }}>
                     <Text style={[styles.gridLabel, { color: colors.textSecondary }]}>Lecture Room</Text>
                     <Text style={[styles.gridValue, { color: colors.textPrimary }]}>
-                      {selectedSlot.room || 'TBD'} • {classSelection?.school || 'SOICT'} Building
+                      {selectedSlot.room || 'TBD'}
+                      {classSelection?.school ? ` • ${classSelection.school} Building` : ''}
                     </Text>
                   </View>
                 </View>
@@ -563,7 +665,7 @@ export default function TimetableScreen() {
                 <Text style={[styles.actionHeader, { color: colors.textSecondary }]}>Quick Attendance Logging</Text>
                 <View style={styles.actionRow}>
                   <TouchableOpacity
-                    style={[styles.actionBtn, styles.presentBtn, { backgroundColor: colors.successSoft, borderColor: `${colors.success}44` }]}
+                    style={[styles.actionBtn, styles.presentBtn, { backgroundColor: colors.successSoft, borderColor: colors.success }]}
                     onPress={() => {
                       markAttended(selectedSlot.subjectCode || selectedSlot.subject);
                       if (Platform.OS !== 'web') {
@@ -581,7 +683,7 @@ export default function TimetableScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionBtn, styles.absentBtn, { backgroundColor: colors.dangerSoft, borderColor: `${colors.danger}44` }]}
+                    style={[styles.actionBtn, styles.absentBtn, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}
                     onPress={() => {
                       markMissed(selectedSlot.subjectCode || selectedSlot.subject);
                       if (Platform.OS !== 'web') {
@@ -604,14 +706,7 @@ export default function TimetableScreen() {
               <TouchableOpacity
                 style={[styles.reminderBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}
                 onPress={() => {
-                  if (Platform.OS !== 'web') {
-                    try {
-                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    } catch {
-                      // ignore
-                    }
-                  }
-                  showToast(`Reminder scheduled 10m before ${selectedSlot.start}`);
+                  void handleScheduleReminder();
                 }}
               >
                 <Bell size={16} color={colors.textPrimary} />
@@ -721,6 +816,12 @@ const styles = StyleSheet.create({
   dayDotEmpty: {
     width: 4,
     height: 4,
+    borderRadius: 2,
+  },
+  dayTodayTag: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 7,
+    letterSpacing: 0.4,
   },
   scrollContent: {
     padding: theme.spacing.lg,
@@ -845,7 +946,6 @@ const styles = StyleSheet.create({
   professorInitials: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 10,
-    color: '#FFF',
   },
   professorName: {
     fontFamily: 'Inter-Medium',

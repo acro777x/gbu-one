@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Bell,
   Mail,
@@ -28,17 +29,32 @@ import {
   GlassCard,
   Avatar,
   AttendanceBatteryCard,
+  EmptyState,
 } from '../../src/components/ui';
 import { CountUp } from '../../src/components/motion/CountUp';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { useMailStore } from '../../src/store/useMailStore';
-import { Slot } from '../../src/features/timetable/timetableProvider';
+import { Timetable } from '../../src/features/timetable/timetableProvider';
 import { getSectionTimetable } from '../../src/features/timetable/timetableStore';
+import {
+  countUnreadNotices,
+  deadlineCountdownText,
+  findNextSlot,
+  nearestFutureDate,
+  nextSlotBadge,
+  selectDeadlineNotices,
+  slotProgressPercent,
+} from '../../src/features/timetable/schedule';
 import { useNoticesQuery } from '../../src/features/notices/useNoticesQuery';
+import { useDatesheetQuery } from '../../src/features/exams/useDatesheetQuery';
+import { calculateExamCountdown } from '../../src/features/exams/examService';
+import { usePyqQuery } from '../../src/features/pyq/usePyqQuery';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 import { TimetableChangeModal } from '../../src/components/timetable/TimetableChangeModal';
 import { useTimetableAlert } from '../../src/features/timetable/useTimetableAlert';
+
+const NOTICES_LAST_SEEN_KEY = '@gbu_one_notices_last_seen';
 
 export default function HomeScreen() {
   const { colors, isDark } = useAppTheme();
@@ -46,25 +62,41 @@ export default function HomeScreen() {
   const { user, isGuest, classSelection } = useAuthStore();
   const { emails, getUnreadCount } = useMailStore();
   const [refreshing, setRefreshing] = useState(false);
-  const enrolledClassKey = classSelection?.section || 'BAI-II A';
+  const enrolledClassKey = classSelection?.section || 'BCS-II B';
   const { modalVisible, activeDiff, dismissAlert } = useTimetableAlert(enrolledClassKey);
-  const [nextSlot, setNextSlot] = useState<Slot | null>(null);
-  const hasTimetableChange = Boolean(nextSlot?.isChanged);
+  const [timetable, setTimetable] = useState<Timetable | null>(null);
+  const [now, setNow] = useState(() => new Date());
+  const [lastSeenAt, setLastSeenAt] = useState<string | null>(null);
 
   const unreadMails = getUnreadCount();
   const topMail = emails[0];
 
+  // Keeps the "Up Next" badge and the countdown chips honest over time.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
   useEffect(() => {
     let mounted = true;
-    getSectionTimetable(enrolledClassKey, '39', false).then((tt) => {
-      if (!mounted) return;
-      if (tt.slots.length > 0) {
-        const dayOfWeek = (new Date().getDay() || 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
-        const todaySlots = tt.slots.filter((s) => s.day === dayOfWeek);
-        const slot = todaySlots.length > 0 ? todaySlots[0] : tt.slots[0];
-        setNextSlot(slot);
-      }
-    }).catch(() => {});
+    AsyncStorage.getItem(NOTICES_LAST_SEEN_KEY)
+      .then((value) => {
+        if (mounted) setLastSeenAt(value);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    getSectionTimetable(enrolledClassKey, '39', false)
+      .then((tt) => {
+        if (!mounted) return;
+        setTimetable(tt);
+      })
+      .catch(() => {});
     return () => {
       mounted = false;
     };
@@ -73,20 +105,53 @@ export default function HomeScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     void refetchNotices();
-    getSectionTimetable(enrolledClassKey, '39', true).then((tt) => {
-      if (tt.slots.length > 0) {
-        const dayOfWeek = (new Date().getDay() || 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
-        const todaySlots = tt.slots.filter((s) => s.day === dayOfWeek);
-        setNextSlot(todaySlots.length > 0 ? todaySlots[0] : tt.slots[0]);
-      }
-      setRefreshing(false);
-    }).catch(() => {
-      setRefreshing(false);
-    });
+    getSectionTimetable(enrolledClassKey, '39', true)
+      .then((tt) => {
+        setTimetable(tt);
+        setRefreshing(false);
+      })
+      .catch(() => {
+        setRefreshing(false);
+      });
   };
 
   // Live notices drive the hero; the bundled seed is the offline fallback.
   const { data: notices = [], refetch: refetchNotices } = useNoticesQuery();
+
+  const programmeCode = classSelection?.programmeCode || 'BCS';
+  const semester = classSelection?.semester || 'II';
+  const { data: datesheet = [] } = useDatesheetQuery(programmeCode, semester);
+  const { data: papers = [] } = usePyqQuery();
+
+  const nextSlot = useMemo(
+    () => findNextSlot(timetable?.slots ?? [], now),
+    [timetable, now],
+  );
+  const changedSlot = useMemo(
+    () => timetable?.slots.find((slot) => slot.isChanged && slot.changeNote) ?? null,
+    [timetable],
+  );
+  const deadlineNotices = useMemo(() => selectDeadlineNotices(notices, 3), [notices]);
+  const unreadNotices = useMemo(
+    () => countUnreadNotices(notices, lastSeenAt),
+    [notices, lastSeenAt],
+  );
+  const examDate = useMemo(
+    () => nearestFutureDate(datesheet.map((entry) => entry.examDate), now),
+    [datesheet, now],
+  );
+  const examDays = examDate ? calculateExamCountdown(examDate) : null;
+  const trendingPapers = useMemo(
+    () => [...papers].sort((a, b) => b.downloads - a.downloads).slice(0, 2),
+    [papers],
+  );
+
+  const openNotices = () => {
+    const stamp = new Date().toISOString();
+    setLastSeenAt(stamp);
+    AsyncStorage.setItem(NOTICES_LAST_SEEN_KEY, stamp).catch(() => {});
+    router.push('/notices' as never);
+  };
 
   const topNotices = notices.filter((n) => n.importance >= 3).slice(0, 4);
   const heroSlides = topNotices.map((n) => ({
@@ -117,7 +182,7 @@ export default function HomeScreen() {
             style={[
               styles.mailButton,
               {
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceMuted,
                 borderColor: colors.borderGlass,
               },
             ]}
@@ -128,7 +193,7 @@ export default function HomeScreen() {
             <Mail size={19} color={colors.textPrimary} />
             {unreadMails > 0 && (
               <View style={[styles.mailBadge, { borderColor: colors.bg }]}>
-                <Text style={styles.mailBadgeText}>{unreadMails}</Text>
+                <Text style={[styles.mailBadgeText, { color: colors.onAccent }]}>{unreadMails}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -138,16 +203,18 @@ export default function HomeScreen() {
             style={[
               styles.bellButton,
               {
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceMuted,
                 borderColor: colors.borderGlass,
               },
             ]}
-            onPress={() => router.push('/notices' as never)}
+            onPress={openNotices}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityLabel="Notifications"
           >
             <Bell size={19} color={colors.textPrimary} />
-            <View style={[styles.unreadDot, { borderColor: colors.bg }]} />
+            {unreadNotices > 0 && (
+              <View style={[styles.unreadDot, { borderColor: colors.bg }]} />
+            )}
           </TouchableOpacity>
 
           {/* User Avatar */}
@@ -222,12 +289,12 @@ export default function HomeScreen() {
                 style={[
                   styles.quickHubIcon,
                   {
-                    backgroundColor: isDark ? 'rgba(167, 139, 250, 0.16)' : '#F3EEFD',
+                    backgroundColor: colors.accentSoft,
                     borderColor: colors.borderGlass,
                   },
                 ]}
               >
-                <Clock size={18} color="#8B5CF6" />
+                <Clock size={18} color={colors.accent} />
               </View>
               <Text style={[styles.quickHubLabel, { color: colors.textPrimary }]}>Calendar</Text>
             </TouchableOpacity>
@@ -245,26 +312,30 @@ export default function HomeScreen() {
           </View>
 
           <NextClassCard
-            subject={nextSlot?.subject || 'Operating Systems'}
-            room={nextSlot?.room ? `${nextSlot.room} • ${classSelection?.school || 'SOICT'}` : 'IL101 • SOICT'}
-            time={nextSlot ? `${nextSlot.start} - ${nextSlot.end}` : '08:30 - 09:30 AM'}
-            timeLeftBadge="Starts 08:30"
-            progressPercent={nextSlot ? 65 : 0}
-            faculty={nextSlot?.faculty || 'Prof. Prashant Gaurav'}
+            subject={nextSlot?.subject}
+            room={
+              nextSlot?.room
+                ? `${nextSlot.room}${classSelection?.school ? ` • ${classSelection.school}` : ''}`
+                : undefined
+            }
+            time={nextSlot ? `${nextSlot.start} - ${nextSlot.end}` : undefined}
+            timeLeftBadge={nextSlotBadge(nextSlot, now)}
+            progressPercent={slotProgressPercent(nextSlot, now)}
+            faculty={nextSlot?.faculty}
             onPress={() => router.push('/timetable' as never)}
           />
 
           {/* Timetable Changed Banner */}
-          {hasTimetableChange && (
+          {changedSlot && (
             <GlassCard style={styles.changeBanner} accentBorder onPress={() => router.push('/timetable' as never)}>
               <View style={styles.changeRow}>
-                <View style={[styles.changeIconCircle, { backgroundColor: `${colors.accent}20` }]}>
+                <View style={[styles.changeIconCircle, { backgroundColor: colors.accentSoft }]}>
                   <AlertTriangle size={18} color={colors.accent} />
                 </View>
                 <View style={styles.changeTextCol}>
                   <Text style={[styles.changeTitle, { color: colors.textPrimary }]}>Timetable Changed</Text>
                   <Text style={[styles.changeSubtitle, { color: colors.textSecondary }]}>
-                    Tomorrow: Data Structures moved 09:30 → 10:30 (Room 208)
+                    {changedSlot.changeNote}
                   </Text>
                 </View>
                 <ChevronRight size={16} color={colors.textSecondary} />
@@ -279,7 +350,7 @@ export default function HomeScreen() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>University Dispatch</Text>
                   {unreadMails > 0 && (
-                    <View style={[styles.miniUnreadPill, { borderColor: colors.accent, backgroundColor: `${colors.accent}20` }]}>
+                    <View style={[styles.miniUnreadPill, { borderColor: colors.accent, backgroundColor: colors.accentSoft }]}>
                       <Text style={[styles.miniUnreadPillText, { color: colors.accent }]}>{unreadMails} unread</Text>
                     </View>
                   )}
@@ -297,7 +368,7 @@ export default function HomeScreen() {
               >
                 <View style={styles.mailSpotlightTop}>
                   <View style={[styles.mailAvatar, { backgroundColor: topMail.avatarColor }]}>
-                    <Text style={styles.mailAvatarText}>{topMail.avatarInitial}</Text>
+                    <Text style={[styles.mailAvatarText, { color: colors.onAccent }]}>{topMail.avatarInitial}</Text>
                   </View>
                   <View style={{ flex: 1, marginLeft: 10 }}>
                     <Text style={[styles.mailSenderName, { color: colors.textPrimary }]}>{topMail.senderName}</Text>
@@ -322,47 +393,96 @@ export default function HomeScreen() {
               <Text style={[styles.seeAllText, { color: colors.accent }]}>Academic Calendar</Text>
             </TouchableOpacity>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.deadlineRow}>
-            <GlassCard style={styles.deadlineCard} onPress={() => router.push({ pathname: '/notice/[id]', params: { id: 'not_2' } } as never)}>
-              <View style={styles.deadlineBadge}>
-                <Clock size={12} color={colors.warning} />
-                <Text style={[styles.deadlineBadgeText, { color: colors.warning }]}>2 days left</Text>
-              </View>
-              <Text style={[styles.deadlineCardTitle, { color: colors.textPrimary }]}>Monsoon Fee Submission</Text>
-              <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>Due 31 Oct 2026</Text>
-            </GlassCard>
-
-            <GlassCard style={styles.deadlineCard} onPress={() => router.push({ pathname: '/notice/[id]', params: { id: 'not_3' } } as never)}>
-              <View style={styles.deadlineBadge}>
-                <Clock size={12} color={colors.warning} />
-                <Text style={[styles.deadlineBadgeText, { color: colors.warning }]}>12 days left</Text>
-              </View>
-              <Text style={[styles.deadlineCardTitle, { color: colors.textPrimary }]}>UP Scholarship Portal</Text>
-              <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>Due 10 Nov 2026</Text>
-            </GlassCard>
-
-            <GlassCard style={styles.deadlineCard} onPress={() => router.push({ pathname: '/notice/[id]', params: { id: 'not_5' } } as never)}>
-              <View style={styles.deadlineBadge}>
-                <Clock size={12} color={colors.success} />
-                <Text style={[styles.deadlineBadgeText, { color: colors.success }]}>18 days left</Text>
-              </View>
-              <Text style={[styles.deadlineCardTitle, { color: colors.textPrimary }]}>Back Paper Exam Form</Text>
-              <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>Due 16 Nov 2026</Text>
-            </GlassCard>
-          </ScrollView>
+          {deadlineNotices.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.deadlineRow}>
+              {deadlineNotices.map((notice) => {
+                const countdown = deadlineCountdownText(notice.deadlineAt as string, now);
+                const overdue = countdown === 'Overdue';
+                return (
+                  <GlassCard
+                    key={notice.id}
+                    style={styles.deadlineCard}
+                    onPress={() =>
+                      router.push({ pathname: '/notice/[id]', params: { id: notice.id } } as never)
+                    }
+                  >
+                    <View
+                      style={[
+                        styles.deadlineBadge,
+                        {
+                          backgroundColor: overdue
+                            ? colors.dangerSoft
+                            : countdown === 'Due today' || countdown === 'Due tomorrow'
+                              ? colors.warningSoft
+                              : colors.successSoft,
+                        },
+                      ]}
+                    >
+                      <Clock
+                        size={12}
+                        color={overdue ? colors.danger : countdown.startsWith('Due') ? colors.warning : colors.success}
+                      />
+                      <Text
+                        style={[
+                          styles.deadlineBadgeText,
+                          {
+                            color: overdue
+                              ? colors.danger
+                              : countdown.startsWith('Due')
+                                ? colors.warning
+                                : colors.success,
+                          },
+                        ]}
+                      >
+                        {countdown}
+                      </Text>
+                    </View>
+                    <Text style={[styles.deadlineCardTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+                      {notice.cleanTitle}
+                    </Text>
+                    <Text style={[styles.deadlineCardDate, { color: colors.textSecondary }]}>
+                      Due {new Date(notice.deadlineAt as string).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </Text>
+                  </GlassCard>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            <EmptyState
+              title="No active deadlines"
+              description="No published notice carries a deadline right now. Check back after the next circular."
+            />
+          )}
 
           {/* Exam Countdown Card */}
           <GlassCard style={styles.examCard} onPress={() => router.push('/exams' as never)}>
             <View style={styles.examCardRow}>
               <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={[styles.examSubtitle, { color: colors.accent }]}>AUTUMN 2026</Text>
-                <Text style={[styles.examTitle, { color: colors.textPrimary }]}>Mid Semester Examinations</Text>
-                <Text style={[styles.examDate, { color: colors.textSecondary }]}>Starts Monday, 3 Nov 2026 • Tap for Date Sheet</Text>
+                <Text style={[styles.examSubtitle, { color: colors.accent }]}>
+                  {programmeCode} • SEMESTER {semester}
+                </Text>
+                <Text style={[styles.examTitle, { color: colors.textPrimary }]}>Upcoming Examinations</Text>
+                <Text style={[styles.examDate, { color: colors.textSecondary }]}>
+                  {examDate
+                    ? `Starts ${new Date(examDate).toLocaleDateString('en-IN', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })} • Tap for Date Sheet`
+                    : 'No exam date published yet • Tap for Date Sheet'}
+                </Text>
               </View>
-              <View style={[styles.countdownBox, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}44` }]}>
-                <CountUp value={14} style={{ ...styles.countdownNumber, color: colors.accent }} />
-                <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>DAYS LEFT</Text>
-              </View>
+              {examDays !== null && (
+                <View style={[styles.countdownBox, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+                  <CountUp value={examDays} style={{ ...styles.countdownNumber, color: colors.accent }} />
+                  <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>DAYS LEFT</Text>
+                </View>
+              )}
             </View>
           </GlassCard>
 
@@ -374,35 +494,34 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.pyqGrid}>
-            <GlassCard style={styles.pyqCard} onPress={() => router.push('/pyq' as never)}>
-              <View style={[styles.pyqBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
-                <Text style={[styles.pyqBadgeText, { color: colors.accent }]}>CSE205</Text>
-              </View>
-              <Text style={[styles.pyqTitle, { color: colors.textPrimary }]} numberOfLines={2}>Data Structures & Algorithms</Text>
-              <View style={styles.pyqMeta}>
-                <Text style={[styles.pyqYear, { color: colors.textSecondary }]}>2025 Mid Sem</Text>
-                <View style={styles.downloadCount}>
-                  <Download size={12} color={colors.textSecondary} />
-                  <Text style={[styles.downloadText, { color: colors.textSecondary }]}>320</Text>
-                </View>
-              </View>
-            </GlassCard>
-
-            <GlassCard style={styles.pyqCard} onPress={() => router.push('/pyq' as never)}>
-              <View style={[styles.pyqBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
-                <Text style={[styles.pyqBadgeText, { color: colors.accent }]}>CSE209</Text>
-              </View>
-              <Text style={[styles.pyqTitle, { color: colors.textPrimary }]} numberOfLines={2}>Operating Systems</Text>
-              <View style={styles.pyqMeta}>
-                <Text style={[styles.pyqYear, { color: colors.textSecondary }]}>2025 End Sem</Text>
-                <View style={styles.downloadCount}>
-                  <Download size={12} color={colors.textSecondary} />
-                  <Text style={[styles.downloadText, { color: colors.textSecondary }]}>294</Text>
-                </View>
-              </View>
-            </GlassCard>
-          </View>
+          {trendingPapers.length > 0 ? (
+            <View style={styles.pyqGrid}>
+              {trendingPapers.map((paper) => (
+                <GlassCard key={paper.id} style={styles.pyqCard} onPress={() => router.push('/pyq' as never)}>
+                  <View style={[styles.pyqBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.surfaceMuted }]}>
+                    <Text style={[styles.pyqBadgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
+                  </View>
+                  <Text style={[styles.pyqTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+                    {paper.subjectName}
+                  </Text>
+                  <View style={styles.pyqMeta}>
+                    <Text style={[styles.pyqYear, { color: colors.textSecondary }]}>
+                      {paper.year} {paper.examType}
+                    </Text>
+                    <View style={styles.downloadCount}>
+                      <Download size={12} color={colors.textSecondary} />
+                      <Text style={[styles.downloadText, { color: colors.textSecondary }]}>{paper.downloads}</Text>
+                    </View>
+                  </View>
+                </GlassCard>
+              ))}
+            </View>
+          ) : (
+            <EmptyState
+              title="No question papers yet"
+              description="Approved papers will show up here as soon as the moderation queue publishes them."
+            />
+          )}
 
           {/* Motion Playground Shortcut in dev */}
           {__DEV__ && (
@@ -486,7 +605,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   mailBadgeText: {
-    color: '#FFF',
     fontFamily: 'Inter-SemiBold',
     fontSize: 9,
   },
@@ -621,7 +739,6 @@ const styles = StyleSheet.create({
   mailAvatarText: {
     fontFamily: 'Poppins-Bold',
     fontSize: 12,
-    color: '#FFF',
   },
   mailSenderName: {
     fontFamily: 'Inter-SemiBold',
@@ -667,7 +784,7 @@ const styles = StyleSheet.create({
   deadlineBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 184, 61, 0.12)',
+    backgroundColor: theme.colors.warningSoft,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 999,

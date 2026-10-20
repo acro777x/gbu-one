@@ -213,7 +213,7 @@ export default function PYQScreen() {
         onPress={() => toggleSelect(paper.id)}
       >
         <View style={styles.cardHeader}>
-          <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+          <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
             <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -274,7 +274,7 @@ export default function PYQScreen() {
                 onPress={() => toggleSelect(paper.id)}
               >
                 <View style={styles.cardHeader}>
-                  <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+                  <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
                     <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
                   </View>
                   <Text style={[styles.trendDownloads, { color: colors.accent }]}>{paper.downloads} dl</Text>
@@ -315,7 +315,7 @@ export default function PYQScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.uploadBtn, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}44` }]}
+          style={[styles.uploadBtn, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}
           onPress={handleUploadPress}
         >
           <UploadCloud size={16} color={colors.accent} />

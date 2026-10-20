@@ -70,7 +70,7 @@ export const Toast: React.FC<ToastProps> = ({
           {
             backgroundColor: colors.surfaceAlt,
             borderColor: colors.borderGlass,
-            shadowColor: isDark ? '#000000' : '#344054',
+            shadowColor: isDark ? '#000000' : colors.borderStrong,
           },
         ]}
       >

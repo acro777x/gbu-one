@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, ViewStyle } from 'react-native';
 import { WordReveal } from '../motion/WordReveal';
 import { PillButton } from './PillButton';
 import { theme } from '../../lib/theme';
+import { useAppTheme } from '../../lib/ThemeContext';
 
 export interface EmptyStateProps {
   icon?: React.ReactNode;
@@ -21,16 +22,20 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   onAction,
   style,
 }) => {
+  const { colors } = useAppTheme();
+
   return (
     <View style={[styles.container, style]}>
       {icon && <View style={styles.iconWrapper}>{icon}</View>}
       <WordReveal
         text={title}
-        style={styles.title}
+        style={{ ...styles.title, color: colors.textPrimary }}
         containerStyle={styles.titleContainer}
       />
       {description && (
-        <Text style={styles.description}>{description}</Text>
+        <Text style={[styles.description, { color: colors.textSecondary }]}>
+          {description}
+        </Text>
       )}
       {actionLabel && onAction && (
         <PillButton
@@ -62,13 +67,11 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
-    color: theme.colors.textPrimary,
     textAlign: 'center',
   },
   description: {
     fontFamily: 'Inter-Regular',
     fontSize: 14,
-    color: theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     maxWidth: 280,

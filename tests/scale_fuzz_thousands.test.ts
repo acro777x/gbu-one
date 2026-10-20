@@ -6,7 +6,8 @@ import {
 } from '../src/features/timetable/timetableProvider';
 import { classifyNotice, NoticeItem } from '../src/features/notices/noticeService';
 import { useAuthStore } from '../src/store/useAuthStore';
-import { theme } from '../src/lib/theme';
+import { theme, lightColors, darkColors } from '../src/lib/theme';
+import { contrastRatio } from '../src/lib/contrast';
 
 describe('Thousands of Test Case Scenarios (Scale, Fuzzing & Property-Based Verification)', () => {
   // Test Suite 1: 1,000 synthetic notice classification scenarios
@@ -137,21 +138,47 @@ describe('Thousands of Test Case Scenarios (Scale, Fuzzing & Property-Based Veri
   });
 
   // Test Suite 4: Design & Motion Token Invariants
-  describe('Design & Motion Tokens Consistency', () => {
-    it('maintains strict UI_SPEC color and typography contract', () => {
+  describe('Design & Motion Token Consistency', () => {
+    it('keeps the radius scale of the UI_SPEC', () => {
+      // docs/UI_SPEC.md: card 24, sheet 32, chip/pill 999, avatar squircle 18.
+      expect(theme.radius.card).toBe(24);
+      expect(theme.radius.sheet).toBe(32);
+      expect(theme.radius.chip).toBe(999);
+      expect(theme.radius.pill).toBe(999);
+      expect(theme.radius.avatar).toBe(18);
+    });
+
+    it('keeps the light surface tokens of the UI_SPEC', () => {
       expect(theme.colors.bg).toBe('#F6F7FB');
-      expect(theme.colors.accent).toBe('#E85B22');
+      expect(theme.colors.surface).toBe('#FFFFFF');
       expect(theme.colors.onAccent).toBe('#FFFFFF');
       expect(theme.colors.ivory).toBe('#111827');
       expect(theme.colors.textPrimary).toBe('#111827');
-      expect(theme.colors.textSecondary).toBe('#667085');
-      expect(theme.colors.textTertiary).toBe('#98A2B3');
-      expect(theme.colors.success).toBe('#168A5B');
-      expect(theme.colors.warning).toBe('#A96800');
-      expect(theme.colors.danger).toBe('#C53030');
-      expect(theme.radius.card).toBe(20);
-      expect(theme.radius.sheet).toBe(28);
-      expect(theme.radius.chip).toBe(999);
+    });
+
+    it('passes WCAG AA for every text/background pair in both palettes', () => {
+      // The palette is contract-checked rather than pinned to hex values, so a
+      // future tweak cannot silently break readability again.
+      for (const palette of [lightColors, darkColors]) {
+        const c = palette as unknown as Record<string, string>;
+        // The label on a filled accent button.
+        expect(contrastRatio(c.onAccent, c.accentFill)).toBeGreaterThanOrEqual(4.5);
+        // Accent text and icons on the surfaces they sit on.
+        expect(contrastRatio(c.accent, c.surface)).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(c.accent, c.bg)).toBeGreaterThanOrEqual(4.5);
+        // Body, secondary and tertiary text.
+        expect(contrastRatio(c.textPrimary, c.surface)).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(c.textSecondary, c.surface)).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(c.textTertiary, c.surface)).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(c.textTertiary, c.bg)).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    it('keeps the status colours readable on their own soft backgrounds', () => {
+      const light = lightColors as unknown as Record<string, string>;
+      expect(contrastRatio(light.success, light.successSoft)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(light.warning, light.warningSoft)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(light.danger, light.dangerSoft)).toBeGreaterThanOrEqual(4.5);
     });
   });
 });

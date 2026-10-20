@@ -145,13 +145,13 @@ export default function ProfileScreen() {
 
           {/* Chips */}
           <View style={styles.chipRow}>
-            <View style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+            <View style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
               <Text style={[styles.badgeChipText, { color: colors.textSecondary }]}>{classSelection?.school || 'SOICT'}</Text>
             </View>
-            <View style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+            <View style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
               <Text style={[styles.badgeChipText, { color: colors.textSecondary }]}>{classSelection?.programmeCode || 'BCS'} Sem {classSelection?.semester || 'II'}</Text>
             </View>
-            <View style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17, 24, 39, 0.08)' }]}>
+            <View style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
               <Text style={[styles.badgeChipText, { color: colors.textSecondary }]}>{classSelection?.section || 'Sec B'}</Text>
             </View>
           </View>

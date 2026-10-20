@@ -1,14 +1,9 @@
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  computeTimetableDiff,
-  TimetableDiffItem,
-  Timetable,
-} from './timetableProvider';
-import { getSectionTimetable } from './timetableStore';
+import { TimetableDiffItem } from './timetableProvider';
+import { getSectionTimetable, getTimetableChanges } from './timetableStore';
 import { useAuthStore } from '../../store/useAuthStore';
 
-const TIMETABLE_SNAPSHOT_KEY = '@gbu_one_timetable_last_snapshot';
 const TIMETABLE_LAST_ALERT_KEY = '@gbu_one_timetable_last_alert_id';
 
 export function useTimetableAlert(enrolledClassKey?: string) {
@@ -27,55 +22,26 @@ export function useTimetableAlert(enrolledClassKey?: string) {
       if (isGuest) return;
 
       try {
-        const currentTimetable = await getSectionTimetable(effectiveClassKey);
+        // The store compares the fetched timetable with the cached snapshot
+        // and records the differences; the same record drives the "Changed"
+        // chips on the Timetable screen.
+        await getSectionTimetable(effectiveClassKey);
+        const changes = await getTimetableChanges(effectiveClassKey);
+        if (changes.length === 0 || !isMounted) return;
 
-        // Never store or diff against a mock fallback to prevent false alerts
-        if (currentTimetable.source === 'mock') {
-          return;
-        }
+        const firstDiff = changes[0];
+        const lastAlertId = await AsyncStorage.getItem(
+          `${TIMETABLE_LAST_ALERT_KEY}_${effectiveClassKey}`,
+        );
 
-        const rawOld = await AsyncStorage.getItem(`${TIMETABLE_SNAPSHOT_KEY}_${effectiveClassKey}`);
-        if (!rawOld) {
-          // Store first live snapshot
+        const alertSignature = `${firstDiff.type}_${firstDiff.slot.id}_${firstDiff.slot.start}`;
+        if (lastAlertId !== alertSignature && isMounted) {
+          setActiveDiff(firstDiff);
+          setModalVisible(true);
           await AsyncStorage.setItem(
-            `${TIMETABLE_SNAPSHOT_KEY}_${effectiveClassKey}`,
-            JSON.stringify(currentTimetable),
-          );
-          return;
-        }
-
-        const oldTimetable: Timetable = JSON.parse(rawOld);
-        if (oldTimetable.source === 'mock') {
-          // Upgrade old mock snapshot to new live snapshot silently
-          await AsyncStorage.setItem(
-            `${TIMETABLE_SNAPSHOT_KEY}_${effectiveClassKey}`,
-            JSON.stringify(currentTimetable),
-          );
-          return;
-        }
-
-        const diffs = computeTimetableDiff(oldTimetable, currentTimetable);
-
-        if (diffs.length > 0) {
-          const firstDiff = diffs[0];
-          const lastAlertId = await AsyncStorage.getItem(
             `${TIMETABLE_LAST_ALERT_KEY}_${effectiveClassKey}`,
+            alertSignature,
           );
-
-          const alertSignature = `${firstDiff.type}_${firstDiff.slot.id}_${firstDiff.slot.start}`;
-          if (lastAlertId !== alertSignature && isMounted) {
-            setActiveDiff(firstDiff);
-            setModalVisible(true);
-            await AsyncStorage.setItem(
-              `${TIMETABLE_LAST_ALERT_KEY}_${effectiveClassKey}`,
-              alertSignature,
-            );
-            // Save latest live snapshot
-            await AsyncStorage.setItem(
-              `${TIMETABLE_SNAPSHOT_KEY}_${effectiveClassKey}`,
-              JSON.stringify(currentTimetable),
-            );
-          }
         }
       } catch (err) {
         console.warn('Error checking for timetable changes:', err);

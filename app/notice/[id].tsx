@@ -63,7 +63,7 @@ export default function NoticeDetailScreen() {
           </Text>
           <Pressable
             onPress={() => router.back()}
-            style={[styles.notFoundBtn, { backgroundColor: colors.accent }]}
+            style={[styles.notFoundBtn, { backgroundColor: colors.accentFill }]}
           >
             <Text style={styles.notFoundBtnText}>Return to Notices</Text>
           </Pressable>
@@ -114,9 +114,9 @@ export default function NoticeDetailScreen() {
       case 'scholarship':
         return { color: colors.success, bg: colors.successSoft, label: 'SCHOLARSHIP' };
       case 'hostel':
-        return { color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.12)', label: 'HOSTEL OFFICE' };
+        return { color: colors.textSecondary, bg: colors.surfaceMuted, label: 'HOSTEL OFFICE' };
       case 'result':
-        return { color: '#EC4899', bg: 'rgba(236, 72, 153, 0.12)', label: 'ACADEMIC RESULT' };
+        return { color: colors.success, bg: colors.successSoft, label: 'ACADEMIC RESULT' };
       default:
         return { color: colors.accent, bg: colors.accentSoft, label: notice.category.toUpperCase() };
     }
@@ -352,7 +352,7 @@ export default function NoticeDetailScreen() {
             style={({ pressed }) => [
               styles.ctaButton,
               styles.primaryCta,
-              { backgroundColor: colors.accent, opacity: pressed ? 0.85 : 1 },
+              { backgroundColor: colors.accentFill, opacity: pressed ? 0.85 : 1 },
             ]}
           >
             <Ionicons name="eye-outline" size={18} color={colors.onAccent} style={{ marginRight: 6 }} />

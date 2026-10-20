@@ -44,7 +44,7 @@ export default function TeamworkPreviewScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Feature Preview Disclaimer Banner */}
-        <View style={[styles.previewBanner, { backgroundColor: colors.accentSoft, borderColor: `${colors.accent}44` }]}>
+        <View style={[styles.previewBanner, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
           <Text style={[styles.previewBannerTitle, { color: colors.accent }]}>PREVIEW MODE • SAMPLE DATA</Text>
           <Text style={[styles.previewBannerText, { color: colors.textSecondary }]}>
             Class standing and peer study circles below are simulation previews. Real cohort metrics will sync once backend cohort networking is connected.

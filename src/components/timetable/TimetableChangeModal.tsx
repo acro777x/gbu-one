@@ -131,7 +131,7 @@ export const TimetableChangeModal: React.FC<TimetableChangeModalProps> = ({
 
             <Pressable
               onPress={handleView}
-              style={[styles.button, styles.primaryButton, { backgroundColor: colors.accent }]}
+              style={[styles.button, styles.primaryButton, { backgroundColor: colors.accentFill }]}
             >
               <Text style={[styles.primaryButtonText, { color: colors.onAccent }]}>View Schedule</Text>
               <Ionicons name="arrow-forward" size={16} color={colors.onAccent} style={{ marginLeft: 4 }} />
