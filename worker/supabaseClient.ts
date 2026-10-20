@@ -193,6 +193,29 @@ export async function fetchProcessedAttachmentHashes(limit = 20000): Promise<Set
   return hashes;
 }
 
+/**
+ * Notice ids whose attachment was already downloaded and extracted.
+ * The university is scraped politely, so a notice is fetched once and then
+ * left alone.
+ */
+export async function fetchProcessedAttachmentSources(limit = 20000): Promise<Set<string>> {
+  const sb = getWorkerSupabase();
+  const sources = new Set<string>();
+  if (!sb) return sources;
+  try {
+    const { data } = await sb
+      .from('notice_attachments')
+      .select('source_id')
+      .limit(limit);
+    for (const row of (data ?? []) as Array<{ source_id: string }>) {
+      if (row?.source_id) sources.add(row.source_id);
+    }
+  } catch {
+    // ignore
+  }
+  return sources;
+}
+
 /** Records a processed attachment so it is never processed again. */
 export async function recordAttachmentProcessing(rows: Array<{
   contentHash: string;

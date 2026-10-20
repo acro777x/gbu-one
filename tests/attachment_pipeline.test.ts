@@ -300,6 +300,39 @@ describe('attachment extraction pipeline', () => {
     });
     expect(second).toBeNull();
   });
+
+  it('does not download a notice that was already handled', async () => {
+    let downloaded = 0;
+    const outcome = await extractAttachment('https://www.gbu.ac.in/a.pdf', 'src_11', {
+      download: async () => {
+        downloaded++;
+        return { bytes: pdfWithText('x'), contentType: 'application/pdf' };
+      },
+      processedSourceIds: new Set(['src_11']),
+    });
+    expect(outcome).toBeNull();
+    expect(downloaded).toBe(0);
+  });
+
+  it('skips handled notices before downloading them in a batch', async () => {
+    let downloaded = 0;
+    const countingDownload = async () => {
+      downloaded++;
+      return {
+        bytes: pdfWithText(`Document number ${downloaded} with enough text to be a real page`),
+        contentType: 'application/pdf',
+      };
+    };
+    const results = await extractAttachments(
+      [
+        { sourceId: 'old', fileUrl: 'https://www.gbu.ac.in/a.pdf' },
+        { sourceId: 'new', fileUrl: 'https://www.gbu.ac.in/b.pdf' },
+      ],
+      { download: countingDownload, processedSourceIds: new Set(['old']) },
+    );
+    expect(downloaded).toBe(1);
+    expect(results.map((r) => r.sourceId)).toEqual(['new']);
+  });
 });
 
 describe('deadline parsing from extracted text', () => {

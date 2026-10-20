@@ -145,6 +145,13 @@ export interface ExtractOptions {
    * notice already carries its text.
    */
   processedHashes?: Set<string>;
+  /**
+   * Notice ids whose attachment was already handled. These are skipped
+   * before the download, so the university is fetched once per notice.
+   */
+  processedSourceIds?: Set<string>;
+  /** Pause between two downloads, in ms. The university is scraped politely. */
+  delayBetweenDownloadsMs?: number;
 }
 
 /**
@@ -156,6 +163,9 @@ export async function extractAttachment(
   sourceId: string,
   options: ExtractOptions,
 ): Promise<ExtractionOutcome | null> {
+  // The notice was already handled in an earlier run: do not fetch it again.
+  if (options.processedSourceIds?.has(sourceId)) return null;
+
   const url = resolveAttachmentUrl(fileUrl);
   if (!url) return null;
 
@@ -262,7 +272,14 @@ export async function extractAttachments(
   for (const item of items) {
     if (processed >= budget) break;
     if (!item.fileUrl) continue;
+    if (options.processedSourceIds?.has(item.sourceId)) continue;
     processed++;
+
+    // A short pause between downloads: the university is scraped politely.
+    if (options.delayBetweenDownloadsMs && results.length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, options.delayBetweenDownloadsMs));
+    }
+
     const outcome = await extractAttachment(item.fileUrl, item.sourceId, options);
     if (outcome) results.push({ sourceId: item.sourceId, outcome });
   }

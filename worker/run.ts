@@ -12,6 +12,7 @@ import {
   isWorkerSupabaseConfigured, fetchTimetableSnapshots, upsertTimetableSnapshots,
   recordTimetableChanges, fetchPushedChangeKeys,
   saveNoticeRawText, fetchProcessedAttachmentHashes, recordAttachmentProcessing,
+  fetchProcessedAttachmentSources,
 } from './supabaseClient';
 import { sendPushForCandidates, sendPushForTimetableChanges, normaliseClassKey } from './pushSender';
 import {
@@ -147,14 +148,18 @@ async function runAttachmentStage(
       return { bytes, contentType: res.headers.get('content-type') };
     };
 
-    // Files already processed in an earlier run are not extracted again.
+    // Files already processed in an earlier run are not extracted again, and
+    // the notice itself is not fetched again.
     const processedHashes = await fetchProcessedAttachmentHashes();
+    const processedSources = await fetchProcessedAttachmentSources();
 
     const processed = await extractAttachments(candidates, {
       download,
       ocr,
       provider,
       processedHashes,
+      processedSourceIds: processedSources,
+      delayBetweenDownloadsMs: 1500,
     });
 
     if (processed.length === 0) {
