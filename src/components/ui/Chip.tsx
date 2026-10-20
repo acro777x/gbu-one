@@ -43,9 +43,9 @@ export const Chip: React.FC<ChipProps> = ({
       {onRemove && (
         <Pressable
           onPress={onRemove}
-          hitSlop={8}
           style={styles.removeButton}
           accessibilityLabel={`Remove ${label}`}
+          accessibilityRole="button"
         >
           <X size={14} color={selected ? theme.colors.bg : theme.colors.textSecondary} />
         </Pressable>
@@ -60,6 +60,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: theme.spacing.md,
     paddingVertical: 7,
+    // The whole chip has to be a comfortable target (AGENTS.md: 44pt min).
+    minHeight: 44,
     borderRadius: theme.radius.chip,
     borderWidth: 1,
     marginRight: theme.spacing.sm,
@@ -85,7 +87,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   removeButton: {
-    marginLeft: 6,
+    // The X glyph is small, so the touch target is widened around it and the
+    // extra size is taken back with negative margins (the chip keeps its
+    // height). The target ends up at 44x44 dp.
+    width: 44,
+    height: 44,
+    marginLeft: -4,
+    marginRight: -10,
+    marginVertical: -10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

@@ -316,7 +316,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.chip,
     borderWidth: 1,
     paddingHorizontal: 14,
-    height: 44,
+    // 48 so the input inside is at least 44dp tall.
+    minHeight: 48,
   },
   searchInput: {
     flex: 1,
@@ -336,7 +337,7 @@ const styles = StyleSheet.create({
   },
   clearFilters: {
     alignSelf: 'flex-start',
-    minHeight: 32,
+    minHeight: 44,
     justifyContent: 'center',
     paddingHorizontal: theme.spacing.lg,
     paddingBottom: theme.spacing.xs,
