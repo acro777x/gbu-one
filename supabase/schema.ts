@@ -138,6 +138,18 @@ create table if not exists public.moderators (
   added_at timestamptz not null default now()
 );
 
+-- Moderation trail: every approve / reject / request-changes decision.
+create table if not exists public.pyq_moderation_log (
+  id uuid primary key default gen_random_uuid(),
+  paper_id uuid not null references public.pyq_papers (id) on delete cascade,
+  action text not null,
+  moderator_email text,
+  note text,
+  created_at timestamptz not null default now()
+);
+create index if not exists pyq_moderation_log_paper_idx
+  on public.pyq_moderation_log (paper_id, created_at desc);
+
 create table if not exists public.profiles (
   id uuid primary key,
   class_key text,
@@ -199,4 +211,77 @@ create table if not exists public.worker_runs (
 );
 create index if not exists worker_runs_source_idx
   on public.worker_runs (source, ran_at desc);
+
+-- ---------------------------------------------------------------------------
+-- Storage buckets for PYQ papers (docs/ARCHITECTURE.md)
+--
+-- pyq-pending  : uploads land here and stay private until a moderator
+--                approves them. 20 MB cap, PDF/JPG/PNG only.
+-- pyq          : approved papers, readable by everyone.
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values
+  ('pyq-pending', 'pyq-pending', false, 20971520, array['application/pdf','image/jpeg','image/png']),
+  ('pyq', 'pyq', true, 20971520, array['application/pdf','image/jpeg','image/png'])
+on conflict (id) do nothing;
+
+-- Students may upload into the pending bucket; the object path must start
+-- with the bucket folder. The row in pyq_papers is still created by the app
+-- and only a moderator can move a file to the approved bucket.
+drop policy if exists "pyq pending upload" on storage.objects;
+create policy "pyq pending upload" on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'pyq-pending'
+    and (storage.foldername(name))[1] = 'pyq-pending'
+  );
+
+-- A uploader can read their own pending file.
+drop policy if exists "pyq pending read own" on storage.objects;
+create policy "pyq pending read own" on storage.objects
+  for select to authenticated
+  using (
+    bucket_id = 'pyq-pending'
+    and owner_id = auth.uid()::text
+  );
+
+-- Approved papers are public (the bucket itself is public, so the read
+-- policy is only needed for the private bucket).
+drop policy if exists "pyq approved read" on storage.objects;
+create policy "pyq approved read" on storage.objects
+  for select to public
+  using (bucket_id = 'pyq');
+
+-- Moderators move files between the buckets.
+drop policy if exists "pyq moderator move" on storage.objects;
+create policy "pyq moderator move" on storage.objects
+  for all to authenticated
+  using (
+    bucket_id in ('pyq-pending','pyq')
+    and exists (
+      select 1 from public.moderators m
+      where m.email = auth.jwt() ->> 'email'
+    )
+  )
+  with check (
+    bucket_id in ('pyq-pending','pyq')
+    and exists (
+      select 1 from public.moderators m
+      where m.email = auth.jwt() ->> 'email'
+    )
+  );
+
+-- Download counter for an approved paper.
+create or replace function public.increment_paper_downloads(paper_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.pyq_papers
+     set downloads = downloads + 1
+   where id = paper_id and status = 'approved';
+end;
+$$;
 `;

@@ -39,7 +39,7 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Persistent notification preferences in Profile (`@gbu_one_notify_*`)
 
 ## Phase 4 — PYQ
-- [ ] Cloud Storage buckets & backend moderation queue
+- [x] Cloud Storage buckets & backend moderation queue (buckets `pyq-pending/` (private) and `pyq/` (public) with RLS policies, 20 MB PDF/JPG/PNG cap, in `supabase/schema.ts`; upload + approve/reject/report flow in `src/features/pyq/pyqRepository.ts` with the pure rules in `src/features/pyq/pyqStorage.ts`; moderator screen at `app/moderation.tsx`; real browse + upload wired into the PYQ tab with the bundled seed as the offline fallback)
 - [x] Browse flow: school → programme code → semester → subject, plus search
 - [x] Virtualized 2-column FlatList Grid UI with multi-select and honest cloud sync status
 - [x] Upload flow + student moderation disclaimers

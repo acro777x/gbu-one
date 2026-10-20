@@ -103,6 +103,7 @@ function AppShell() {
         <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="login" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="class-setup" options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="moderation" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="notice/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="dev/motion" />
       </Stack>

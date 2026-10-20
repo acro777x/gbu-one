@@ -14,6 +14,8 @@ export interface PYQItem {
   examType: 'Mid Sem' | 'End Sem' | 'Back Paper';
   downloads: number;
   status: 'approved' | 'pending';
+  /** Public download link; empty for the bundled seed and for pending papers. */
+  fileUrl?: string;
 }
 
 export const MOCK_PAPERS: PYQItem[] = [

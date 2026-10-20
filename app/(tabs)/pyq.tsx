@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
 import {
   Search,
   Download,
@@ -25,6 +26,13 @@ import {
 import { GlassCard, PillButton, Toast, BottomSheet, Chip, EmptyState } from '../../src/components/ui';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { PYQItem, MOCK_PAPERS, filterPapers } from '../../src/features/pyq/pyqService';
+import { usePyqQuery } from '../../src/features/pyq/usePyqQuery';
+import {
+  reportPaper,
+  uploadPendingPaper,
+  type PyqUploadResult,
+} from '../../src/features/pyq/pyqRepository';
+import { PYQ_ALLOWED_MIME_TYPES } from '../../src/features/pyq/pyqStorage';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
@@ -38,7 +46,7 @@ const CARD_WIDTH = Math.floor((SCREEN_WIDTH - theme.spacing.lg * 2 - 12) / 2);
 export default function PYQScreen() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { isGuest } = useAuthStore();
+  const { isGuest, user } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSchool, setSelectedSchool] = useState('All');
   const [selectedSemester, setSelectedSemester] = useState('All');
@@ -56,6 +64,24 @@ export default function PYQScreen() {
   const [uploadSubjectName, setUploadSubjectName] = useState('');
   const [uploadSchool, setUploadSchool] = useState('SOICT');
   const [uploadExamType, setUploadExamType] = useState<'Mid Sem' | 'End Sem' | 'Back Paper'>('Mid Sem');
+  const [uploadProgramme, setUploadProgramme] = useState('BCS');
+  const [uploadSemester, setUploadSemester] = useState('II');
+  const [uploadYear, setUploadYear] = useState(String(new Date().getFullYear() - 1));
+  const [pickedFile, setPickedFile] = useState<{
+    uri: string;
+    name: string;
+    mimeType: string;
+    size: number;
+  } | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Approved papers from the backend; the bundled seed is the offline fallback.
+  const { data: papers = MOCK_PAPERS, isFetching, refetch } = usePyqQuery();
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setToastVisible(true);
+  };
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -68,8 +94,13 @@ export default function PYQScreen() {
 
   const handleBulkDownload = () => {
     if (selectedIds.length === 0) return;
-    setToastMessage(`Bulk download (${selectedIds.length} papers) is coming soon with cloud storage integration.`);
-    setToastVisible(true);
+    const selected = papers.filter((p) => selectedIds.includes(p.id));
+    const links = selected.filter((p) => p.fileUrl).length;
+    showToast(
+      links > 0
+        ? `Opening ${links} paper${links === 1 ? '' : 's'} in your browser.`
+        : 'Bulk download needs the cloud backend to be connected.',
+    );
     setSelectedIds([]);
   };
 
@@ -86,34 +117,90 @@ export default function PYQScreen() {
     setReportSheetVisible(true);
   };
 
-  const handleSendReport = (reason: string) => {
+  const handleSendReport = async (reason: string) => {
+    if (!reportingPaper) return;
     setReportSheetVisible(false);
-    setToastMessage(`Report received: moderation queue will review ${reportingPaper?.subjectCode} (${reason}).`);
-    setToastVisible(true);
+    const result = await reportPaper(reportingPaper.id, reason, user?.id ?? null);
+    showToast(
+      result.ok
+        ? `Report received: moderation will review ${reportingPaper.subjectCode} (${reason}).`
+        : `Report could not be sent: ${result.reason}`,
+    );
   };
 
-  const handleSubmitUpload = () => {
+  const handlePickFile = async () => {
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: [...PYQ_ALLOWED_MIME_TYPES],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (picked.canceled || picked.assets.length === 0) return;
+      const asset = picked.assets[0];
+      setPickedFile({
+        uri: asset.uri,
+        name: asset.name || 'paper.pdf',
+        mimeType: asset.mimeType || 'application/pdf',
+        size: asset.size ?? 0,
+      });
+      showToast(`Selected ${asset.name}`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not open the file picker.');
+    }
+  };
+
+  const handleSubmitUpload = async () => {
     if (!uploadSubjectCode.trim()) {
-      setToastMessage('Please enter subject code (e.g. CSE205)');
-      setToastVisible(true);
+      showToast('Please enter subject code (e.g. CSE205)');
       return;
     }
+    if (!uploadSubjectName.trim()) {
+      showToast('Please enter the subject name');
+      return;
+    }
+    if (!pickedFile) {
+      showToast('Please choose the question paper file');
+      return;
+    }
+
+    setUploading(true);
+    const result: PyqUploadResult = await uploadPendingPaper(
+      pickedFile,
+      {
+        school: uploadSchool,
+        programmeCode: uploadProgramme,
+        semester: uploadSemester,
+        subjectCode: uploadSubjectCode,
+        subjectName: uploadSubjectName,
+        year: Number(uploadYear),
+        examType: uploadExamType,
+      },
+      user?.id ?? null,
+    );
+    setUploading(false);
+
+    if (!result.ok) {
+      showToast(result.reason);
+      return;
+    }
+
     setUploadSheetVisible(false);
-    setToastMessage(`Upload submitted: ${uploadSubjectCode.toUpperCase()} is queued for cloud storage sync.`);
-    setToastVisible(true);
     setUploadSubjectCode('');
     setUploadSubjectName('');
+    setPickedFile(null);
+    showToast('Upload submitted. A moderator will review it before it is listed.');
+    void refetch();
   };
 
   const filteredPapers = filterPapers(
-    MOCK_PAPERS,
+    papers,
     searchQuery,
     selectedSchool,
     selectedSemester,
     examTab,
   );
 
-  const trendingPapers = [...MOCK_PAPERS].sort((a, b) => b.downloads - a.downloads).slice(0, 3);
+  const trendingPapers = [...papers].sort((a, b) => b.downloads - a.downloads).slice(0, 3);
 
   const renderPaperItem = ({ item: paper }: { item: PYQItem }) => {
     const isSelected = selectedIds.includes(paper.id);
@@ -201,7 +288,7 @@ export default function PYQScreen() {
       <View style={styles.allPapersHeaderRow}>
         <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>All Question Papers</Text>
         <Text style={[styles.resultsCount, { color: colors.textSecondary }]}>
-          {filteredPapers.length} paper{filteredPapers.length === 1 ? '' : 's'}
+          {isFetching ? 'Syncing…' : `${filteredPapers.length} paper${filteredPapers.length === 1 ? '' : 's'}`}
         </Text>
       </View>
     </View>
@@ -434,6 +521,65 @@ export default function PYQScreen() {
             ))}
           </View>
 
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Programme & Semester</Text>
+          <View style={styles.formChipRow}>
+            {['BCS', 'ECE', 'IT', 'MIT'].map((p) => (
+              <Chip
+                key={p}
+                label={p}
+                selected={uploadProgramme === p}
+                onPress={() => setUploadProgramme(p)}
+                style={styles.formChip}
+              />
+            ))}
+            {['I', 'II', 'III', 'IV'].map((s) => (
+              <Chip
+                key={`sem_${s}`}
+                label={`Sem ${s}`}
+                selected={uploadSemester === s}
+                onPress={() => setUploadSemester(s)}
+                style={styles.formChip}
+              />
+            ))}
+          </View>
+
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Exam Year</Text>
+          <TextInput
+            value={uploadYear}
+            onChangeText={setUploadYear}
+            placeholder="2025"
+            placeholderTextColor={colors.textTertiary}
+            keyboardType="number-pad"
+            style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.borderGlass, color: colors.textPrimary }]}
+          />
+
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Paper File</Text>
+          <TouchableOpacity
+            onPress={handlePickFile}
+            style={[
+              styles.filePicker,
+              {
+                backgroundColor: pickedFile ? colors.successSoft : colors.inputBg,
+                borderColor: pickedFile ? colors.success : colors.borderGlass,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Choose the question paper file"
+          >
+            <FileText size={16} color={pickedFile ? colors.success : colors.textSecondary} />
+            <Text
+              style={[
+                styles.filePickerText,
+                { color: pickedFile ? colors.success : colors.textSecondary },
+              ]}
+              numberOfLines={1}
+            >
+              {pickedFile
+                ? `${pickedFile.name} (${Math.round(pickedFile.size / 1024)} KB)`
+                : 'Choose PDF, JPG or PNG (max 20 MB)'}
+            </Text>
+          </TouchableOpacity>
+
           {/* Moderation Disclaimer */}
           <View style={[styles.moderationDisclaimer, { backgroundColor: colors.warningSoft }]}>
             <AlertTriangle size={15} color={colors.warning} />
@@ -445,6 +591,8 @@ export default function PYQScreen() {
           <PillButton
             label="Submit Question Paper"
             onPress={handleSubmitUpload}
+            loading={uploading}
+            disabled={uploading}
             variant="primary"
             size="md"
             icon={<FileText size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
@@ -754,6 +902,21 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 6,
     marginBottom: 6,
+  },
+  filePicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    minHeight: 48,
+  },
+  filePickerText: {
+    flex: 1,
+    fontFamily: 'Inter-Medium',
+    fontSize: 13,
   },
   formChip: {
     marginBottom: 4,

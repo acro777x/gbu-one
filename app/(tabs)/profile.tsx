@@ -27,6 +27,7 @@ import {
   Moon,
   Smartphone,
   Compass,
+  ShieldCheck,
 } from 'lucide-react-native';
 import { Avatar, GlassCard, PillButton } from '../../src/components/ui';
 import { CountUp } from '../../src/components/motion/CountUp';
@@ -338,6 +339,22 @@ export default function ProfileScreen() {
             <View style={styles.settingTextCol}>
               <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>GBU Webmail & Dispatch</Text>
               <Text style={[styles.settingValue, { color: colors.textSecondary }]}>Official student mailbox, deans & placement circulars</Text>
+            </View>
+            <ChevronRight size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <View style={[styles.settingDivider, { backgroundColor: colors.divider }]} />
+
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => router.push('/moderation')}
+          >
+            <View style={styles.settingIconCol}>
+              <ShieldCheck size={20} color={colors.accent} />
+            </View>
+            <View style={styles.settingTextCol}>
+              <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>PYQ Moderation Queue</Text>
+              <Text style={[styles.settingValue, { color: colors.textSecondary }]}>Review uploaded question papers before they are listed</Text>
             </View>
             <ChevronRight size={18} color={colors.textSecondary} />
           </TouchableOpacity>

@@ -66,6 +66,13 @@ RLS: users read approved PYQs and public tables; write only own rows; moderation
 ## PYQ moderation
 Uploads go to Storage `pyq-pending/`; the **owner** (first moderator, `public.moderators.role='owner'`) plus trusted students added to `public.moderators` approve via the Supabase dashboard or admin screen; approved files move to `pyq/`. Adding or removing a moderator is one SQL row — no app release. Virus/size/type checks (PDF/JPG/PNG, max 20MB). Report button on every paper. Show disclaimer on copyright: students upload only papers they are entitled to share; takedown contact in About. (OPEN_QUESTIONS #5 resolved this way on 2026-10-20.)
 
+### PYQ moderation queue (shipped)
+- **Buckets** (`supabase/schema.ts`): `pyq-pending` is private and holds uploads until a moderator approves them; `pyq` is public and holds approved papers. Both are capped at 20 MB and accept only PDF/JPG/PNG. Storage RLS lets a signed-in student write into `pyq-pending` under their own prefix, lets a moderator move files between the buckets, and exposes `pyq` for reading.
+- **Rules** (`src/features/pyq/pyqStorage.ts`, unit tested): the file type/size check, the metadata check, the storage path (`<bucket>/<school>/<programme>/<semester>/<subject>/<year>-<exam>-<id>.<ext>`, every segment slugified so a field can never escape its folder), the exam-type normalisation and the action-to-status mapping.
+- **Flow** (`src/features/pyq/pyqRepository.ts`): the app uploads the file into `pyq-pending`, writes a `pyq_papers` row with `status='pending'`, and removes the file again if the row cannot be written. Approving downloads the pending file, writes it to `pyq/`, and only then flips the status, so a failed move never publishes an unapproved paper. Rejecting deletes the file. Every decision is written to `pyq_moderation_log`.
+- **Screen** (`app/moderation.tsx`): moderators see the pending queue and can approve or reject; a student who is not on the allowlist sees an explanation instead. The entry point is in Profile → "PYQ Moderation Queue".
+- **App** (`app/(tabs)/pyq.tsx`): the browse list now comes from the backend (the bundled seed stays as the offline fallback), uploads pick a real file with the system document picker, and the report sheet writes to the `reports` table.
+
 ## OCR
 Worker default is **Tesseract** (offline, free) — `OCR_PROVIDER=tesseract`. Optional vision-model upgrade via `OCR_PROVIDER=vision` + `VISION_API_KEY`. Attachments are content-hash deduped so no file is ever OCR'd twice. (OPEN_QUESTIONS #4 resolved this way on 2026-10-20.)
 
