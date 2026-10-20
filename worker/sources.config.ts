@@ -6,6 +6,7 @@
 export interface WorkerSourceConfig {
   name: string;
   url: string;
+  fallbackUrl?: string;
   rateLimitMs: number;
   intervalMinutes: number;
   timeoutMs: number;
@@ -24,8 +25,8 @@ export const WORKER_CONFIG = {
     },
     examsNotices: {
       name: 'GBU Exam Portal Notices',
-      url: 'https://exam.gbu.ac.in',
-      fallbackUrl: 'https://exams.gbu.ac.in',
+      url: 'https://exams.gbu.ac.in',
+      fallbackUrl: 'https://www.gbu.ac.in/examinations',
       rateLimitMs: 1000,
       intervalMinutes: 15,
       timeoutMs: 15000,
@@ -45,8 +46,9 @@ export const WORKER_CONFIG = {
       timeoutMs: 15000,
     },
     timetableApi: {
-      name: 'GBU Schedule API',
-      baseUrl: 'https://mygbu.in/schd/api.php',
+      name: 'GBU Schedule API (Samay)',
+      baseUrl: 'https://samay.mygbu.in/api.php',
+      legacyBaseUrl: 'https://mygbu.in/schd/api.php',
       activeSemesters: ['39', '40'], // 39 = current session, 40 = next session
       rateLimitMs: 2000,
       intervalMinutes: 30, // 30 min during 7:00-20:00, 60 min otherwise

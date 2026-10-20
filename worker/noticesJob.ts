@@ -28,6 +28,8 @@ export interface NoticesWorkerResult {
   highPriorityPushCount: number;
   notices: NoticeItem[];
   pushCandidates: NoticeItem[];
+  /** sourceIds first seen this run (safe to push; never old items). */
+  newSourceIds: string[];
   timestamp: string;
 }
 
@@ -42,6 +44,51 @@ export function generateSourceId(source: string, url: string, dateStr: string): 
     hash |= 0;
   }
   return `src_${Math.abs(hash).toString(36)}`;
+}
+
+/**
+ * Fetches a URL while tolerating GBU's expired/untrusted TLS chain.
+ * Verified 2026-10-20: `www.gbu.ac.in` fails strict validation with
+ * CERT_HAS_EXPIRED. Undici/Node in CI throws the same. We therefore use a
+ * per-request insecure dispatcher scoped ONLY to *.gbu.ac.in / mygbu.in —
+ * never a global NODE_TLS_REJECT_UNAUTHORIZED=0. See docs/DATA_SOURCES.md.
+ */
+export async function fetchWithTlsTolerance(url: string, init?: RequestInit): Promise<Response> {
+  const needsInsecure = /(^|\.)gbu\.ac\.in$|mygbu\.in$/i.test(new URL(url).hostname);
+  if (!needsInsecure) {
+    return fetch(url, init);
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+    const { Agent, fetch: undiciFetch } = require('undici') as typeof import('undici');
+    const agent = new Agent({ connect: { rejectUnauthorized: false } });
+    return (await undiciFetch(url, {
+      ...init,
+      dispatcher: agent,
+    } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
+  } catch {
+    // Fallback: plain fetch (works wherever the chain validates).
+    return fetch(url, init);
+  }
+}
+
+/**
+ * GBU soft-404 trap: unknown paths return HTTP 200 with a ~38,725-byte
+ * "404 - Page not found" page. Never treat that as notice data.
+ */
+export function isSoft404(html: string): boolean {
+  if (!html) return true;
+  if (/404\s*-\s*Page not found/i.test(html)) return true;
+  const len = html.length;
+  return len >= 38600 && len <= 38900;
+}
+
+/**
+ * Totally empty parse = layout change, not "no notices". Callers must NOT
+ * overwrite stored data in that case.
+ */
+export function isEmptyParseSuspicious(items: unknown[]): boolean {
+  return items.length === 0;
 }
 
 /**
@@ -312,12 +359,17 @@ export class NoticesWorkerJob {
     this.knownSourceIds = new Set(existingSourceIds);
   }
 
+  /** Seeds the dedupe set from Supabase-stored source_ids (idempotent reruns). */
+  seedKnownSourceIds(ids: Iterable<string>): void {
+    for (const id of ids) this.knownSourceIds.add(id);
+  }
+
   async fetchHtml(url: string, timeoutMs: number = 15000): Promise<string> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithTlsTolerance(url, {
         headers: {
           'User-Agent': WORKER_CONFIG.userAgent,
         },
@@ -328,7 +380,15 @@ export class NoticesWorkerJob {
         throw new Error(`Failed to fetch ${url}: ${response.status}`);
       }
 
-      return await response.text();
+      const html = await response.text();
+
+      // GBU soft-404 trap: unknown paths return HTTP 200 with a ~38,725-byte
+      // "404 - Page not found" page. Never treat that as data.
+      if (isSoft404(html)) {
+        throw new Error(`Soft-404 body for ${url}`);
+      }
+
+      return html;
     } finally {
       clearTimeout(timeoutId);
     }
@@ -370,7 +430,13 @@ export class NoticesWorkerJob {
       try {
         examsHtml = await this.fetchHtml(WORKER_CONFIG.sources.examsNotices.url);
       } catch (err) {
-        console.warn('Worker: Exams notices fetch failed:', err);
+        console.warn('Worker: Exams notices fetch failed, trying fallback:', err);
+        try {
+          const fb = WORKER_CONFIG.sources.examsNotices.fallbackUrl;
+          if (fb) examsHtml = await this.fetchHtml(fb);
+        } catch (e2) {
+          console.warn('Worker: Exams fallback failed:', e2);
+        }
       }
     }
 
@@ -470,6 +536,7 @@ export class NoticesWorkerJob {
       highPriorityPushCount: pushCandidates.length,
       notices: grouped,
       pushCandidates,
+      newSourceIds: newItems.map((n) => n.sourceId),
       timestamp: new Date().toISOString(),
     };
   }

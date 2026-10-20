@@ -13,6 +13,7 @@ import {
   GBU_PERIOD_TIMES,
 } from '../src/features/timetable/timetableProvider';
 import { WORKER_CONFIG } from './sources.config';
+import { fetchWithTlsTolerance } from './noticesJob';
 
 export interface TimetableChangeRecord {
   id: string;
@@ -151,7 +152,7 @@ export class TimetablePollerJob {
     const timeoutId = setTimeout(() => controller.abort(), WORKER_CONFIG.sources.timetableApi.timeoutMs);
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithTlsTolerance(url, {
         headers: {
           'User-Agent': WORKER_CONFIG.userAgent,
         },

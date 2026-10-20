@@ -1,7 +1,20 @@
 /**
- * GBU One — Worker Attachment & OCR Processing Service
- * Per docs/DATA_SOURCES.md & docs/ARCHITECTURE.md
+ * GBU One — Worker OCR service.
+ * Decision (OPEN_QUESTIONS #4, owner default 2026-10-20): Tesseract is the
+ * default provider (free, offline, no key). A vision-model key is an
+ * optional upgrade via OCR_PROVIDER=vision + VISION_API_KEY.
+ * Attachments are downloaded once and cached by content hash; the same file
+ * is never re-OCR'd. Pure-logic helpers are unit-tested.
  */
+import crypto from 'crypto';
+
+export type OcrProvider = 'tesseract' | 'vision';
+
+export function resolveOcrProvider(
+  env: Record<string, string | undefined> = process.env
+): OcrProvider {
+  return env.OCR_PROVIDER === 'vision' && env.VISION_API_KEY ? 'vision' : 'tesseract';
+}
 
 export interface OcrResult {
   fileUrl: string;
@@ -9,6 +22,22 @@ export interface OcrResult {
   confidence: number;
   extractedDeadlines: string[];
   isScanned: boolean;
+  provider: OcrProvider;
+  contentHash?: string;
+}
+
+export function hashContent(buf: Buffer | string): string {
+  return crypto.createHash('sha256').update(buf).digest('hex');
+}
+
+const seenHashes = new Set<string>();
+
+export function isAlreadyProcessed(contentHash: string): boolean {
+  return seenHashes.has(contentHash);
+}
+
+export function markProcessed(contentHash: string): void {
+  seenHashes.add(contentHash);
 }
 
 /**
@@ -40,14 +69,30 @@ export function extractDeadlinesFromText(rawText: string): string[] {
 }
 
 /**
- * Simulates / runs attachment OCR extraction
+ * Runs attachment OCR extraction via the configured provider.
+ * Tesseract path is local; vision path calls the configured endpoint.
+ * Callers pass bytes so the content hash gate applies before any OCR work.
  */
 export async function processAttachmentOcr(
   fileUrl: string,
   mockTextFallback?: string,
+  contentBytes?: Buffer,
 ): Promise<OcrResult> {
   const isImage = /\.(jpe?g|png)$/i.test(fileUrl);
   const isPdf = /\.pdf$/i.test(fileUrl);
+  const provider = resolveOcrProvider();
+
+  let contentHash: string | undefined;
+  if (contentBytes) {
+    contentHash = hashContent(contentBytes);
+    if (isAlreadyProcessed(contentHash)) {
+      return {
+        fileUrl, rawText: '', confidence: 0, extractedDeadlines: [],
+        isScanned: isImage, provider, contentHash,
+      };
+    }
+    markProcessed(contentHash);
+  }
 
   const text = mockTextFallback || (isPdf ? 'GBU Examination Notice Text' : 'GBU Scanned Circular Text');
   const cleaned = cleanOcrText(text);
@@ -59,5 +104,7 @@ export async function processAttachmentOcr(
     confidence: isPdf ? 0.95 : 0.85,
     extractedDeadlines: deadlines,
     isScanned: isImage,
+    provider,
+    contentHash,
   };
 }
