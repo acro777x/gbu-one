@@ -38,6 +38,7 @@ import {
 } from '../../src/features/attendance/attendanceStore';
 import { useAppTheme, ThemeMode } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
+import { setTimetablePushEnabled } from '../../src/lib/pushNotifications';
 
 export default function ProfileScreen() {
   const { colors, isDark, themeMode, setThemeMode } = useAppTheme();
@@ -82,6 +83,7 @@ export default function ProfileScreen() {
   const toggleTimetable = (val: boolean) => {
     setNotifyTimetable(val);
     AsyncStorage.setItem('@gbu_one_notify_timetable', String(val)).catch(() => {});
+    setTimetablePushEnabled(val, classSelection?.section).catch(() => {});
   };
 
   const toggleExams = (val: boolean) => {

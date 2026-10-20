@@ -34,6 +34,14 @@ Group multiple changes from one detection run into a single push.
 Worker → compute audience → select `device_tokens` by profile/prefs → send through Expo push / FCM in batches of 100 → record receipts → delete invalid tokens.
 Guests: register an anonymous device token with their selected class (no personal data) so they still get class-based pushes; ask permission at the right moment.
 
+### App-side registration (shipped)
+- `src/lib/pushNotifications.ts` owns the device side; `src/lib/pushPolicy.ts` holds the pure, unit-tested decision logic (project-id resolution, preconditions, row shape, class targeting).
+- The app registers one Expo token per device in `device_tokens` with its normalised `class_key` (`src/lib/classKey.ts` — trim + upper-case, identical on both sides) and the Supabase `user_id` when the student is signed in.
+- The worker targets that class with `selectTokensForClass()` (`worker/pushSender.ts`); tokens without a class key are never targeted.
+- Turning the Profile toggle **Timetable notifications** off clears the device's `class_key`, so the device stops receiving timetable-change pushes but keeps receiving notice pushes. Turning it back on restores targeting.
+- Registration needs an EAS project id (see `docs/OPEN_QUESTIONS.md` #11). Without it the app logs `Push registration skipped: missing-eas-project-id` and continues — push is additive, never a startup dependency.
+- The `expo-notifications` config plugin is enabled in `app.json` with `defaultChannel: timetable_changes` so Android FCMv1 uses the same channel id the worker sends to.
+
 ## Local notifications (no server)
 Deadline countdowns, next-class reminders (10 minutes before, optional), attendance reminders. Scheduled with expo-notifications, rescheduled whenever data refreshes.
 

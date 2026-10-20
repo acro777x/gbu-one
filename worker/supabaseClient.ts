@@ -123,3 +123,134 @@ export async function fetchKnownSourceIds(limit = 5000): Promise<Set<string>> {
   }
   return known;
 }
+
+export interface StoredTimetableSnapshot {
+  classKey: string;
+  hash: string;
+  payload: unknown;
+}
+
+/**
+ * Loads the last known timetable snapshot per class so the worker can diff
+ * against the previous run (the worker itself is stateless between runs).
+ */
+export async function fetchTimetableSnapshots(
+  limit = 2000,
+): Promise<Map<string, StoredTimetableSnapshot>> {
+  const sb = getWorkerSupabase();
+  const out = new Map<string, StoredTimetableSnapshot>();
+  if (!sb) return out;
+  try {
+    const { data } = await sb
+      .from('timetable_snapshots')
+      .select('class_key,hash,payload')
+      .limit(limit);
+    for (const r of (data ?? []) as Array<{ class_key: string; hash: string; payload: unknown }>) {
+      if (!r?.class_key) continue;
+      out.set(r.class_key, { classKey: r.class_key, hash: r.hash ?? '', payload: r.payload });
+    }
+  } catch {
+    // ignore — treated as a cold start (baseline only, no diffs)
+  }
+  return out;
+}
+
+/** Upserts the latest snapshot per class (one row per class_key). */
+export async function upsertTimetableSnapshots(
+  rows: Array<{ classKey: string; hash: string; payload: unknown }>,
+): Promise<number> {
+  const sb = getWorkerSupabase();
+  if (!sb || rows.length === 0) return 0;
+  const BATCH = 100;
+  let written = 0;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH).map((row) => ({
+      class_key: row.classKey,
+      hash: row.hash,
+      payload: row.payload,
+      fetched_at: new Date().toISOString(),
+    }));
+    try {
+      const { error } = await sb
+        .from('timetable_snapshots')
+        .upsert(batch, { onConflict: 'class_key' });
+      if (error) {
+        console.warn('Worker: timetable snapshot upsert failed:', error.message);
+      } else {
+        written += batch.length;
+      }
+    } catch (err) {
+      console.warn('Worker: timetable snapshot upsert threw:', err);
+    }
+  }
+  return written;
+}
+
+/** Appends detected timetable changes to the change history. */
+export async function recordTimetableChanges(
+  changes: Array<{ classKey: string; diff: unknown }>,
+): Promise<number> {
+  const sb = getWorkerSupabase();
+  if (!sb || changes.length === 0) return 0;
+  const BATCH = 100;
+  let written = 0;
+  for (let i = 0; i < changes.length; i += BATCH) {
+    const batch = changes.slice(i, i + BATCH).map((change) => ({
+      class_key: change.classKey,
+      diff: change.diff,
+      detected_at: new Date().toISOString(),
+    }));
+    try {
+      const { error } = await sb.from('timetable_changes').insert(batch);
+      if (error) {
+        console.warn('Worker: timetable change insert failed:', error.message);
+      } else {
+        written += batch.length;
+      }
+    } catch (err) {
+      console.warn('Worker: timetable change insert threw:', err);
+    }
+  }
+  return written;
+}
+
+/** Change keys already pushed — used to keep pushes one-per-change. */
+export async function fetchPushedChangeKeys(limit = 5000): Promise<Set<string>> {
+  const sb = getWorkerSupabase();
+  const keys = new Set<string>();
+  if (!sb) return keys;
+  try {
+    const { data } = await sb.from('timetable_push_log').select('change_key').limit(limit);
+    for (const r of (data ?? []) as Array<{ change_key: string }>) {
+      if (r?.change_key) keys.add(r.change_key);
+    }
+  } catch {
+    // ignore
+  }
+  return keys;
+}
+
+/** Records a successful timetable push so it is never sent twice. */
+export async function markTimetablePush(
+  changeKey: string,
+  classKey: string,
+  semesterSessionId: string,
+  recipients: number,
+): Promise<void> {
+  const sb = getWorkerSupabase();
+  if (!sb) return;
+  try {
+    await sb.from('timetable_push_log').upsert(
+      {
+        change_key: changeKey,
+        class_key: classKey,
+        semester_session_id: semesterSessionId,
+        recipients,
+        pushed_at: new Date().toISOString(),
+      },
+      { onConflict: 'change_key' },
+    );
+  } catch {
+    // observability must never fail the run
+  }
+}

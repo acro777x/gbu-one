@@ -8,11 +8,18 @@ import { useFonts } from 'expo-font';
 import { SplashScreenView } from '../src/components/brand/SplashScreenView';
 import { ThemeProvider, useAppTheme } from '../src/lib/ThemeContext';
 import { queryClient } from '../src/lib/queryClient';
+import { useAuthStore } from '../src/store/useAuthStore';
+import {
+  configureNotificationHandler,
+  isTimetablePushEnabled,
+  registerDeviceForPush,
+} from '../src/lib/pushNotifications';
 
 
 function AppShell() {
   const { colors, isDark } = useAppTheme();
   const [splashFinished, setSplashFinished] = useState(false);
+  const classSection = useAuthStore((state) => state.classSelection?.section ?? null);
 
   const [fontsLoaded, fontError] = useFonts({
     'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
@@ -40,6 +47,31 @@ function AppShell() {
     }, 2400);
     return () => clearTimeout(safetyTimer);
   }, [handleSplashFinish]);
+
+  // Show timetable-change pushes while the app is in the foreground
+  useEffect(() => {
+    configureNotificationHandler();
+  }, []);
+
+  // Register this device for class-targeted timetable pushes
+  useEffect(() => {
+    if (!classSection) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!(await isTimetablePushEnabled())) return;
+        const result = await registerDeviceForPush(classSection);
+        if (!cancelled && !result.registered) {
+          console.log(`Push registration skipped: ${result.reason}`);
+        }
+      } catch (err) {
+        console.log('Push registration failed:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [classSection]);
 
   // Hold mount until fonts are guaranteed in memory to eliminate system font fallback
   if (!fontsLoaded && !fontError) {

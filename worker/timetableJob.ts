@@ -4,6 +4,7 @@
  * Per docs/DATA_SOURCES.md, docs/ARCHITECTURE.md, docs/NOTIFICATIONS.md
  */
 
+import { createHash } from 'crypto';
 import {
   Timetable,
   TimetableDiffItem,
@@ -17,12 +18,112 @@ import { fetchWithTlsTolerance } from './noticesJob';
 
 export interface TimetableChangeRecord {
   id: string;
+  /** Stable identity of this change: class + session + diff signature. */
+  changeKey: string;
   classKey: string;
   semesterSessionId: string;
   diffCount: number;
   diffs: TimetableDiffItem[];
   notificationMessage: string;
   detectedAt: string;
+}
+
+/** Composite key for a section's snapshot inside one semester session. */
+export function snapshotKey(classKey: string, semesterSessionId: string): string {
+  return `${classKey.trim().toUpperCase()}#${semesterSessionId}`;
+}
+
+/** Deterministic content hash of a timetable's slots (order independent). */
+export function buildTimetableHash(timetable: Timetable): string {
+  const canonical = [...timetable.slots]
+    .sort((a, b) => a.day - b.day || a.period - b.period)
+    .map((s) =>
+      [
+        s.day,
+        s.period,
+        (s.subjectCode || s.subject || '').trim().toUpperCase(),
+        (s.room || '').trim().toUpperCase(),
+        s.type || '',
+      ].join('|'),
+    );
+  return createHash('sha256').update(canonical.join('\n')).digest('hex');
+}
+
+/**
+ * Stable identity for a detected change. The same schedule edit always
+ * produces the same key, so a rerun never re-pushes an already delivered
+ * change, while a genuinely new edit produces a new key.
+ */
+export function computeChangeKey(
+  classKey: string,
+  semesterSessionId: string,
+  diffs: TimetableDiffItem[],
+): string {
+  const signature = diffs
+    .map((d) => {
+      const slot = d.slot;
+      const old = d.oldSlot;
+      return [
+        d.type,
+        slot.day,
+        slot.period,
+        (slot.subjectCode || slot.subject || '').trim().toUpperCase(),
+        (slot.room || '').trim().toUpperCase(),
+        old ? `${old.day}.${old.period}:${(old.room || '').trim().toUpperCase()}` : '-',
+      ].join('|');
+    })
+    .sort()
+    .join('\n');
+  return createHash('sha256')
+    .update(`${classKey.trim().toUpperCase()}#${semesterSessionId}\n${signature}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
+export interface StoredTimetableSnapshotPayload {
+  sessions: Record<string, { hash: string; fetchedAt: string; slots: Slot[] }>;
+}
+
+/** Packs one or more session timetables into a single storable payload. */
+export function buildTimetableSnapshotPayload(timetables: Timetable[]): StoredTimetableSnapshotPayload {
+  const sessions: StoredTimetableSnapshotPayload['sessions'] = {};
+  for (const t of timetables) {
+    sessions[t.semesterSessionId] = {
+      hash: buildTimetableHash(t),
+      fetchedAt: t.fetchedAt,
+      slots: t.slots,
+    };
+  }
+  return { sessions };
+}
+
+/** Rehydrates stored snapshot payloads into poller-ready timetables. */
+export function parseTimetableSnapshotPayload(
+  classKey: string,
+  payload: unknown,
+): Map<string, Timetable> {
+  const out = new Map<string, Timetable>();
+  const sessions = (payload as StoredTimetableSnapshotPayload | null)?.sessions;
+  if (!sessions || typeof sessions !== 'object') return out;
+  for (const [sessionId, entry] of Object.entries(sessions)) {
+    if (!entry || !Array.isArray(entry.slots)) continue;
+    out.set(snapshotKey(classKey, sessionId), {
+      classKey: classKey.trim().toUpperCase(),
+      fetchedAt: entry.fetchedAt || new Date().toISOString(),
+      semesterSessionId: sessionId,
+      slots: entry.slots as Slot[],
+      source: 'live',
+    });
+  }
+  return out;
+}
+
+/** Content hash covering every session stored in one snapshot row. */
+export function buildSnapshotRowHash(payload: StoredTimetableSnapshotPayload): string {
+  const parts = Object.entries(payload.sessions)
+    .map(([sessionId, session]) => `${sessionId}:${session.hash}`)
+    .sort();
+  return createHash('sha256').update(parts.join('\n')).digest('hex');
 }
 
 export interface TimetableWorkerResult {
@@ -143,6 +244,11 @@ export class TimetablePollerJob {
     this.previousSnapshots.set(classKey, timetable);
   }
 
+  /** All current snapshots (keyed by snapshotKey) for persistence. */
+  getSnapshots(): Map<string, Timetable> {
+    return new Map(this.previousSnapshots);
+  }
+
   /**
    * Fetches raw JSON data from GBU API for a given session
    */
@@ -204,7 +310,7 @@ export class TimetablePollerJob {
       totalClassesScanned += sections.size;
 
       for (const section of sections) {
-        const cacheKey = `${section}_${sessionId}`;
+        const cacheKey = snapshotKey(section, sessionId);
         const newTimetable = buildTimetableFromRawItems(section, rawData, sessionId);
         const oldTimetable = this.previousSnapshots.get(cacheKey);
 
@@ -214,6 +320,7 @@ export class TimetablePollerJob {
             const message = formatTimetableChangeNotification(section, diffs);
             allChanges.push({
               id: `chg_${section}_${sessionId}_${Date.now()}`,
+              changeKey: computeChangeKey(section, sessionId, diffs),
               classKey: section,
               semesterSessionId: sessionId,
               diffCount: diffs.length,

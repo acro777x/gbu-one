@@ -28,7 +28,7 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Next-class card with countdown + progress bar on Home
 - [x] Snapshot + diff engine with unit tests
 - [x] Central timetable store (`timetableStore.ts`) with 6-hour TTL AsyncStorage caching & request deduplication
-- [ ] Push for timetable changes; "Changed" chips in UI — UI chips + local change detection ship today; **only the server-side dispatch (worker diff → FCM push for timetable changes) is outstanding.** Notices push dispatch is already shipped (`worker/pushSender.ts`, `.github/workflows/worker-cron.yml`)
+- [x] Push for timetable changes; "Changed" chips in UI — UI chips + local change detection ship today; **server-side dispatch shipped** (`worker/pushSender.ts` sends class-targeted timetable pushes, `worker/run.ts` diffs the polled schedule against the stored snapshot) **and the app side now registers the device** (`src/lib/pushNotifications.ts` upserts the Expo token + class key into `device_tokens`; `src/lib/pushPolicy.ts` holds the unit-tested decision logic). Live delivery needs the owner's EAS project id + FCM/APNs credentials (`docs/OPEN_QUESTIONS.md` #11, #12); without them the app logs a skip reason and runs normally. Notices push dispatch is already shipped (`worker/pushSender.ts`, `.github/workflows/worker-cron.yml`)
 - [x] Real provider (`samay.mygbu.in/api.php` with legacy `mygbu.in/schd/api.php` fallback, then mock fallback)
 
 ## Phase 3 — Notices

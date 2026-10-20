@@ -62,6 +62,19 @@ create table if not exists public.timetable_changes (
 create index if not exists timetable_changes_class_idx
   on public.timetable_changes (class_key, detected_at desc);
 
+-- Push dedupe for timetable changes: one push per deterministic change key
+-- (class + session + diff signature). Written only after a successful send,
+-- so a failed push is retried on the next worker run.
+create table if not exists public.timetable_push_log (
+  change_key text primary key,
+  class_key text not null,
+  semester_session_id text not null default '',
+  recipients integer not null default 0,
+  pushed_at timestamptz not null default now()
+);
+create index if not exists timetable_push_log_class_idx
+  on public.timetable_push_log (class_key, pushed_at desc);
+
 create table if not exists public.exam_datesheets (
   id uuid primary key default gen_random_uuid(),
   school text not null,

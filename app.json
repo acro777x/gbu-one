@@ -48,6 +48,14 @@
           "image": "./assets/brand/splash-mark.png",
           "imageWidth": 200
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/brand/notification-icon.png",
+          "defaultChannel": "timetable_changes",
+          "color": "#4F46E5"
+        }
       ]
     ],
     "scheme": "gbuone"
