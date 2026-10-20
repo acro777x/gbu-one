@@ -105,5 +105,11 @@ All sources and intervals in `worker/sources.config.ts` so URL/host changes (GBU
 ## Testing
 Unit tests: parsers, diffing, classification, deadline threading, countdown logic. Fixture files from real notices in `worker/fixtures/`. CI runs typecheck, lint, tests.
 
+On-device QA runs against a real build on the emulator, because a unit test cannot show that a button is reachable or a screen is not clipped:
+- `tools/build_android_apk.py` builds the APK from a copy at a space-free path (the native CMake build breaks on a path with a space), signs it with the owner keystore and refuses to hand over a release APK that is signed with the debug key.
+- `tools/emulator_qa.py` walks the app (onboarding, class setup, every tab, the notice detail, the upload sheet, the moderation queue) and saves a screenshot per step into `docs/qa/`.
+- `tools/audit_touch_targets.py` reads the view hierarchy from the device and reports every tappable node below 44dp, in dp rather than raw pixels.
+- `tools/probe_worker_pipeline.ts` and `tools/probe_scanned_ocr.ts` run the real attachment pipeline against `www.gbu.ac.in`, so a change to the parser is checked against the university's actual files and not only against fixtures.
+
 ## Observability
 Worker logs structured JSON, never logs PII or credentials. A `worker_runs` table records each run (source, status, items found, errors). Alert owner (GitHub issue or email) if a source fails 3 runs in a row.
