@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -15,6 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { radius, spacing } from '../../src/lib/theme';
 import { MOCK_NOTICES, NoticeItem } from '../../src/features/notices/noticeService';
+import { useNoticesQuery } from '../../src/features/notices/useNoticesQuery';
+
+const EXCERPT_LENGTH = 700;
 
 export default function NoticeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -22,9 +25,17 @@ export default function NoticeDetailScreen() {
   const insets = useSafeAreaInsets();
   const [downloading, setDownloading] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
+  const [showFullText, setShowFullText] = useState(false);
 
-  // Find notice by id
-  const notice: NoticeItem | undefined = MOCK_NOTICES.find((n) => n.id === id);
+  // Live notices first (they carry the extracted document text), then the
+  // bundled seed used on first launch before the worker has synced anything.
+  const { data: liveNotices = [] } = useNoticesQuery();
+  const notice: NoticeItem | undefined = useMemo(
+    () => liveNotices.find((n) => n.id === id) ?? MOCK_NOTICES.find((n) => n.id === id),
+    [liveNotices, id],
+  );
+  const extractedText = notice?.rawText?.trim() ?? '';
+  const hasExtractedText = extractedText.length > 0;
 
   if (!notice) {
     return (
@@ -223,6 +234,48 @@ export default function NoticeDetailScreen() {
             </View>
           ) : null}
         </View>
+
+        {/* Extracted document text (worker: PDF text layer or OCR) */}
+        {hasExtractedText && (
+          <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
+            <View style={styles.summaryHeaderRow}>
+              <View style={[styles.sparkleIcon, { backgroundColor: colors.accentSoft }]}>
+                <Ionicons name="scan-outline" size={16} color={colors.accent} />
+              </View>
+              <Text style={[styles.summaryHeading, { color: colors.textPrimary }]}>Document Text</Text>
+            </View>
+
+            <Text style={[styles.summaryBody, { color: colors.textSecondary }]}>
+              Extracted from the official file so you can read it without leaving the app.
+            </Text>
+
+            <Text style={[styles.extractedText, { color: colors.textPrimary }]}>
+              {showFullText
+                ? extractedText
+                : `${extractedText.slice(0, EXCERPT_LENGTH)}${
+                    extractedText.length > EXCERPT_LENGTH ? '…' : ''
+                  }`}
+            </Text>
+
+            {extractedText.length > EXCERPT_LENGTH && (
+              <Pressable
+                onPress={() => setShowFullText((v) => !v)}
+                style={({ pressed }) => [styles.readMoreBtn, { opacity: pressed ? 0.7 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel={showFullText ? 'Show less' : 'Read the full extracted text'}
+              >
+                <Text style={[styles.readMoreText, { color: colors.accent }]}>
+                  {showFullText ? 'Show less' : 'Read full text'}
+                </Text>
+                <Ionicons
+                  name={showFullText ? 'chevron-up' : 'chevron-down'}
+                  size={14}
+                  color={colors.accent}
+                />
+              </Pressable>
+            )}
+          </View>
+        )}
 
         {/* Key Highlights / Summary Card */}
         <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
@@ -464,6 +517,23 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 13,
     lineHeight: 18,
+  },
+  extractedText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: spacing.sm,
+  },
+  readMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 44,
+    justifyContent: 'flex-start',
+  },
+  readMoreText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
   },
   docBox: {
     flexDirection: 'row',

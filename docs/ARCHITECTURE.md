@@ -69,6 +69,19 @@ Uploads go to Storage `pyq-pending/`; the **owner** (first moderator, `public.mo
 ## OCR
 Worker default is **Tesseract** (offline, free) — `OCR_PROVIDER=tesseract`. Optional vision-model upgrade via `OCR_PROVIDER=vision` + `VISION_API_KEY`. Attachments are content-hash deduped so no file is ever OCR'd twice. (OPEN_QUESTIONS #4 resolved this way on 2026-10-20.)
 
+### Attachment pipeline (shipped)
+`worker/attachmentPipeline.ts` runs one pass per notice attachment:
+1. **Resolve** the link to an absolute GBU URL (GBU hosts only; other hosts are refused).
+2. **Download** once, with the same GBU TLS tolerance as the scraper, capped at 15 MB.
+3. **Hash** the bytes (SHA-256). A hash already in `notice_attachments` means the file was handled before and is skipped.
+4. **Extract**:
+   - A PDF with a text layer is read directly by `worker/pdfText.ts` — a dependency-free parser that walks the object table, reads each page's font resources and decodes subset fonts through their `/ToUnicode` CMap, then pulls the `Tj`/`TJ` text-showing operators. No OCR needed.
+   - A PDF with no text layer is *scanned*: its embedded page images are extracted (`extractPdfImages`) and each page is OCR'd.
+   - A plain image is OCR'd directly.
+5. **Store** the text in `notices.raw_text` (never overwritten once set) and any deadline the document revealed in `notices.deadline_at`. The extraction is logged in `notice_attachments` with the provider, size, scan flag and deadlines.
+
+The app shows the extracted text on the notice detail screen (`app/notice/[id].tsx`) with a "Read full text" expander, so a student can read a scanned circular without leaving the app. The CI runner installs `tesseract-ocr` explicitly (`.github/workflows/worker-cron.yml`).
+
 ## Timetable change detection
 1. Fetch timetable for each active `class_key` (distinct classes among users) every 30 min during 7:00–20:00, hourly otherwise.
 2. Normalise to a canonical JSON (day → slots → subject, faculty, room, start, end).

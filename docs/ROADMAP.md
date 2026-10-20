@@ -33,7 +33,7 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 
 ## Phase 3 — Notices
 - [x] Worker: fetch + parse main notices and exams portal, idempotent inserts (Supabase upsert keyed on `source_id`, `.github/workflows/worker-cron.yml` on a 15-minute schedule, soft-404 guard, GBU TLS tolerance, `worker/run.ts` entrypoint)
-- [ ] Attachment download, OCR for images and scanned PDFs, store raw text (OCR provider + content-hash dedupe shipped in `worker/ocrService.ts`; per-file download/extract pipeline still to build)
+- [x] Attachment download, OCR for images and scanned PDFs, store raw text (per-file pipeline shipped in `worker/attachmentPipeline.ts`: download once -> content-hash dedupe -> PDF text layer via `worker/pdfText.ts` (incl. `/ToUnicode` CMap decoding for subset fonts) -> OCR for images and scanned PDFs via `worker/ocrRunner.ts` (Tesseract default, vision-model upgrade) -> raw text stored in `notices.raw_text` and shown in the app's notice detail screen; extraction log in `notice_attachments`)
 - [x] Notices screen: search, removable chips, virtualized FlatList, detail screen, official portal viewer
 - [x] Hero carousel on Home from top notices (with useIsFocused pause)
 - [x] Persistent notification preferences in Profile (`@gbu_one_notify_*`)

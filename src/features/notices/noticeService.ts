@@ -369,6 +369,8 @@ export const MOCK_NOTICES: NoticeItem[] = [
     postedAt: '2026-10-19T08:00:00.000Z',
     fileUrl: 'https://exam.gbu.ac.in',
     fileType: 'pdf',
+    rawText:
+      'Gautam Buddha University, Greater Noida\nOffice of the Controller (Examinations)\nRevised Schedule for Mid Semester Examination, Autumn Session 2026-27\n\nThe schedule of the Mid Semester Examination for the Autumn Session 2026-27 has been revised. Students are advised to note the revised dates of their papers carefully.\n\nB.Tech (Computer Science) - III Semester\nSubject Code: BCS-301, Data Structures & Algorithms\nDate of Examination: 03 November 2026\nTime: 09:30 AM to 11:00 AM\n\nSubject Code: BCS-302, Operating System\nDate of Examination: 03 November 2026\nTime: 11:30 AM to 01:00 PM\n\nB.Tech (Computer Science) - V Semester\nSubject Code: BCS-501, Compiler Design\nDate of Examination: 05 November 2026\nTime: 09:30 AM to 11:00 AM\n\nNote: The revised schedule supersedes the earlier notification. Candidates must carry their identity card and a printed copy of the admit card. Reporting time is 20 minutes before the start of the paper.\n\nLast Date for reporting: 03 Nov 2026',
     category: 'datesheet',
     audience: { all: true },
     importance: 5,
@@ -401,6 +403,8 @@ export const MOCK_NOTICES: NoticeItem[] = [
     postedAt: '2026-10-17T14:30:00.000Z',
     fileUrl: 'https://gbu.ac.in/notices',
     fileType: 'pdf',
+    rawText:
+      'Gautam Buddha University, Greater Noida\nOffice Order\nFinal Extension of Fee Submission Date for Monsoon Semester 2026-27\n\nIn continuation of the earlier notification, the last date for submission of tuition and other fees for the Monsoon Session 2026-27 has been further extended.\n\nLast Date: 31 Oct 2026\n\nStudents are advised to clear all pending dues through the online portal. A late fee will be levied after the last date as per the university norms. Students belonging to reserved categories must submit the required income/category certificates along with the fee receipt.\n\nFor any query, contact the Accounts Office during working hours.',
     category: 'fees',
     audience: { all: true },
     importance: 5,

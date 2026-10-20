@@ -86,6 +86,161 @@ export async function upsertNotices(notices: NoticeItem[]): Promise<number> {
   return written;
 }
 
+/**
+ * Parses a deadline found in the extracted text into an ISO timestamp.
+ * Recognises the "31 Oct 2026", "31-10-2026" and "31/10/2026" shapes.
+ */
+export function parseDeadlineToIso(value: string): string | null {
+  const cleaned = value.trim().replace(/[,\s]+$/, '');
+  const monthNames = [
+    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+  ];
+
+  const named = /^(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})$/.exec(cleaned);
+  if (named) {
+    const day = Number(named[1]);
+    const month = monthNames.indexOf(named[2].slice(0, 3).toLowerCase());
+    const year = Number(named[3]);
+    if (month >= 0 && day >= 1 && day <= 31) {
+      return new Date(Date.UTC(year, month, day, 23, 59, 0)).toISOString();
+    }
+  }
+
+  const numeric = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(cleaned);
+  if (numeric) {
+    const day = Number(numeric[1]);
+    const month = Number(numeric[2]) - 1;
+    const year = Number(numeric[3]);
+    if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
+      return new Date(Date.UTC(year, month, day, 23, 59, 0)).toISOString();
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Stores the extracted text for a notice.
+ * `raw_text` is only written when it is not already populated, so a later
+ * re-scan never overwrites a better extraction. A deadline revealed by the
+ * document fills `deadline_at` when the title alone did not reveal one.
+ */
+export async function saveNoticeRawText(
+  sourceId: string,
+  rawText: string,
+  extractedDeadlines: string[] = [],
+): Promise<boolean> {
+  const sb = getWorkerSupabase();
+  if (!sb || !sourceId || !rawText) return false;
+
+  try {
+    // `raw_text` is only written when it is not already populated, so a later
+    // re-scan never overwrites a better extraction.
+    const { error } = await sb
+      .from('notices')
+      .update({ raw_text: rawText })
+      .eq('source_id', sourceId)
+      .is('raw_text', null);
+    if (error) {
+      console.warn('Worker: notice raw_text update failed:', error.message);
+      return false;
+    }
+  } catch (err) {
+    console.warn('Worker: notice raw_text update threw:', err);
+    return false;
+  }
+
+  // A deadline revealed by the document fills `deadline_at` when the title
+  // alone did not reveal one.
+  const deadlineIso = extractedDeadlines
+    .map((d) => parseDeadlineToIso(d))
+    .find((d): d is string => d !== null);
+  if (deadlineIso) {
+    try {
+      await sb
+        .from('notices')
+        .update({ deadline_at: deadlineIso })
+        .eq('source_id', sourceId)
+        .is('deadline_at', null);
+    } catch (err) {
+      console.warn('Worker: notice deadline update threw:', err);
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Content-hash keys already processed. The same file is never downloaded or
+ * OCR'd twice, even if it is attached to several notices.
+ */
+export async function fetchProcessedAttachmentHashes(limit = 20000): Promise<Set<string>> {
+  const sb = getWorkerSupabase();
+  const hashes = new Set<string>();
+  if (!sb) return hashes;
+  try {
+    const { data } = await sb
+      .from('notice_attachments')
+      .select('content_hash')
+      .limit(limit);
+    for (const row of (data ?? []) as Array<{ content_hash: string }>) {
+      if (row?.content_hash) hashes.add(row.content_hash);
+    }
+  } catch {
+    // ignore
+  }
+  return hashes;
+}
+
+/** Records a processed attachment so it is never processed again. */
+export async function recordAttachmentProcessing(rows: Array<{
+  contentHash: string;
+  sourceId: string;
+  fileUrl: string;
+  fileName: string;
+  kind: string;
+  byteSize: number;
+  provider: string;
+  isScanned: boolean;
+  extractedDeadlines: string[];
+  rawTextLength: number;
+}>): Promise<number> {
+  const sb = getWorkerSupabase();
+  if (!sb || rows.length === 0) return 0;
+  const BATCH = 50;
+  let written = 0;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH).map((r) => ({
+      content_hash: r.contentHash,
+      source_id: r.sourceId,
+      file_url: r.fileUrl,
+      file_name: r.fileName,
+      kind: r.kind,
+      byte_size: r.byteSize,
+      provider: r.provider,
+      is_scanned: r.isScanned,
+      extracted_deadlines: r.extractedDeadlines,
+      raw_text_length: r.rawTextLength,
+      processed_at: new Date().toISOString(),
+    }));
+    try {
+      const { error } = await sb
+        .from('notice_attachments')
+        .upsert(batch, { onConflict: 'content_hash' });
+      if (error) {
+        console.warn('Worker: attachment record upsert failed:', error.message);
+      } else {
+        written += batch.length;
+      }
+    } catch (err) {
+      console.warn('Worker: attachment record upsert threw:', err);
+    }
+  }
+  return written;
+}
+
+
 export async function recordWorkerRun(
   source: string,
   status: 'ok' | 'error',

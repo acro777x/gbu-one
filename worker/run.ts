@@ -6,11 +6,12 @@
  * Exits 0 even when individual sources fail; never overwrites stored data
  * with an empty parse (layout-change guard lives in noticesJob).
  */
-import { NoticesWorkerJob } from './noticesJob';
+import { NoticesWorkerJob, fetchWithTlsTolerance } from './noticesJob';
 import {
   ensureSchema, upsertNotices, recordWorkerRun, fetchKnownSourceIds,
   isWorkerSupabaseConfigured, fetchTimetableSnapshots, upsertTimetableSnapshots,
   recordTimetableChanges, fetchPushedChangeKeys,
+  saveNoticeRawText, fetchProcessedAttachmentHashes, recordAttachmentProcessing,
 } from './supabaseClient';
 import { sendPushForCandidates, sendPushForTimetableChanges, normaliseClassKey } from './pushSender';
 import {
@@ -19,6 +20,9 @@ import {
   buildTimetableSnapshotPayload,
   parseTimetableSnapshotPayload,
 } from './timetableJob';
+import { extractAttachments, resolveAttachmentUrl, type OcrRunner } from './attachmentPipeline';
+import { runTesseract, runVision, isTesseractAvailable } from './ocrRunner';
+import { resolveOcrProvider } from './ocrService';
 import type { Timetable } from '../src/features/timetable/timetableProvider';
 
 async function main(): Promise<void> {
@@ -91,9 +95,105 @@ async function main(): Promise<void> {
     await runTimetableStage();
   }
 
+  if (supa) {
+    await runAttachmentStage(result.notices);
+  }
+
   console.log(JSON.stringify({
     event: 'worker_done', ms: Date.now() - started, at: new Date().toISOString(),
   }));
+}
+
+/**
+ * Attachment stage: download each notice's file once, pull the text out of it
+ * (PDF text layer, or OCR for images and scanned PDFs) and store the text on
+ * the notice. Files already processed are skipped by content hash.
+ */
+async function runAttachmentStage(
+  notices: Array<{ sourceId: string; fileUrl: string }>,
+): Promise<void> {
+  try {
+    const candidates = notices
+      .map((n) => ({ sourceId: n.sourceId, fileUrl: resolveAttachmentUrl(n.fileUrl) ?? '' }))
+      .filter((n) => n.fileUrl.length > 0);
+    if (candidates.length === 0) {
+      console.log(JSON.stringify({ event: 'worker_attachments_skipped', reason: 'no-attachments' }));
+      return;
+    }
+
+    const provider = resolveOcrProvider();
+    const tesseractReady = provider === 'tesseract' ? isTesseractAvailable() : false;
+    if (provider === 'tesseract' && !tesseractReady) {
+      console.log(JSON.stringify({
+        event: 'worker_attachments_skipped',
+        reason: 'tesseract-unavailable',
+        note: 'install tesseract-ocr in the runner image to OCR scanned files',
+      }));
+    }
+
+    const ocr: OcrRunner | undefined =
+      provider === 'vision'
+        ? async (input) => (await runVision(input)).text
+        : tesseractReady
+          ? async (input) => (await runTesseract(input)).text
+          : undefined;
+
+    const download = async (url: string) => {
+      const res = await fetchWithTlsTolerance(url, {
+        headers: { 'User-Agent': 'GBUOne-Worker/1.0 (student project; contact: student.gbuone@gmail.com)' },
+      });
+      if (!res.ok) throw new Error(`http-${res.status}`);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      return { bytes, contentType: res.headers.get('content-type') };
+    };
+
+    // Files already processed in an earlier run are not extracted again.
+    const processedHashes = await fetchProcessedAttachmentHashes();
+
+    const processed = await extractAttachments(candidates, {
+      download,
+      ocr,
+      provider,
+      processedHashes,
+    });
+
+    if (processed.length === 0) {
+      console.log(JSON.stringify({ event: 'worker_attachments_done', extracted: 0 }));
+      return;
+    }
+
+    let saved = 0;
+    for (const item of processed) {
+      const ok = await saveNoticeRawText(item.sourceId, item.outcome.rawText, item.outcome.extractedDeadlines);
+      if (ok) saved++;
+    }
+
+    const recorded = await recordAttachmentProcessing(
+      processed.map((item) => ({
+        contentHash: item.outcome.contentHash,
+        sourceId: item.sourceId,
+        fileUrl: candidates.find((c) => c.sourceId === item.sourceId)?.fileUrl ?? '',
+        fileName: item.outcome.fileName,
+        kind: item.outcome.kind,
+        byteSize: item.outcome.byteSize,
+        provider: item.outcome.provider,
+        isScanned: item.outcome.isScanned,
+        extractedDeadlines: item.outcome.extractedDeadlines,
+        rawTextLength: item.outcome.rawText.length,
+      })),
+    );
+
+    console.log(JSON.stringify({
+      event: 'worker_attachments_done',
+      candidates: candidates.length,
+      extracted: processed.length,
+      rawTextSaved: saved,
+      recorded,
+    }));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(JSON.stringify({ event: 'worker_attachments_error', error: msg }));
+  }
 }
 
 /**

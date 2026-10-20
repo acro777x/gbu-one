@@ -36,6 +36,25 @@ create index if not exists notices_posted_at_idx on public.notices (posted_at de
 create index if not exists notices_category_idx on public.notices (category);
 create index if not exists notices_importance_idx on public.notices (importance desc);
 
+-- Attachment extraction log. content_hash is the SHA-256 of the downloaded
+-- bytes, so the same file is downloaded and OCR'd at most once even when it
+-- is attached to several notices. notices.raw_text holds the extracted text.
+create table if not exists public.notice_attachments (
+  content_hash text primary key,
+  source_id text not null,
+  file_url text not null default '',
+  file_name text not null default '',
+  kind text not null default 'unknown',
+  byte_size integer not null default 0,
+  provider text not null default 'tesseract',
+  is_scanned boolean not null default false,
+  extracted_deadlines jsonb not null default '[]'::jsonb,
+  raw_text_length integer not null default 0,
+  processed_at timestamptz not null default now()
+);
+create index if not exists notice_attachments_source_idx
+  on public.notice_attachments (source_id);
+
 create table if not exists public.notice_threads (
   id uuid primary key default gen_random_uuid(),
   key text not null unique,
