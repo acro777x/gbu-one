@@ -209,8 +209,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   iconButton: {
-    width: 38,
-    height: 38,
+    // 44dp so the back button meets the minimum touch target.
+    width: 44,
+    height: 44,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',

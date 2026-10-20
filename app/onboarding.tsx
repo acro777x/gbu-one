@@ -415,8 +415,10 @@ const styles = StyleSheet.create({
     fontSize: 22,
   },
   skipBtn: {
-    paddingVertical: 6,
     paddingHorizontal: 12,
+    // 44dp so the Skip button meets the minimum touch target.
+    minHeight: 44,
+    justifyContent: 'center',
   },
   skipText: {
     fontFamily: 'Inter-Medium',

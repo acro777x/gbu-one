@@ -223,6 +223,9 @@ export default function PYQScreen() {
                 handleOpenReport(paper);
               }}
               hitSlop={8}
+              style={styles.reportButton}
+              accessibilityRole="button"
+              accessibilityLabel={`Report ${paper.subjectCode}`}
             >
               <Flag size={13} color={colors.textTertiary} />
             </TouchableOpacity>
@@ -667,7 +670,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    // 44dp so the upload button meets the minimum touch target.
+    minHeight: 44,
     borderRadius: 999,
     gap: 4,
   },
@@ -685,7 +689,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.chip,
     borderWidth: 1,
     paddingHorizontal: 14,
-    height: 42,
+    // 48 so the input inside is at least 44dp tall.
+    minHeight: 48,
   },
   searchInput: {
     flex: 1,
@@ -709,7 +714,8 @@ const styles = StyleSheet.create({
   },
   examTab: {
     flex: 1,
-    minHeight: 40,
+    // 44dp so the exam-type tabs meet the minimum touch target.
+    minHeight: 44,
     borderRadius: theme.radius.chip,
     borderWidth: 1,
     alignItems: 'center',
@@ -724,6 +730,15 @@ const styles = StyleSheet.create({
   filterChip: {
     marginRight: 6,
     marginBottom: 0,
+  },
+  reportButton: {
+    // 44dp so the report flag meets the minimum touch target; the glyph
+    // itself stays small.
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -8,
   },
   filterDivider: {
     width: 1,

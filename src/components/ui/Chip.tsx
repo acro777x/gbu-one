@@ -60,8 +60,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: theme.spacing.md,
     paddingVertical: 7,
-    // The whole chip has to be a comfortable target (AGENTS.md: 44pt min).
+    // The whole chip has to be a comfortable target (AGENTS.md: 44pt min),
+    // including the short labels, which would otherwise be narrower than that.
     minHeight: 44,
+    minWidth: 44,
     borderRadius: theme.radius.chip,
     borderWidth: 1,
     marginRight: theme.spacing.sm,

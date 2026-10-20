@@ -58,6 +58,7 @@ def main():
         return
 
     small = []
+    clipped = 0
     total = 0
     for m in re.finditer(
         r'<node[^>]*clickable="true"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml
@@ -65,11 +66,17 @@ def main():
         x1, y1, x2, y2 = (int(m.group(i)) for i in range(1, 5))
         w = (x2 - x1) / scale
         h = (y2 - y1) / scale
+        # A node that is cut off by a scroll view reports inverted bounds;
+        # its real size cannot be judged, so it is skipped.
+        if w <= 0 or h <= 0:
+            clipped += 1
+            continue
         total += 1
-        if w < MIN_DP or h < MIN_DP:
+        # A 0.5dp tolerance absorbs the rounding of the device density.
+        if w < MIN_DP - 0.5 or h < MIN_DP - 0.5:
             small.append((w, h, m.group(0)[:120]))
 
-    print(f'\ntappable nodes: {total}')
+    print(f'\ntappable nodes: {total}' + (f' ({clipped} clipped, skipped)' if clipped else ''))
     if not small:
         print(f'all tappable nodes are at least {MIN_DP}x{MIN_DP} dp')
         return
