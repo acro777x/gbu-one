@@ -15,5 +15,11 @@ module.exports = {
     node: true,
     jest: true,
   },
-  ignorePatterns: ['android/**', 'ios/**', 'dist/**', 'node_modules/**', '.expo/**', 'checklist_extracted/**', 'docs/**'],
+  ignorePatterns: [
+    'android/**', 'ios/**', 'dist/**', 'node_modules/**', '.expo/**',
+    'checklist_extracted/**', 'docs/**',
+    'research/**',      // one-off scraping research, not app code
+    'scripts/**',       // one-off maintenance/analysis utilities
+    'ref/**',
+  ],
 };

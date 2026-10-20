@@ -16,7 +16,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router';
 import { Search, Share2, BellRing, X, ExternalLink } from 'lucide-react-native';
 import { NoticeCard, Chip, BottomSheet, PillButton, EmptyState } from '../../src/components/ui';
-import { MOCK_NOTICES, NoticeItem } from '../../src/features/notices/noticeService';
+import { NoticeItem } from '../../src/features/notices/noticeService';
+import { useNoticesQuery } from '../../src/features/notices/useNoticesQuery';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
@@ -29,9 +30,12 @@ export default function NoticesScreen() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [activeNotice, setActiveNotice] = useState<NoticeItem | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
-  const filteredNotices = MOCK_NOTICES.filter((n) => {
+  // Offline-first: renders instantly from SQLite cache (or bundled seed on
+  // first launch), then refreshes from Supabase in the background.
+  const { data: notices = [], isFetching, refetch } = useNoticesQuery();
+
+  const filteredNotices = notices.filter((n) => {
     const matchesSearch =
       searchQuery.trim() === '' ||
       n.cleanTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -46,10 +50,7 @@ export default function NoticesScreen() {
   });
 
   const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 800);
+    void refetch();
   };
 
   const handleOpenNotice = (notice: NoticeItem) => {
@@ -74,7 +75,11 @@ export default function NoticesScreen() {
       {/* Top Header */}
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Notices</Text>
-        <Text style={[styles.headerSub, { color: colors.textSecondary }]}>Aggregated from test.gbu.ac.in & exams portal</Text>
+        <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
+          {isFetching
+            ? 'Syncing official GBU sources…'
+            : 'Official GBU, exams, hostel & council circulars • auto-updated every 15 min'}
+        </Text>
       </View>
 
       {/* Search Input */}
@@ -123,7 +128,7 @@ export default function NoticesScreen() {
         removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={isFetching}
             onRefresh={onRefresh}
             tintColor={colors.accent}
           />

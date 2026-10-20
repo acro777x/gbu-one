@@ -3,9 +3,11 @@ import { StyleSheet, StatusBar } from 'react-native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { SplashScreenView } from '../src/components/brand/SplashScreenView';
 import { ThemeProvider, useAppTheme } from '../src/lib/ThemeContext';
+import { queryClient } from '../src/lib/queryClient';
 
 
 function AppShell() {
@@ -81,9 +83,11 @@ function AppShell() {
 
 export default function RootLayout() {
   return (
-    <ThemeProvider>
-      <AppShell />
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AppShell />
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 

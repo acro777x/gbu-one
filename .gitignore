@@ -11,3 +11,17 @@ android/
 checklist_extracted/
 *.png.bak
 Glossy Orange GBU One App Icon.png
+
+# research scratch (one-off probes; never ship)
+research/
+scripts/
+worker_out.txt
+gbu_live.html
+gbu_home.html
+mygbu39.json
+samay39.json
+samay_all.json
+research_base_strings.txt
+jest_out.txt
+lint_out.txt
+tc_out.txt
