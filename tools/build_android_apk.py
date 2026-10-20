@@ -44,6 +44,28 @@ def sync() -> None:
         shutil.copy2(env_file, os.path.join(BUILD, '.env'))
 
 
+def find_apksigner():
+    """Locates the apksigner tool from the Android SDK."""
+    roots = [
+        os.environ.get('ANDROID_HOME'),
+        os.environ.get('ANDROID_SDK_ROOT'),
+        os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Android', 'Sdk'),
+    ]
+    for root in roots:
+        if not root:
+            continue
+        build_tools = os.path.join(root, 'build-tools')
+        if not os.path.isdir(build_tools):
+            continue
+        versions = sorted(os.listdir(build_tools), reverse=True)
+        for version in versions:
+            for name in ('apksigner.bat', 'apksigner'):
+                candidate = os.path.join(build_tools, version, name)
+                if os.path.exists(candidate):
+                    return candidate
+    return None
+
+
 def run(command: list[str], cwd: str) -> None:
     print('>', ' '.join(command))
     result = subprocess.run(command, cwd=cwd, shell=True)
@@ -56,9 +78,11 @@ def main() -> None:
     os.makedirs(BUILD, exist_ok=True)
     sync()
 
+    # Always prebuild: the signing plugin writes the GBU_ANDROID_* values into
+    # android/gradle.properties, so a prebuild that is skipped would leave the
+    # release build on the debug key.
     android = os.path.join(BUILD, 'android')
-    if not os.path.isdir(android):
-        run(['npx', 'expo', 'prebuild', '--platform', 'android', '--no-install'], BUILD)
+    run(['npx', 'expo', 'prebuild', '--platform', 'android', '--no-install'], BUILD)
 
     task = 'assembleRelease' if release else 'assembleDebug'
     run([r'.\gradlew.bat', task, '--no-daemon'], android)
@@ -66,7 +90,28 @@ def main() -> None:
     apk_name = 'app-release.apk' if release else 'app-debug.apk'
     apk = os.path.join(android, 'app', 'build', 'outputs', 'apk',
                        'release' if release else 'debug', apk_name)
+    if not os.path.exists(apk):
+        raise SystemExit(f'APK not found: {apk}')
     print(f'\nAPK: {apk} ({os.path.getsize(apk) / 1_000_000:.1f} MB)')
+
+    # A release APK signed with the debug key is not publishable, so make the
+    # mistake loud instead of shipping it.
+    if release:
+        apksigner = find_apksigner()
+        if apksigner:
+            result = subprocess.run(
+                [apksigner, 'verify', '--print-certs', apk],
+                capture_output=True, text=True,
+            )
+            for line in result.stdout.splitlines():
+                if 'certificate DN' in line:
+                    print(line.strip())
+                    if 'CN=Android Debug' in line:
+                        raise SystemExit(
+                            'the release APK is signed with the DEBUG key - set '
+                            'GBU_ANDROID_KEYSTORE_PATH and the other GBU_ANDROID_* '
+                            'variables (see docs/RELEASE.md)'
+                        )
 
 
 if __name__ == '__main__':

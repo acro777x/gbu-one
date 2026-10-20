@@ -59,7 +59,7 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Supabase client config (`src/lib/supabase.ts`) + Create Account bottom sheet in login
 - [x] Error reporting without PII, privacy policy page, About/disclaimer
 - [x] Android release build (EAS / production keystore) — release signing is wired through `plugins/withReleaseSigning.js` (owner keystore from `GBU_ANDROID_*` env vars, debug-key fallback for a fresh clone) and `eas.json` carries the `development` / `preview` / `production` profiles. A signed release APK was built and verified on the emulator (`apksigner` shows the owner DN, not the debug key). Full steps in `docs/RELEASE.md`. Remaining owner work: the upload keystore, the EAS project id (#11) and the FCM/APNs credentials (#12); the 16 KB page-size gap from React Native 0.76 prebuilts is recorded as #13
-- [ ] Student survey results reviewed; update priorities
+- [ ] Student survey results reviewed; update priorities — the instrument is ready (`docs/SURVEY.md`: ten concrete questions, each mapped to a decision) but there are no responses yet, so there is nothing to review. Owner action: share it with the class representatives and drop the answers into `docs/qa/survey-responses.csv`. Tracked as `docs/OPEN_QUESTIONS.md` #14
 
 ## Later ideas (do not build without owner approval)
 Hindi UI, home-screen widgets, faculty directory, hostel/mess notices, incubation links.

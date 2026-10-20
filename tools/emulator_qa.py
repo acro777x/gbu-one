@@ -75,9 +75,20 @@ def tap_text(label, exact=False, settle=1.5, required=True):
 
 
 def shot(out_dir, name):
+    """Captures a settled screenshot.
+
+    `screencap` can return a frame while SurfaceFlinger still holds an older
+    layer, which shows up as a stray shape over the screen. Waiting for the
+    screen to be idle and capturing a few times keeps only a settled frame.
+    """
     os.makedirs(out_dir, exist_ok=True)
-    adb('shell', 'screencap', '-p', f'/sdcard/{name}.png')
-    adb('pull', f'/sdcard/{name}.png', os.path.join(out_dir, f'{name}.png'))
+    target = os.path.join(out_dir, f'{name}.png')
+    time.sleep(1.5)
+    for _ in range(3):
+        adb('shell', 'screencap', '-p', '/sdcard/qa_tmp.png')
+        time.sleep(0.7)
+        adb('pull', '/sdcard/qa_tmp.png', target)
+    return target
 
 
 def dismiss_16kb_dialog():
@@ -91,6 +102,16 @@ def dismiss_16kb_dialog():
         adb('shell', 'monkey', '-p', PACKAGE, '-c',
             'android.intent.category.LAUNCHER', '1')
         time.sleep(12)
+        return True
+    return False
+
+
+def allow_notifications():
+    """Answers the Android notification prompt the onboarding asks for."""
+    xml = dump()
+    pos = find(xml, 'Allow', exact=True)
+    if pos:
+        tap(pos[0], pos[1], settle=3.0)
         return True
     return False
 
@@ -119,9 +140,10 @@ def main():
 
     steps = []
 
-    # Onboarding: three slides, then the class setup.
-    for _ in range(3):
-        tap_text('Next', settle=1.5, required=False)
+    # Onboarding: three slides, then the class setup step.
+    for _ in range(2):
+        tap_text('Next', exact=True, settle=1.5, required=False)
+    tap_text('Set up my class', exact=True, settle=2.0, required=False)
     steps.append(('onboarding_class_setup', shot(shots, 'onboarding_class_setup')))
 
     # Class setup: pick a class so the app has a section.
@@ -130,6 +152,7 @@ def main():
     tap_text('Section B', exact=True, settle=1.0, required=False)
     shot(shots, 'class_setup_filled')
     tap_text('Get started', exact=True, settle=6.0, required=False)
+    allow_notifications()
     steps.append(('home', shot(shots, 'home')))
 
     for label, name in (
@@ -145,11 +168,24 @@ def main():
     tap_text('Notices', exact=True, settle=3.5, required=False)
     tap_text('Revised Mid-Semester Exam Datesheet', settle=3.5, required=False)
     steps.append(('notice_detail', shot(shots, 'notice_detail')))
+    adb('shell', 'input', 'keyevent', '4')
+    time.sleep(2)
 
     # PYQ upload sheet.
     tap_text('PYQ', exact=True, settle=3.5, required=False)
     tap_text('Upload', exact=True, settle=2.5, required=False)
     steps.append(('pyq_upload_sheet', shot(shots, 'pyq_upload_sheet')))
+    adb('shell', 'input', 'keyevent', '4')
+    time.sleep(2)
+
+    # The moderation queue (owner / moderator only) and the notification
+    # preferences, both of which sit further down the profile.
+    tap_text('Profile', exact=True, settle=3.5, required=False)
+    for _ in range(3):
+        swipe(540, 1700, 540, 700, 400)
+    shot(shots, 'profile_preferences')
+    tap_text('PYQ Moderation Queue', settle=3.5, required=False)
+    steps.append(('moderation_queue', shot(shots, 'moderation_queue')))
 
     print('\n'.join(f'{n}' for n, _ in steps if n))
 
