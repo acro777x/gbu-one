@@ -115,11 +115,14 @@ export const MOCK_PAPERS: PYQItem[] = [
   },
 ];
 
+export type ExamTypeFilter = 'All' | 'Mid Sem' | 'End Sem' | 'Back Paper';
+
 export function filterPapers(
   papers: PYQItem[],
   query: string,
   school: string,
   semester: string,
+  examType: ExamTypeFilter = 'All',
 ): PYQItem[] {
   const cleanQ = query.trim().toLowerCase();
   return papers.filter((p) => {
@@ -130,7 +133,8 @@ export function filterPapers(
 
     const matchesSchool = school === 'All' || p.school === school;
     const matchesSemester = semester === 'All' || p.semester === semester;
+    const matchesExamType = examType === 'All' || p.examType === examType;
 
-    return matchesSearch && matchesSchool && matchesSemester;
+    return matchesSearch && matchesSchool && matchesSemester && matchesExamType;
   });
 }

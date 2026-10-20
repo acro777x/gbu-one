@@ -54,6 +54,29 @@ describe('PYQ Browser & Management Logic', () => {
     expect(matches2[0].subjectCode).toBe('CSE209');
   });
 
+  it('filters papers by exam type (Mid Sem / End Sem / Back Paper tabs)', () => {
+    const mid = filterPapers(MOCK_PAPERS, '', 'All', 'All', 'Mid Sem');
+    expect(mid.length).toBeGreaterThan(0);
+    expect(mid.every((p) => p.examType === 'Mid Sem')).toBe(true);
+
+    const end = filterPapers(MOCK_PAPERS, '', 'All', 'All', 'End Sem');
+    expect(end.every((p) => p.examType === 'End Sem')).toBe(true);
+
+    const back = filterPapers(MOCK_PAPERS, '', 'All', 'All', 'Back Paper');
+    expect(back.every((p) => p.examType === 'Back Paper')).toBe(true);
+
+    // Default 'All' keeps every paper
+    expect(filterPapers(MOCK_PAPERS, '', 'All', 'All')).toHaveLength(MOCK_PAPERS.length);
+
+    // Tabs compose with school + semester filters
+    const combined = filterPapers(MOCK_PAPERS, '', 'SOICT', 'Sem II', 'End Sem');
+    expect(
+      combined.every(
+        (p) => p.school === 'SOICT' && p.semester === 'Sem II' && p.examType === 'End Sem'
+      )
+    ).toBe(true);
+  });
+
   it('sorts trending papers in descending order of downloads', () => {
     const sorted = [...MOCK_PAPERS].sort((a, b) => b.downloads - a.downloads);
     expect(sorted[0].downloads).toBeGreaterThanOrEqual(sorted[1].downloads);

@@ -29,7 +29,9 @@ import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
 const SCHOOL_FILTERS = ['All', 'SOICT', 'SOM', 'SOBT', 'SOE', 'SOL'];
-const SEMESTER_FILTERS = ['All', 'Sem I', 'Sem II', 'Sem IV'];
+const SEMESTER_FILTERS = ['All', 'Sem I', 'Sem II', 'Sem III', 'Sem IV', 'Sem V', 'Sem VI', 'Sem VII', 'Sem VIII'];
+const EXAM_TYPE_TABS = ['All', 'Mid Sem', 'End Sem', 'Back Paper'] as const;
+type ExamTab = (typeof EXAM_TYPE_TABS)[number];
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.floor((SCREEN_WIDTH - theme.spacing.lg * 2 - 12) / 2);
 
@@ -40,6 +42,7 @@ export default function PYQScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSchool, setSelectedSchool] = useState('All');
   const [selectedSemester, setSelectedSemester] = useState('All');
+  const [examTab, setExamTab] = useState<ExamTab>('All');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
@@ -107,6 +110,7 @@ export default function PYQScreen() {
     searchQuery,
     selectedSchool,
     selectedSemester,
+    examTab,
   );
 
   const trendingPapers = [...MOCK_PAPERS].sort((a, b) => b.downloads - a.downloads).slice(0, 3);
@@ -165,7 +169,7 @@ export default function PYQScreen() {
   const renderHeader = () => (
     <View>
       {/* Trending Spotlight */}
-      {searchQuery === '' && selectedSchool === 'All' && selectedSemester === 'All' && (
+      {searchQuery === '' && selectedSchool === 'All' && selectedSemester === 'All' && examTab === 'All' && (
         <View style={styles.trendingSection}>
           <View style={styles.sectionHeaderRow}>
             <Flame size={16} color={colors.accent} />
@@ -246,6 +250,38 @@ export default function PYQScreen() {
             </TouchableOpacity>
           ) : null}
         </View>
+      </View>
+
+      {/* Exam-type tabs: Mid Sem / End Sem / Back Paper */}
+      <View style={styles.examTabsRow}>
+        {EXAM_TYPE_TABS.map((tab) => {
+          const active = examTab === tab;
+          return (
+            <TouchableOpacity
+              key={tab}
+              onPress={() => setExamTab(tab)}
+              activeOpacity={0.8}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              style={[
+                styles.examTab,
+                {
+                  backgroundColor: active ? colors.accent : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(17,24,39,0.05)',
+                  borderColor: active ? colors.accent : colors.borderGlass,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.examTabText,
+                  { color: active ? colors.onAccent : colors.textSecondary },
+                ]}
+              >
+                {tab === 'All' ? 'All Papers' : tab}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Hierarchical Browse Filters */}
@@ -515,6 +551,27 @@ const styles = StyleSheet.create({
   filterScroll: {
     paddingHorizontal: theme.spacing.lg,
     alignItems: 'center',
+  },
+  examTabsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs,
+  },
+  examTab: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: theme.radius.chip,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  examTabText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+    textAlign: 'center',
   },
   filterChip: {
     marginRight: 6,
