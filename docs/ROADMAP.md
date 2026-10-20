@@ -28,12 +28,12 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Next-class card with countdown + progress bar on Home
 - [x] Snapshot + diff engine with unit tests
 - [x] Central timetable store (`timetableStore.ts`) with 6-hour TTL AsyncStorage caching & request deduplication
-- [ ] Push for timetable changes; "Changed" chips in UI (pending backend push dispatch)
-- [x] Real provider (`mygbu.in/schd/api.php?schd=39` with mock fallback)
+- [ ] Push for timetable changes; "Changed" chips in UI — UI chips + local change detection ship today; **only the server-side dispatch (worker diff → FCM push for timetable changes) is outstanding.** Notices push dispatch is already shipped (`worker/pushSender.ts`, `.github/workflows/worker-cron.yml`)
+- [x] Real provider (`samay.mygbu.in/api.php` with legacy `mygbu.in/schd/api.php` fallback, then mock fallback)
 
 ## Phase 3 — Notices
-- [ ] Worker: fetch + parse main notices and exams portal, idempotent inserts
-- [ ] Attachment download, OCR for images and scanned PDFs, store raw text
+- [x] Worker: fetch + parse main notices and exams portal, idempotent inserts (Supabase upsert keyed on `source_id`, `.github/workflows/worker-cron.yml` on a 15-minute schedule, soft-404 guard, GBU TLS tolerance, `worker/run.ts` entrypoint)
+- [ ] Attachment download, OCR for images and scanned PDFs, store raw text (OCR provider + content-hash dedupe shipped in `worker/ocrService.ts`; per-file download/extract pipeline still to build)
 - [x] Notices screen: search, removable chips, virtualized FlatList, detail screen, official portal viewer
 - [x] Hero carousel on Home from top notices (with useIsFocused pause)
 - [x] Persistent notification preferences in Profile (`@gbu_one_notify_*`)

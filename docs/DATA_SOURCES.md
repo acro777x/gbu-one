@@ -19,11 +19,11 @@ Verified in October 2026. Hosts change; keep everything in `worker/sources.confi
 
 ## Scraping rules
 - Respect robots.txt if present. Only public, unauthenticated pages.
-- **Soft-404 check (GBU):** unknown paths return **HTTP 200** with a 38,725-byte "404 - Page not found" page. Treat a body containing `404 - Page not found` (or that exact body length) as a failure, not as data.
-- **TLS:** GBU's certificate chain does not verify on some hosts. Bundle the CA — do not disable certificate verification globally.
-- Rate: max 1 request per source per run, runs every 15 minutes for notices (every 60 minutes outside 7:00–22:00 IST), 1s delay between files, exponential backoff on errors, honour `Retry-After`.
+- **Soft-404 check (GBU):** unknown paths return **HTTP 200** with a 38,725-byte "404 - Page not found" page. Treat a body containing `404 - Page not found` (or that exact body length) as a failure, not as data. Implemented as `isSoft404()` in `worker/noticesJob.ts` and tested.
+- **TLS:** verified live 2026-10-20 — `www.gbu.ac.in` fails strict validation with **`CERT_HAS_EXPIRED`** (the cert itself expired; a client with validation on cannot connect at all). The worker uses `fetchWithTlsTolerance()` (undici `Agent({ connect: { rejectUnauthorized: false } })`) **scoped only to `*.gbu.ac.in` / `mygbu.in` hosts**, with plain fetch as fallback. Never set `NODE_TLS_REJECT_UNAUTHORIZED=0` globally in production.
+- Rate: max 1 request per source per run, runs every 15 minutes for notices (every 60 minutes outside 07:00–22:00 IST), 1s delay between files, exponential backoff on errors, honour `Retry-After`.
 - User-Agent: `GBUOne-Worker/1.0 (student project; contact: <owner email from env>)`.
-- Download attachments once; cache by content hash; never re-OCR the same file.
+- Download attachments once; cache by content hash; never re-OCR the same file (`worker/ocrService.ts` `hashContent`/`markProcessed`).
 - If a page layout changes and parsing returns 0 items, do **not** overwrite stored data; log failure and alert.
 
 ## Normalised notice shape

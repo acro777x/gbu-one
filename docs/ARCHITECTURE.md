@@ -1,5 +1,22 @@
 # Architecture
 
+## Shipped vs declared (reconciled 2026-10-20)
+The declared stack below now **matches the shipped stack**:
+
+| Declared | Shipped |
+|---|---|
+| Expo + TS strict, Expo Router | `app/` + `src/`, typecheck/lint/tests green in CI |
+| Zustand | `src/store/*`, `src/features/*`; **attendance + mail now persisted** via `zustand/persist` (MMKV → AsyncStorage fallback) |
+| TanStack Query | `@tanstack/react-query` installed; `QueryClientProvider` in `app/_layout.tsx`; `useNoticesQuery` implements cached-then-refresh |
+| expo-sqlite + MMKV | `expo-sqlite@15`, `react-native-mmkv@2.12` installed (SDK 52 pinned); `src/lib/db.ts` (notices/timetable/kv caches), `src/lib/storage.ts` (MMKV with AsyncStorage fallback) |
+| Supabase | `src/lib/supabase.ts` (app, anon), `worker/supabaseClient.ts` (worker, service-role) |
+| FCM push | `worker/pushSender.ts` via Expo Push API (FCM under the hood), deduped per notice |
+| Node worker on GitHub Actions cron | `worker/run.ts` + `.github/workflows/worker-cron.yml` (15 min 01:30–16:30 UTC, hourly otherwise) |
+
+Offline-first rule is met for the notices screen (SQLite cache first, Supabase
+refresh second, bundled seed only when both are empty). The timetable store
+reads SQLite cache first, then the live Samay API, with mock as last resort.
+
 ## Overview
 ```
 GBU public sites ──► Worker (GitHub Actions cron, Node/TS)
@@ -47,7 +64,10 @@ Timetable API (owner's) ◄── adapter, called from worker (public data) or a
 RLS: users read approved PYQs and public tables; write only own rows; moderation via admin role.
 
 ## PYQ moderation
-Uploads go to Storage `pyq-pending/`; admin (owner + trusted students) approves in a simple admin screen or Supabase dashboard; approved files move to `pyq/`. Virus/size/type checks (PDF/JPG/PNG, max 20MB). Report button on every paper. Show disclaimer on copyright: students upload only papers they are entitled to share; takedown contact in About.
+Uploads go to Storage `pyq-pending/`; the **owner** (first moderator, `public.moderators.role='owner'`) plus trusted students added to `public.moderators` approve via the Supabase dashboard or admin screen; approved files move to `pyq/`. Adding or removing a moderator is one SQL row — no app release. Virus/size/type checks (PDF/JPG/PNG, max 20MB). Report button on every paper. Show disclaimer on copyright: students upload only papers they are entitled to share; takedown contact in About. (OPEN_QUESTIONS #5 resolved this way on 2026-10-20.)
+
+## OCR
+Worker default is **Tesseract** (offline, free) — `OCR_PROVIDER=tesseract`. Optional vision-model upgrade via `OCR_PROVIDER=vision` + `VISION_API_KEY`. Attachments are content-hash deduped so no file is ever OCR'd twice. (OPEN_QUESTIONS #4 resolved this way on 2026-10-20.)
 
 ## Timetable change detection
 1. Fetch timetable for each active `class_key` (distinct classes among users) every 30 min during 7:00–20:00, hourly otherwise.
