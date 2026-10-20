@@ -4,6 +4,8 @@
  */
 
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { zustandStorage } from '../../lib/storage';
 
 export interface SubjectAttendance {
   subjectCode: string;
@@ -113,8 +115,10 @@ interface AttendanceState {
   resetAll: () => void;
 }
 
-export const useAttendanceStore = create<AttendanceState>((set) => ({
-  subjects: INITIAL_ATTENDANCE,
+export const useAttendanceStore = create<AttendanceState>()(
+  persist(
+    (set) => ({
+      subjects: INITIAL_ATTENDANCE,
 
   markAttended: (subjectCode) =>
     set((state) => ({
@@ -142,4 +146,12 @@ export const useAttendanceStore = create<AttendanceState>((set) => ({
     })),
 
   resetAll: () => set({ subjects: INITIAL_ATTENDANCE }),
-}));
+    }),
+    {
+      name: '@gbu_one_attendance',
+      storage: createJSONStorage(() => zustandStorage),
+      // Persist only user data; actions are functions and never serialised.
+      partialize: (state) => ({ subjects: state.subjects }) as AttendanceState,
+    }
+  )
+);

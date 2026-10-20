@@ -1,5 +1,7 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { StudentEmail, INITIAL_STUDENT_EMAILS } from '../features/mail/mailService';
+import { zustandStorage } from '../lib/storage';
 
 export interface MailState {
   emails: StudentEmail[];
@@ -20,9 +22,11 @@ export interface MailState {
   getUnreadCount: () => number;
 }
 
-export const useMailStore = create<MailState>((set, get) => ({
-  emails: INITIAL_STUDENT_EMAILS,
-  activeCategory: 'all',
+export const useMailStore = create<MailState>()(
+  persist(
+    (set, get) => ({
+      emails: INITIAL_STUDENT_EMAILS,
+      activeCategory: 'all',
   searchQuery: '',
   selectedEmail: null,
 
@@ -101,4 +105,16 @@ export const useMailStore = create<MailState>((set, get) => ({
   getUnreadCount: () => {
     return get().emails.filter((e) => e.isUnread).length;
   },
-}));
+    }),
+    {
+      name: '@gbu_one_mail',
+      storage: createJSONStorage(() => zustandStorage),
+      // Persist read/star state + local replies; transient UI state excluded.
+      partialize: (state) =>
+        ({
+          emails: state.emails,
+          activeCategory: state.activeCategory,
+        }) as MailState,
+    }
+  )
+);
