@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,227 +8,285 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
-import { ArrowLeft, CheckCircle2 } from 'lucide-react-native';
-import { Chip, PillButton, GlassCard } from '../src/components/ui';
+import { ArrowLeft, CheckCircle2, CloudOff } from 'lucide-react-native';
+import { Chip, PillButton, GlassCard, Skeleton } from '../src/components/ui';
 import { useAuthStore, ClassSelection } from '../src/store/useAuthStore';
 import { useAppTheme } from '../src/lib/ThemeContext';
-import { spacing } from '../src/lib/theme';
-import { parseGBUClassCode } from '../src/features/timetable/timetableProvider';
+import { radius, spacing } from '../src/lib/theme';
+import {
+  buildSectionCode,
+  fallbackProgrammes,
+  fallbackSections,
+  groupSectionsIntoProgrammes,
+  normaliseYearLabel,
+  parsePublishedSection,
+  schoolProgrammesFor,
+  schoolsOf,
+  sectionLetterOf,
+  sectionsForProgramme,
+  yearLabelOf,
+  yearsForProgramme,
+  type CatalogueProgramme,
+} from '../src/features/timetable/classCatalogue';
+import {
+  getAvailableClassesList,
+  getCachedClassesList,
+} from '../src/features/timetable/timetableStore';
+import type { ClassRef } from '../src/features/timetable/timetableProvider';
 
-const SCHOOLS = [
-  'SOICT',
-  'SOE',
-  'SOM',
-  'SOBT',
-  'SOHSS',
-  'SOVSAS',
-  'SOLJG',
-  'SOBSC',
-];
+type Step = 1 | 2 | 3 | 4;
 
-const PROGRAMMES_BY_SCHOOL: Record<string, Array<{ name: string; code: string }>> = {
-  SOICT: [
-    { name: "B.Tech. (Artificial Intelligence)", code: "BAI" },
-    { name: "B.C.A.", code: "BCA" },
-    { name: "B.Tech (CS)", code: "BCS" },
-    { name: "B.Tech (EC)", code: "BEC" },
-    { name: "B.Tech ECE AI&ML", code: "BEC-AIML" },
-    { name: "B.Tech (IT)", code: "BIT" },
-    { name: "B.Tech. CSE Cyber Security", code: "CSE-Cyber" },
-    { name: "B.Tech. CSE Data Science", code: "CSE-DS" },
-    { name: "B.Tech. CSE Machine Learning", code: "CSE-ML" },
-    { name: "B.Tech.-M.Tech. (EC)", code: "EC" },
-    { name: "B.Tech.-M.Tech. (CS)", code: "ICS" },
-    { name: "MCA", code: "MCA" },
-    { name: "M.Tech. (DS)", code: "MDS" },
-    { name: "M.Tech. (AIR)", code: "MTA" },
-    { name: "M.Tech. (SE)", code: "MTS" },
-    { name: "M.Tech (CSE) Weekend", code: "PCW" },
-    { name: "Ph.D. Computer Science and Engineering", code: "PhDCS" },
-    { name: "B.Tech. EC VLSI", code: "PVD" },
-  ],
-  SOE: [
-    { name: "B.Tech (ME)", code: "BEE" },
-    { name: "B.Tech (ME)", code: "BME" },
-    { name: "B.Tech.+M.Tech./M.B.A. (EE)", code: "EE" },
-    { name: "M.Tech (Power System)", code: "MTP" },
-    { name: "B.Tech. (Electrical and Computer Engineering)", code: "UEL" },
-    { name: "B.Tech. (Robotics and Artificial Intelligence)", code: "URA" },
-  ],
-  SOM: [
-    { name: "B.Com. (Hons)", code: "BCOM" },
-    { name: "MBA", code: "MBA" },
-  ],
-  SOBT: [
-    { name: "Int. B.Tech.+M.Tech./M.B.A.-Biotech.", code: "BT" },
-    { name: "BSc MSc Ayurveda Biology", code: "IBTAB" },
-    { name: "M.Sc. Biotechnology", code: "MBT" },
-    { name: "MSc Biotechnology (1Yr)", code: "MBTR" },
-    { name: "MSc-Life Sciences", code: "MSLS" },
-    { name: "MSc Microbiology", code: "MSMB" },
-    { name: "M. Tech. (Biotechnology)", code: "MTB" },
-    { name: "MSc. Nuclear Medicine Technology", code: "NMT" },
-    { name: "Ph.D. Biotechnology", code: "PhDBT" },
-    { name: "B.Sc. (H) in Biotechnology with Research", code: "UBT" },
-    { name: "B.Sc. Forensic Science", code: "UFS" },
-  ],
-  SOHSS: [
-    { name: "B.A. (H) Economics", code: "BAEC" },
-    { name: "M.A. (English)", code: "MEN" },
-    { name: "B. Sc. Applied Psychology", code: "UHB" },
-  ],
-  SOVSAS: [
-    { name: "B.Tech. (Food Processing Technology)", code: "BEE" },
-    { name: "B.Sc. (H) Chemistry", code: "BHC" },
-    { name: "B.Sc. (H) Mathematics", code: "BHM" },
-    { name: "B.Sc. (H) Physics", code: "BHP" },
-    { name: "M.Sc. (Applied Chemistry)", code: "MAC" },
-    { name: "M.Sc. (Applied Mathematics)", code: "MAM" },
-    { name: "M.Sc. (Applied Physics)", code: "MAP" },
-    { name: "M.Sc. (Environmental Science)", code: "MES" },
-    { name: "M.Sc. (Food Science)", code: "MFS" },
-    { name: "M.Sc. in Operations Research and Computer Applications", code: "MOR" },
-    { name: "M.Tech. (Food Technology)", code: "MTF" },
-    { name: "Ph.D. Applied  Mathematics", code: "PHD-MATHS" },
-    { name: "B.Sc. Environment Science", code: "UES" },
-    { name: "B.Tech. (Food Processing Technology)", code: "UFT" },
-    { name: "B.Sc. (H) (Mathematics, Statistics, Economics)", code: "UHS" },
-    { name: "B.Tech. (Mathematics and Comuting)", code: "UMC" },
-  ],
+/** Where the class list on screen came from. */
+type CatalogueSource = 'live' | 'saved' | 'bundled';
+
+const SOURCE_MESSAGES: Record<Exclude<CatalogueSource, 'live'>, string> = {
+  saved: 'Showing the class list saved on this device - the live list could not be reached.',
+  bundled: 'Showing the saved class list - the live list could not be reached.',
 };
 
-const SECTIONS_BY_PROGRAMME: Record<string, string[]> = {
-  "BAEC": ["BAEC-I", "BAEC-III"],
-  "BAI": ["BAI-I-A", "BAI-I-B", "BAI-II", "BAI-II-B", "BAI-III", "BAI-III-B", "BAI-IV"],
-  "BCA": ["BCA-I A", "BCA-II-A", "BCA-II-B", "BCA-III"],
-  "BCOM": ["BCOM-I-A", "BCOM-I-B", "BCOM-I-C"],
-  "BCS": ["BCS-I-A", "BCS-I-B", "BCS-I-C", "BCS-II A", "BCS-II B", "BCS-II C", "BCS-II D", "BCS-III-A", "BCS-III-B", "BCS-III-C", "BCS-III-D", "BCS-IV-A", "BCS-IV-B"],
-  "BEC": ["BEC-I", "BEC-II", "BEC-III", "BEC-IV-A"],
-  "BEC-AIML": ["BEC-AI-III", "BEC-AI-IV"],
-  "BEE": ["BCE-I", "BEE-I", "BEE-II", "BEE-III", "BEE-IV", "BME-I", "UFT-I"],
-  "BHC": ["BHC-I", "BHC-II", "BHC-III", "BHC-IV"],
-  "BHM": ["BHM-I", "BHM-II", "BHM-III", "BHM-IV"],
-  "BHP": ["BHP-I", "BHP-II", "BHP-III", "BHP-IV"],
-  "BIT": ["BIT-I", "BIT-II", "BIT-III", "BIT-IV"],
-  "BME": ["BME-II", "BME-III", "BME-IV"],
-  "BT": ["BT-I", "BT-II", "BT-III", "BT-IV", "BT-V"],
-  "CSE-Cyber": ["CSE-CS-I", "CSE-CS-II", "CSE-CS-III", "CSE-CS-IV"],
-  "CSE-DS": ["CSE-DS-I", "CSE-DS-II", "CSE-DS-III", "CSE-DS-IV"],
-  "CSE-ML": ["CSE-ML-III", "CSE-ML-IV"],
-  "EC": ["IEC-IX"],
-  "EE": ["EE-IV"],
-  "IBTAB": ["IAY-I", "IAYBS-II"],
-  "ICS": ["CS-I-A", "CS-II-A", "CS-III-A", "CS-IV-A"],
-  "MAC": ["MAC-I", "MAC-II"],
-  "MAM": ["MAM-I", "MAM-II"],
-  "MAP": ["MAP-I", "MAP-II"],
-  "MBA": ["MBA II", "MBA-I-A"],
-  "MBT": ["MBT-I", "MBT-II"],
-  "MBTR": ["MBT1-I"],
-  "MCA": ["MCA-AI-I", "MCA-AI-II", "MCA-DS-I", "MCA-DS-II"],
-  "MDS": ["MT-DS-I", "MT-DS-II"],
-  "MEN": ["MEN-I", "MEN-II"],
-  "MES": ["MES-I", "MES-II"],
-  "MFS": ["MFS-I", "MFS-II"],
-  "MOR": ["MOR-I"],
-  "MSLS": ["MLFS-I", "MLFS-II"],
-  "MSMB": ["MSMB-I", "MSMB-II"],
-  "MTA": ["MT-AIR-I", "MT-AIR-II-A"],
-  "MTB": ["MTB2-I", "MTB2-II"],
-  "MTF": ["MTF-I", "MTF-II"],
-  "MTP": ["MTP-I", "MTP-II"],
-  "MTS": ["MT-SE-I", "MT-SE-II"],
-  "NMT": ["NMT-I"],
-  "PCW": ["PCW-II"],
-  "PHD-MATHS": ["DAM-I"],
-  "PVD": ["UVL-III"],
-  "PhDBT": ["Ph.D. Biotechnology"],
-  "PhDCS": ["PhDCS-I"],
-  "UBT": ["UBT-I-A", "UBT-I-B", "UBT-II", "UBT-III", "UBT-IV"],
-  "UEL": ["UEL-II", "UEL-III", "UEL-IV"],
-  "UES": ["UES-I", "UES-II", "UES-III"],
-  "UFS": ["UFS-I", "UFS-II", "UFS-III"],
-  "UFT": ["UFT-I", "UFT-II", "UFT-III", "UFT-IV"],
-  "UHB": ["UHB-I"],
-  "UHS": ["UHS-I", "UHS-II"],
-  "UMC": ["UMC-I", "UMC-II"],
-  "URA": ["URA-II", "URA-III"],
-};
-
-const SEMESTERS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
-
-const ROMAN_TO_YEAR: Record<string, number> = {
-  I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8,
-};
-
-/** Real SectionNames for a programme (from the live Samay API catalogue). */
-function sectionsForProgramme(code: string): string[] {
-  return SECTIONS_BY_PROGRAMME[code] ?? SECTIONS_BY_PROGRAMME[code.toUpperCase()] ?? [];
-}
-
-/** Distinct year-romans present for a programme, in order. */
-function yearsForProgramme(code: string): string[] {
-  const out: string[] = [];
-  for (const sec of sectionsForProgramme(code)) {
-    const parsed = parseGBUClassCode(sec);
-    if (parsed.semesterRoman && !out.includes(parsed.semesterRoman)) out.push(parsed.semesterRoman);
-  }
-  return out.sort((a, b) => (ROMAN_TO_YEAR[a] ?? 99) - (ROMAN_TO_YEAR[b] ?? 99));
-}
-
-/** Real sections for a programme + year (exact SectionName strings). */
-function sectionsForYear(code: string, yearRoman: string): string[] {
-  return sectionsForProgramme(code).filter(
-    (sec) => parseGBUClassCode(sec).semesterRoman === yearRoman
+/** The class list the app ships with, used when the university is unreachable. */
+function bundledClassList(): ClassRef[] {
+  const codes = fallbackSections();
+  return fallbackProgrammes().flatMap((programme) =>
+    sectionsForProgramme(codes, programme.code).map((section) => ({
+      school: programme.school,
+      programme: programme.name,
+      programmeCode: programme.apiCode,
+      semester: section.year,
+      section: section.section,
+    })),
   );
+}
+
+/**
+ * The label of every programme, with the published code added when two
+ * programmes of the same school share a name.
+ */
+function programmeLabels(programmes: CatalogueProgramme[]): Record<string, string> {
+  const nameCounts = new Map<string, number>();
+  for (const programme of programmes) {
+    nameCounts.set(programme.name, (nameCounts.get(programme.name) ?? 0) + 1);
+  }
+
+  const labels: Record<string, string> = {};
+  for (const programme of programmes) {
+    const shared = (nameCounts.get(programme.name) ?? 0) > 1;
+    labels[programme.code] = shared
+      ? `${programme.name} (${programme.code})`
+      : programme.name;
+  }
+  return labels;
 }
 
 export default function ClassSetupScreen() {
   const { classSelection, setClassSelection } = useAuthStore();
   const { colors } = useAppTheme();
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [selectedSchool, setSelectedSchool] = useState<string>(classSelection?.school || 'SOICT');
-  const [selectedProg, setSelectedProg] = useState<{ name: string; code: string }>(
-    { name: classSelection?.programme || 'B.Tech (CS)', code: classSelection?.programmeCode || 'BCS' },
+  const [step, setStep] = useState<Step>(1);
+  const [classes, setClasses] = useState<ClassRef[]>([]);
+  const [source, setSource] = useState<CatalogueSource | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const [selectedSchool, setSelectedSchool] = useState<string>(
+    classSelection?.school ?? '',
   );
-  const [selectedSem, setSelectedSem] = useState<string>(classSelection?.semester || 'II');
-  const [selectedSec, setSelectedSec] = useState<string>(
-    classSelection?.section ? classSelection.section.split(' ').pop() || 'B' : 'B',
+  const [selectedProgramme, setSelectedProgramme] = useState<string>('');
+  const [selectedYear, setSelectedYear] = useState<string>('');
+  const [selectedSection, setSelectedSection] = useState<string>('');
+
+  const seeded = useRef(false);
+
+  // The live list first, the saved one second, the bundled one last.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const saved = await getCachedClassesList();
+      if (!cancelled && saved.length > 0) {
+        setClasses(saved);
+        setSource('saved');
+      }
+
+      try {
+        const live = await getAvailableClassesList();
+        if (cancelled) return;
+        setClasses(live);
+        setSource('live');
+      } catch {
+        if (cancelled) return;
+        if (saved.length === 0) {
+          setClasses(bundledClassList());
+          setSource('bundled');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const codes = useMemo(() => classes.map((entry) => entry.section), [classes]);
+  const programmes = useMemo(() => groupSectionsIntoProgrammes(classes), [classes]);
+  const schools = useMemo(() => schoolsOf(programmes), [programmes]);
+
+  const schoolProgrammes = useMemo(
+    () => schoolProgrammesFor(programmes, selectedSchool),
+    [programmes, selectedSchool],
   );
 
-  const availableProgrammes = PROGRAMMES_BY_SCHOOL[selectedSchool] || PROGRAMMES_BY_SCHOOL['SOICT'];
+  const schoolLabels = useMemo(
+    () => programmeLabels(schoolProgrammes),
+    [schoolProgrammes],
+  );
 
-  // Data-driven options: only years/sections that really exist in the API.
-  const availableYears = yearsForProgramme(selectedProg.code);
-  const effectiveYear = availableYears.includes(selectedSem)
-    ? selectedSem
-    : availableYears[0] ?? selectedSem;
-  const availableSections = sectionsForYear(selectedProg.code, effectiveYear);
-  const effectiveSection = availableSections.includes(selectedSec)
-    ? selectedSec
-    : availableSections[0] ?? selectedSec;
+  const years = useMemo(
+    () => yearsForProgramme(codes, selectedProgramme),
+    [codes, selectedProgramme],
+  );
+
+  // Every class the university publishes for the chosen programme.
+  const programmeSections = useMemo(
+    () => sectionsForProgramme(codes, selectedProgramme),
+    [codes, selectedProgramme],
+  );
+
+  // The published codes of the chosen year.
+  const sections = useMemo(() => {
+    const wanted = normaliseYearLabel(selectedYear);
+    return programmeSections
+      .filter((entry) => normaliseYearLabel(entry.year) === wanted)
+      .map((entry) => entry.section);
+  }, [programmeSections, selectedYear]);
+
+  const currentProgramme: CatalogueProgramme | undefined = useMemo(
+    () => programmes.find((programme) => programme.code === selectedProgramme),
+    [programmes, selectedProgramme],
+  );
+
+  /** The published codes of one programme and year. */
+  const publishedSectionsFor = useCallback(
+    (programmeCode: string, year: string): string[] => {
+      const wanted = normaliseYearLabel(year);
+      return sectionsForProgramme(codes, programmeCode)
+        .filter((entry) => normaliseYearLabel(entry.year) === wanted)
+        .map((entry) => entry.section);
+    },
+    [codes],
+  );
+
+  // Seed the picker once the catalogue is known, keeping the saved class
+  // when the university still publishes it.
+  useEffect(() => {
+    if (seeded.current || programmes.length === 0) return;
+    seeded.current = true;
+
+    const savedSection = classSelection?.section ?? '';
+    const savedParts = parsePublishedSection(savedSection);
+    const savedProgrammeCode = (classSelection?.programmeCode ?? '').toUpperCase();
+
+    const match =
+      programmes.find((programme) => programme.code === savedParts.programmeCode) ??
+      programmes.find(
+        (programme) => programme.apiCode.toUpperCase() === savedProgrammeCode,
+      );
+    const programme = match ?? programmes[0];
+
+    const programmeYears = yearsForProgramme(codes, programme.code);
+    const year = programmeYears.includes(savedParts.year)
+      ? savedParts.year
+      : programmeYears[0] ?? '';
+
+    const programmeSections = publishedSectionsFor(programme.code, year);
+    const section = programmeSections.includes(savedSection)
+      ? savedSection
+      : programmeSections[0] ?? '';
+
+    setSelectedSchool(programme.school);
+    setSelectedProgramme(programme.code);
+    setSelectedYear(year);
+    setSelectedSection(section);
+  }, [programmes, codes, classSelection, publishedSectionsFor]);
+
+  const chooseProgramme = useCallback(
+    (code: string) => {
+      const programmeYears = yearsForProgramme(codes, code);
+      const year = programmeYears[0] ?? '';
+      setSelectedProgramme(code);
+      setSelectedYear(year);
+      setSelectedSection(publishedSectionsFor(code, year)[0] ?? '');
+    },
+    [codes, publishedSectionsFor],
+  );
+
+  const chooseSchool = useCallback(
+    (school: string) => {
+      setSelectedSchool(school);
+      const first = schoolProgrammesFor(programmes, school)[0];
+      if (first) chooseProgramme(first.code);
+    },
+    [programmes, chooseProgramme],
+  );
+
+  const chooseYear = useCallback(
+    (year: string) => {
+      setSelectedYear(year);
+      setSelectedSection(publishedSectionsFor(selectedProgramme, year)[0] ?? '');
+    },
+    [selectedProgramme, publishedSectionsFor],
+  );
+
+  // The stored code is the one the university publishes, never a guess.
+  const storedSection = useMemo(() => {
+    if (sections.includes(selectedSection)) return selectedSection;
+    if (sections.length > 0) return sections[0];
+    return buildSectionCode(
+      selectedProgramme,
+      selectedYear,
+      sectionLetterOf(selectedSection),
+      codes,
+    );
+  }, [sections, selectedSection, selectedProgramme, selectedYear, codes]);
 
   const handleFinish = () => {
+    if (!storedSection) return;
+
+    const programme =
+      currentProgramme ??
+      programmes.find((entry) => entry.code === selectedProgramme) ??
+      fallbackProgrammes()[0];
+
     const selection: ClassSelection = {
-      school: selectedSchool,
-      programme: selectedProg.name,
-      programmeCode: selectedProg.code,
-      semester: effectiveYear,
-      section: effectiveSection,
+      school: selectedSchool || programme.school,
+      programme: programme.name,
+      programmeCode: programme.apiCode,
+      semester: selectedYear,
+      section: storedSection,
     };
 
     setClassSelection(selection);
     router.replace('/(tabs)');
   };
 
-  const previewParse = parseGBUClassCode(effectiveSection);
+  const renderLoading = () => (
+    <View style={styles.stepContainer}>
+      <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Loading classes</Text>
+      <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+        Fetching the classes the university is running right now.
+      </Text>
+      <Skeleton height={44} borderRadius={12} style={styles.skeleton} />
+      <Skeleton height={44} borderRadius={12} style={styles.skeleton} />
+      <Skeleton height={44} borderRadius={12} style={styles.skeleton} />
+    </View>
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={styles.topHeader}>
         <TouchableOpacity
-          onPress={() => (step > 1 ? setStep(((step - 1) as 1 | 2 | 3 | 4)) : router.back())}
+          onPress={() => (step > 1 ? setStep(((step - 1) as Step)) : router.back())}
           style={styles.backBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Back"
@@ -253,151 +311,173 @@ export default function ClassSetupScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {step === 1 && (
-          <View style={styles.stepContainer}>
-            <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Choose your School</Text>
-            <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
-              Select the faculty / school your department belongs to at GBU.
-            </Text>
+        {loading && programmes.length === 0 ? (
+          renderLoading()
+        ) : (
+          <>
+            {source && source !== 'live' && (
+              <View style={[styles.notice, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
+                <CloudOff size={16} color={colors.textSecondary} />
+                <Text style={[styles.noticeText, { color: colors.textSecondary }]}>
+                  {SOURCE_MESSAGES[source]}
+                </Text>
+              </View>
+            )}
 
-            <View style={styles.chipsWrap}>
-              {SCHOOLS.map((school) => (
-                <Chip
-                  key={school}
-                  label={school}
-                  selected={selectedSchool === school}
-                  onPress={() => setSelectedSchool(school)}
-                  style={styles.choiceChip}
-                />
-              ))}
-            </View>
+            {step === 1 && (
+              <View style={styles.stepContainer}>
+                <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Choose your School</Text>
+                <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+                  Select the faculty / school your department belongs to at GBU.
+                </Text>
 
-            <PillButton
-              label="Continue to Programme"
-              onPress={() => setStep(2)}
-              variant="primary"
-              size="md"
-              style={styles.nextBtn}
-            />
-          </View>
-        )}
-
-        {step === 2 && (
-          <View style={styles.stepContainer}>
-            <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Select your Programme</Text>
-            <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
-              Which degree programme are you enrolled in?
-            </Text>
-
-            <View style={styles.chipsWrap}>
-              {availableProgrammes.map((prog) => (
-                <Chip
-                  key={prog.code}
-                  label={`${prog.name} (${prog.code})`}
-                  selected={selectedProg.code === prog.code}
-                  onPress={() => setSelectedProg(prog)}
-                  style={styles.choiceChip}
-                />
-              ))}
-            </View>
-
-            <PillButton
-              label="Continue to Semester"
-              onPress={() => setStep(3)}
-              variant="primary"
-              size="md"
-              style={styles.nextBtn}
-            />
-          </View>
-        )}
-
-        {step === 3 && (
-          <View style={styles.stepContainer}>
-            <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Select your Semester</Text>
-            <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
-              Choose your current academic term.
-            </Text>
-
-            <View style={styles.chipsWrap}>
-              {(availableYears.length > 0 ? availableYears : SEMESTERS).map((sem) => (
-                <Chip
-                  key={sem}
-                  label={
-                    sem === effectiveYear && previewParse.yearLabel !== 'Year ?'
-                      ? `Year ${sem} (${previewParse.yearLabel})`
-                      : `Year ${sem}`
-                  }
-                  selected={effectiveYear === sem}
-                  onPress={() => {
-                    setSelectedSem(sem);
-                    const first = sectionsForYear(selectedProg.code, sem)[0];
-                    if (first) setSelectedSec(first);
-                  }}
-                  style={styles.choiceChip}
-                />
-              ))}
-            </View>
-
-            <PillButton
-              label="Continue to Section"
-              onPress={() => setStep(4)}
-              variant="primary"
-              size="md"
-              style={styles.nextBtn}
-            />
-          </View>
-        )}
-
-        {step === 4 && (
-          <View style={styles.stepContainer}>
-            <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Select your Section / Batch</Text>
-            <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
-              This tunes your timetable and notifications to your exact lectures.
-              {availableSections.length > 0
-                ? ` ${availableSections.length} real section${availableSections.length === 1 ? '' : 's'} found for Year ${effectiveYear}.`
-                : ' Pick the closest match — you can change it later.'}
-            </Text>
-
-            <View style={styles.chipsWrap}>
-              {(availableSections.length > 0 ? availableSections : ['A', 'B', 'C', 'General']).map((sec) => (
-                <Chip
-                  key={sec}
-                  label={availableSections.length > 0 ? sec : `Section ${sec}`}
-                  selected={effectiveSection === sec}
-                  onPress={() => setSelectedSec(sec)}
-                  style={styles.choiceChip}
-                />
-              ))}
-            </View>
-
-            {/* Summary Card */}
-            <GlassCard style={styles.summaryCard}>
-              <Text style={[styles.summaryLabel, { color: colors.accent }]}>TARGET CLASS KEY</Text>
-              <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
-                {effectiveSection}
-              </Text>
-              <Text style={[styles.summarySchool, { color: colors.textSecondary }]}>{selectedSchool} • {selectedProg.name}</Text>
-              <Text style={[styles.summarySchool, { color: colors.textSecondary }]}>
-                {previewParse.displayName}
-              </Text>
-              {effectiveSection && (
-                <View style={[styles.verifiedRow, { borderColor: colors.borderGlass }]}>
-                  <CheckCircle2 size={14} color={colors.accent} />
-                  <Text style={[styles.verifiedText, { color: colors.accent }]}>
-                    Matches the official timetable
-                  </Text>
+                <View style={styles.chipsWrap}>
+                  {schools.map((school) => (
+                    <Chip
+                      key={school}
+                      label={school}
+                      selected={selectedSchool === school}
+                      onPress={() => chooseSchool(school)}
+                      style={styles.choiceChip}
+                    />
+                  ))}
                 </View>
-              )}
-            </GlassCard>
 
-            <PillButton
-              label="Complete Setup"
-              onPress={handleFinish}
-              variant="primary"
-              size="md"
-              style={styles.nextBtn}
-            />
-          </View>
+                <PillButton
+                  label="Continue to Programme"
+                  onPress={() => setStep(2)}
+                  variant="primary"
+                  size="md"
+                  disabled={!selectedSchool}
+                  style={styles.nextBtn}
+                />
+              </View>
+            )}
+
+            {step === 2 && (
+              <View style={styles.stepContainer}>
+                <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Select your Programme</Text>
+                <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+                  {schoolProgrammes.length > 0
+                    ? `The ${selectedSchool} programmes the university is running.`
+                    : 'No programme is running in this school right now.'}
+                </Text>
+
+                <View style={styles.chipsWrap}>
+                  {schoolProgrammes.map((programme) => (
+                    <Chip
+                      key={programme.code}
+                      label={schoolLabels[programme.code] ?? programme.name}
+                      selected={selectedProgramme === programme.code}
+                      onPress={() => chooseProgramme(programme.code)}
+                      style={styles.choiceChip}
+                    />
+                  ))}
+                </View>
+
+                <PillButton
+                  label="Continue to Year"
+                  onPress={() => setStep(3)}
+                  variant="primary"
+                  size="md"
+                  disabled={!selectedProgramme}
+                  style={styles.nextBtn}
+                />
+              </View>
+            )}
+
+            {step === 3 && (
+              <View style={styles.stepContainer}>
+                <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Select your Year</Text>
+                <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+                  Only the years that actually have classes for this programme are listed.
+                </Text>
+
+                <View style={styles.chipsWrap}>
+                  {years.map((year) => (
+                    <Chip
+                      key={year}
+                      label={`Year ${year} (${yearLabelOf(year)})`}
+                      selected={selectedYear === year}
+                      onPress={() => chooseYear(year)}
+                      style={styles.choiceChip}
+                    />
+                  ))}
+                </View>
+
+                <PillButton
+                  label="Continue to Section"
+                  onPress={() => setStep(4)}
+                  variant="primary"
+                  size="md"
+                  disabled={!selectedYear}
+                  style={styles.nextBtn}
+                />
+              </View>
+            )}
+
+            {step === 4 && (
+              <View style={styles.stepContainer}>
+                <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>Select your Section / Batch</Text>
+                <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+                  {sections.length > 0
+                    ? `${sections.length} class${sections.length === 1 ? '' : 'es'} running for Year ${selectedYear}.`
+                    : 'The university publishes no class for this year yet.'}
+                </Text>
+
+                <View style={styles.chipsWrap}>
+                  {sections.map((section) => (
+                    <Chip
+                      key={section}
+                      label={section}
+                      selected={storedSection === section}
+                      onPress={() => setSelectedSection(section)}
+                      style={styles.choiceChip}
+                    />
+                  ))}
+                </View>
+
+                {/* Summary Card: the exact code that gets stored. */}
+                <GlassCard style={styles.summaryCard}>
+                  <Text style={[styles.summaryLabel, { color: colors.accent }]}>CLASS CODE</Text>
+                  <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                    {storedSection || '-'}
+                  </Text>
+                  <Text style={[styles.summarySchool, { color: colors.textSecondary }]}>
+                    {selectedSchool} - {currentProgramme?.name ?? ''}
+                  </Text>
+                  <Text style={[styles.summarySchool, { color: colors.textSecondary }]}>
+                    Year {selectedYear}
+                    {currentProgramme ? ` (${yearLabelOf(selectedYear)})` : ''}
+                    {storedSection && sectionLetterOf(storedSection) !== 'General'
+                      ? ` - Section ${sectionLetterOf(storedSection)}`
+                      : ''}
+                  </Text>
+                  <Text style={[styles.summaryHint, { color: colors.textSecondary }]}>
+                    This is the code the university publishes for your class. It is what your
+                    timetable is matched against.
+                  </Text>
+                  {storedSection && source === 'live' && (
+                    <View style={[styles.verifiedRow, { borderColor: colors.borderGlass }]}>
+                      <CheckCircle2 size={14} color={colors.accent} />
+                      <Text style={[styles.verifiedText, { color: colors.accent }]}>
+                        Matches the official timetable
+                      </Text>
+                    </View>
+                  )}
+                </GlassCard>
+
+                <PillButton
+                  label="Complete Setup"
+                  onPress={handleFinish}
+                  variant="primary"
+                  size="md"
+                  disabled={!storedSection}
+                  style={styles.nextBtn}
+                />
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -433,8 +513,6 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
   },
-  stepBarActive: {},
-  stepBarInactive: {},
   scrollContent: {
     padding: spacing.xl,
     flexGrow: 1,
@@ -462,6 +540,24 @@ const styles = StyleSheet.create({
     marginRight: 10,
     marginBottom: 12,
   },
+  skeleton: {
+    marginBottom: 12,
+  },
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: spacing.lg,
+  },
+  noticeText: {
+    flex: 1,
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 18,
+  },
   summaryCard: {
     marginBottom: spacing.xl,
     padding: spacing.lg,
@@ -481,6 +577,13 @@ const styles = StyleSheet.create({
   summarySchool: {
     fontFamily: 'Inter-Regular',
     fontSize: 13,
+  },
+  summaryHint: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 6,
   },
   verifiedRow: {
     flexDirection: 'row',

@@ -362,7 +362,7 @@ export function parseGBUClassCode(rawCode: string): ParsedClassCode {
   const ALIASES: Record<string, string> = {
     'CSE-CS': 'CSE-Cyber',
     'MCA-DS': 'MCA',
-    'MCA-AI': 'MCA-AI',
+    'MCA-AI': 'MCA',
     'MT-SE': 'MTS',
     'MT-DS': 'MDS',
     'MT-AIR': 'MTA',

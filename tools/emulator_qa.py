@@ -140,20 +140,22 @@ def main():
 
     steps = []
 
-    # Onboarding: three slides, then the class setup step.
+    # Onboarding: three welcome slides, then the class setup screen.
     for _ in range(2):
         tap_text('Next', exact=True, settle=1.5, required=False)
-    tap_text('Set up my class', exact=True, settle=2.0, required=False)
+    tap_text('Get started', exact=True, settle=2.5, required=False)
     steps.append(('onboarding_class_setup', shot(shots, 'onboarding_class_setup')))
 
     # Class setup: pick a class so the app has a section.
-    tap_text('B.Tech CSE', exact=True, settle=1.0, required=False)
-    tap_text('2nd Year', exact=True, settle=1.0, required=False)
-    tap_text('Section B', exact=True, settle=1.0, required=False)
+    tap_text('B.Tech (CS)', settle=1.5, required=False)
+    tap_text('2nd Year', settle=1.5, required=False)
+    tap_text('B', exact=True, settle=1.0, required=False)
     shot(shots, 'class_setup_filled')
+    tap_text('Confirm', exact=True, settle=6.0, required=False)
     tap_text('Get started', exact=True, settle=6.0, required=False)
     allow_notifications()
     steps.append(('home', shot(shots, 'home')))
+
 
     for label, name in (
         ('Timetable', 'tab_timetable'),

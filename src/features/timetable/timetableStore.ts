@@ -1,5 +1,5 @@
 /**
- * GBU One — Centralized Timetable Store & Caching Layer
+ * GBU One - Centralized Timetable Store & Caching Layer
  * Implements in-flight request deduplication, single provider singleton,
  * 6-hour AsyncStorage caching per Section 6.1, and change detection that
  * marks the slots the university actually changed.
@@ -26,6 +26,9 @@ const CHANGES_KEY = (section: string, sem: string) =>
 const inflight = new Map<string, Promise<Timetable>>();
 const changesCache = new Map<string, TimetableDiffItem[]>();
 let cachedClassesList: ClassRef[] | null = null;
+
+/** The last class list the university published, kept for offline use. */
+const CLASSES_KEY = '@gbu_one_class_list';
 
 /**
  * The changes the university published for a class since the last snapshot.
@@ -150,13 +153,47 @@ export async function getSectionTimetable(
   return p;
 }
 
-export async function getAvailableClassesList(): Promise<ClassRef[]> {
-  if (cachedClassesList && cachedClassesList.length > 0) {
+/**
+ * The classes the university currently runs.
+ *
+ * The list is what the class picker is built from, so it has to be the live
+ * one: the university adds and removes sections between sessions. It is also
+ * written to storage, so the picker still works when the network does not.
+ */
+export async function getAvailableClassesList(
+  forceRefresh = false,
+): Promise<ClassRef[]> {
+  if (!forceRefresh && cachedClassesList && cachedClassesList.length > 0) {
     return cachedClassesList;
   }
   const classes = await sharedTimetableProvider.listClasses();
   cachedClassesList = classes;
+  if (classes.length > 0) {
+    try {
+      await AsyncStorage.setItem(CLASSES_KEY, JSON.stringify(classes));
+    } catch {
+      // The saved list is a convenience; the live list is already in hand.
+    }
+  }
   return classes;
+}
+
+/**
+ * The last class list that was fetched, without touching the network.
+ * Empty when the app has never reached the university.
+ */
+export async function getCachedClassesList(): Promise<ClassRef[]> {
+  try {
+    const raw = await AsyncStorage.getItem(CLASSES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as ClassRef[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (entry) => entry && typeof entry.section === 'string' && entry.section.trim().length > 0,
+    );
+  } catch {
+    return [];
+  }
 }
 
 export default getSectionTimetable;

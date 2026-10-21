@@ -52,6 +52,8 @@ export default function ProfileScreen() {
   const [notifyExams, setNotifyExams] = useState(true);
   const [notifyDeadlines, setNotifyDeadlines] = useState(true);
   const [notifyResults, setNotifyResults] = useState(true);
+  const [notifyQuietHours, setNotifyQuietHours] = useState(true);
+  const [timetablePushStatus, setTimetablePushStatus] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -61,6 +63,7 @@ export default function ProfileScreen() {
       '@gbu_one_notify_exams',
       '@gbu_one_notify_deadlines',
       '@gbu_one_notify_results',
+      '@gbu_one_notify_quiet_hours',
     ]).then((pairs) => {
       if (!mounted) return;
       pairs.forEach(([key, val]) => {
@@ -71,6 +74,7 @@ export default function ProfileScreen() {
           if (key === '@gbu_one_notify_exams') setNotifyExams(parsed);
           if (key === '@gbu_one_notify_deadlines') setNotifyDeadlines(parsed);
           if (key === '@gbu_one_notify_results') setNotifyResults(parsed);
+          if (key === '@gbu_one_notify_quiet_hours') setNotifyQuietHours(parsed);
         }
       });
     }).catch(() => {});
@@ -87,7 +91,21 @@ export default function ProfileScreen() {
   const toggleTimetable = (val: boolean) => {
     setNotifyTimetable(val);
     AsyncStorage.setItem('@gbu_one_notify_timetable', String(val)).catch(() => {});
-    setTimetablePushEnabled(val, classSelection?.section).catch(() => {});
+    setTimetablePushEnabled(val, classSelection?.section)
+      .then((applied) => {
+        setTimetablePushStatus(
+          applied
+            ? val
+              ? `This device now gets timetable changes for ${classSelection?.section || 'your class'}.`
+              : 'This device no longer gets timetable changes.'
+            : 'Saved on this phone. The switch starts working once this device is registered for university pushes.',
+        );
+      })
+      .catch(() => {
+        setTimetablePushStatus(
+          'Saved on this phone. The switch starts working once this device is registered for university pushes.',
+        );
+      });
   };
 
   const toggleExams = (val: boolean) => {
@@ -103,6 +121,11 @@ export default function ProfileScreen() {
   const toggleResults = (val: boolean) => {
     setNotifyResults(val);
     AsyncStorage.setItem('@gbu_one_notify_results', String(val)).catch(() => {});
+  };
+
+  const toggleQuietHours = (val: boolean) => {
+    setNotifyQuietHours(val);
+    AsyncStorage.setItem('@gbu_one_notify_quiet_hours', String(val)).catch(() => {});
   };
 
   // Connected local attendance store
@@ -276,7 +299,7 @@ export default function ProfileScreen() {
               return (
                 <View key={sub.subjectCode} style={styles.subjectRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.subjectName, { color: colors.textPrimary }]}>{sub.subjectCode} • {sub.subjectName}</Text>
+                    <Text style={[styles.subjectName, { color: colors.textPrimary }]}>{sub.subjectCode} - {sub.subjectName}</Text>
                     <Text style={[styles.subjectSub, { color: colors.textSecondary }]}>
                       {sub.attended}/{sub.total} ({subStatus.percentage.toFixed(0)}%)
                     </Text>
@@ -407,51 +430,55 @@ export default function ProfileScreen() {
         {/* Notification Preferences */}
         <GlassCard style={styles.card}>
           <Text style={[styles.cardSectionHeader, { color: colors.textPrimary }]}>Notification Preferences</Text>
+          <Text style={[styles.prefDescription, { color: colors.textSecondary }]}>
+            Timetable changes re-target this device straight away. Notices, exams, deadlines,
+            results and quiet hours are saved on this phone only - the university push service
+            does not read them yet, so they do not stop any push.
+          </Text>
 
-          <View style={[styles.toggleRow, { borderBottomColor: colors.divider }]}>
-            <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Smart Notices</Text>
-            <Switch
-              value={notifyNotices}
-              onValueChange={toggleNotices}
-              trackColor={{ false: colors.borderGlass, true: colors.accent }}
-            />
-          </View>
+          <PreferenceRow
+            label="Notices (by category)"
+            hint="Important and general university notices"
+            value={notifyNotices}
+            onChange={toggleNotices}
+          />
 
-          <View style={[styles.toggleRow, { borderBottomColor: colors.divider }]}>
-            <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Timetable & Room Changes</Text>
-            <Switch
-              value={notifyTimetable}
-              onValueChange={toggleTimetable}
-              trackColor={{ false: colors.borderGlass, true: colors.accent }}
-            />
-          </View>
+          <PreferenceRow
+            label="Timetable changes"
+            hint="Room and time changes for your class"
+            value={notifyTimetable}
+            onChange={toggleTimetable}
+            status={timetablePushStatus}
+          />
 
-          <View style={[styles.toggleRow, { borderBottomColor: colors.divider }]}>
-            <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Exam Dates & Date Sheets</Text>
-            <Switch
-              value={notifyExams}
-              onValueChange={toggleExams}
-              trackColor={{ false: colors.borderGlass, true: colors.accent }}
-            />
-          </View>
+          <PreferenceRow
+            label="Exam and date sheet"
+            hint="Date sheet and exam schedule alerts"
+            value={notifyExams}
+            onChange={toggleExams}
+          />
 
-          <View style={[styles.toggleRow, { borderBottomColor: colors.divider }]}>
-            <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Deadlines & Fee Submission</Text>
-            <Switch
-              value={notifyDeadlines}
-              onValueChange={toggleDeadlines}
-              trackColor={{ false: colors.borderGlass, true: colors.accent }}
-            />
-          </View>
+          <PreferenceRow
+            label="Deadlines"
+            hint="Fee submission and other deadlines"
+            value={notifyDeadlines}
+            onChange={toggleDeadlines}
+          />
 
-          <View style={[styles.toggleRow, { borderBottomColor: colors.divider }]}>
-            <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Results & Admit Cards</Text>
-            <Switch
-              value={notifyResults}
-              onValueChange={toggleResults}
-              trackColor={{ false: colors.borderGlass, true: colors.accent }}
-            />
-          </View>
+          <PreferenceRow
+            label="Results"
+            hint="Result postings and admit cards"
+            value={notifyResults}
+            onChange={toggleResults}
+          />
+
+          <PreferenceRow
+            label="Quiet hours"
+            hint="Pause non-urgent pushes between 23:00 and 07:00"
+            value={notifyQuietHours}
+            onChange={toggleQuietHours}
+            last
+          />
         </GlassCard>
 
         {/* Dev Motion Playground Link */}
@@ -514,6 +541,53 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+interface PreferenceRowProps {
+  label: string;
+  hint: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+  status?: string | null;
+  last?: boolean;
+}
+
+function PreferenceRow({
+  label,
+  hint,
+  value,
+  onChange,
+  status,
+  last = false,
+}: PreferenceRowProps) {
+  const { colors } = useAppTheme();
+
+  return (
+    <View
+      style={[
+        styles.toggleRow,
+        !last && { borderBottomColor: colors.divider },
+        last && { borderBottomWidth: 0 },
+      ]}
+    >
+      <View style={styles.toggleTextCol}>
+        <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>{label}</Text>
+        <Text style={[styles.toggleHint, { color: colors.textSecondary }]}>{hint}</Text>
+        {status ? (
+          <Text style={[styles.toggleStatus, { color: colors.textSecondary }]}>{status}</Text>
+        ) : null}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: colors.borderStrong, true: colors.accentFill }}
+        thumbColor={value ? colors.onAccent : colors.textSecondary}
+        ios_backgroundColor={colors.borderStrong}
+        accessibilityLabel={label}
+        accessibilityHint={hint}
+      />
+    </View>
   );
 }
 
@@ -698,16 +772,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 12,
   },
+  prefDescription: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: -6,
+    marginBottom: 10,
+  },
   toggleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 12,
     paddingVertical: 8,
     borderBottomWidth: 1,
   },
+  toggleTextCol: {
+    flex: 1,
+  },
   toggleLabel: {
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter-SemiBold',
     fontSize: 14,
+  },
+  toggleHint: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  toggleStatus: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
   },
   aboutSection: {
     alignItems: 'center',

@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Modal,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -24,7 +25,7 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
-import { GlassCard, Skeleton, EmptyState } from '../../src/components/ui';
+import { GlassCard, Skeleton, EmptyState, Chip } from '../../src/components/ui';
 import {
   Timetable,
   Slot,
@@ -39,6 +40,17 @@ import {
   slotStartToday,
 } from '../../src/features/timetable/schedule';
 import { TIMETABLE_CHANNEL_ID } from '../../src/lib/pushNotifications';
+import {
+  canScheduleReminder,
+  fireAtFor,
+  formatLeadTime,
+  formatLeadTimeVerbose,
+  leadTimeOptions,
+  reminderBody,
+  reminderTitle,
+  type ClassReminder,
+} from '../../src/features/notifications/notificationPreferences';
+import { useNotificationPreferences } from '../../src/features/notifications/useNotificationPreferences';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { useAttendanceStore } from '../../src/features/attendance/attendanceStore';
 import { useAppTheme } from '../../src/lib/ThemeContext';
@@ -59,11 +71,46 @@ export function getCurrentWeekDays() {
       id: (i + 1) as DayIndex,
       label,
       dateNum: String(d.getDate()),
+      date: d,
     };
   });
 }
 
 const DAYS = getCurrentWeekDays();
+
+/** The lead time a class alarm uses until the student picks another one. */
+const DEFAULT_LEAD_MINUTES = 30;
+
+/** The class detail sheet covers most of the screen. */
+const MODAL_SHEET_MAX_HEIGHT = Math.round(Dimensions.get('window').height * 0.9);
+
+/**
+ * Inside a React Native Modal on Android the content view is measured without
+ * constraints, so `flex: 1` resolves to zero and the modal paints nothing.
+ * The overlay therefore carries explicit window-sized dimensions.
+ */
+const MODAL_OVERLAY_SIZE = {
+  width: Dimensions.get('window').width,
+  height: Dimensions.get('window').height,
+};
+
+async function cancelScheduledForSlot(slotId: string): Promise<void> {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    const targets = scheduled.filter((notification) => {
+      const data = notification.content.data;
+      const stored = data && typeof data === 'object' ? data.slotId : undefined;
+      return typeof stored === 'string' && stored === slotId;
+    });
+    await Promise.all(
+      targets.map((notification) =>
+        Notifications.cancelScheduledNotificationAsync(notification.identifier),
+      ),
+    );
+  } catch {
+    // The OS may not report scheduled notifications; the stored list still stands.
+  }
+}
 
 const FACULTY_COLORS = [
   '#C2410C',
@@ -112,6 +159,10 @@ export default function TimetableScreen() {
   // Slot Detail Modal
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [leadMinutes, setLeadMinutes] = useState(DEFAULT_LEAD_MINUTES);
+
+  const { reminders, addReminder, removeReminder, remindersForDay, remindersForSlot } =
+    useNotificationPreferences();
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -152,13 +203,36 @@ export default function TimetableScreen() {
     return timetable.slots.filter((s) => s.day === dayId);
   };
 
-  const activeDaySlots = getDaySlots(selectedDay);
+  const activeDaySlots = useMemo(() => getDaySlots(selectedDay), [timetable, selectedDay]);
+
+  const selectedDayDate = useMemo(() => {
+    const match = DAYS.find((entry) => entry.id === selectedDay);
+    return match ? match.date : new Date();
+  }, [selectedDay]);
+
+  const selectedDayLabel = useMemo(() => {
+    const match = DAYS.find((entry) => entry.id === selectedDay);
+    return match ? match.label : '';
+  }, [selectedDay]);
+
+  // The alarms that belong to the day on screen: an alarm set for one of its
+  // classes, plus any alarm that fires on that calendar day.
+  const dayReminders = useMemo(() => {
+    const daySlotIds = new Set(activeDaySlots.map((slot) => slot.id));
+    const forSlots = reminders.filter((reminder) => daySlotIds.has(reminder.slotId));
+    const forDate = remindersForDay(selectedDayDate);
+    const merged = new Map<string, ClassReminder>();
+    for (const reminder of [...forSlots, ...forDate]) merged.set(reminder.slotId, reminder);
+    return [...merged.values()].sort((a, b) => a.fireAt.localeCompare(b.fireAt));
+  }, [reminders, activeDaySlots, remindersForDay, selectedDayDate]);
 
   const todayIndex = dayIndexForDate(now);
   const slotStatuses = useMemo(
     () => computeSlotStatuses(timetable?.slots ?? [], now),
     [timetable, now],
   );
+
+  const slotReminder = selectedSlot ? remindersForSlot(selectedSlot.id) : undefined;
 
   const getSlotStatus = (slot: Slot) => {
     const label = slotStatuses[slot.id] ?? 'SCHEDULED';
@@ -179,6 +253,8 @@ export default function TimetableScreen() {
         // ignore
       }
     }
+    const existing = remindersForSlot(slot.id);
+    if (existing) setLeadMinutes(existing.leadMinutes);
     setSelectedSlot(slot);
   };
 
@@ -201,21 +277,28 @@ export default function TimetableScreen() {
       return;
     }
 
-    const fireAt = new Date(classDate.getTime() - 10 * 60 * 1000);
-    if (classDate.getTime() <= current.getTime() || fireAt.getTime() <= Date.now()) {
-      showToast('This class has already started — no reminder set');
+    const fireAt = fireAtFor(classDate, leadMinutes);
+    const check = canScheduleReminder(classDate, fireAt, current);
+    if (!check.ok) {
+      showToast(
+        check.reason === 'already-started'
+          ? 'This class has already started - no reminder set'
+          : 'That lead time has already passed - pick a shorter one',
+      );
       return;
     }
 
     try {
-      const current = await Notifications.getPermissionsAsync();
-      let granted = current.granted;
-      if (!granted && current.canAskAgain) {
+      const permission = await Notifications.getPermissionsAsync();
+      let granted = permission.granted;
+      if (!granted && permission.canAskAgain) {
         const asked = await Notifications.requestPermissionsAsync();
         granted = asked.granted;
       }
       if (!granted) {
-        showToast('Notifications are off for GBU One — enable them in Settings to get reminders');
+        showToast(
+          'Notifications are off for GBU One - enable them in Settings to get reminders',
+        );
         return;
       }
 
@@ -226,11 +309,19 @@ export default function TimetableScreen() {
         });
       }
 
+      await cancelScheduledForSlot(slot.id);
+
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: `${slot.subject} starts in 10 minutes`,
-          body: `${slot.start} • ${slot.room || 'Room TBD'}`,
-          data: { type: 'class-reminder', slotId: slot.id, subject: slot.subject, start: slot.start },
+          title: reminderTitle(slot.subject, leadMinutes),
+          body: reminderBody(slot.start, slot.room, leadMinutes),
+          data: {
+            type: 'class-reminder',
+            slotId: slot.id,
+            subject: slot.subject,
+            start: slot.start,
+            leadMinutes: String(leadMinutes),
+          },
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -239,10 +330,29 @@ export default function TimetableScreen() {
         },
       });
 
-      showToast(`Reminder set for ${slot.start}`);
+      await addReminder({
+        leadMinutes,
+        slotId: slot.id,
+        subject: slot.subject,
+        start: slot.start,
+        fireAt: fireAt.toISOString(),
+        channelId: TIMETABLE_CHANNEL_ID,
+      });
+
+      showToast(
+        leadMinutes === 0
+          ? 'Reminder set - the class starts now'
+          : `Reminder set for ${formatLeadTimeVerbose(leadMinutes)} before`,
+      );
     } catch {
-      showToast('Could not schedule the reminder — please try again');
+      showToast('Could not schedule the reminder - please try again');
     }
+  };
+
+  const handleCancelReminder = async (slotId: string) => {
+    await cancelScheduledForSlot(slotId);
+    await removeReminder(slotId);
+    showToast('Reminder cancelled');
   };
 
   return (
@@ -252,7 +362,7 @@ export default function TimetableScreen() {
         <View>
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Class Schedule</Text>
           <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
-            {currentSection} • Semester Session {timetable?.semesterSessionId ?? '39'}
+            {currentSection} - Semester Session {timetable?.semesterSessionId ?? '39'}
           </Text>
         </View>
 
@@ -283,7 +393,7 @@ export default function TimetableScreen() {
       {isOffline && (
         <View style={[styles.offlineBanner, { backgroundColor: colors.warningSoft }]}>
           <WifiOff size={14} color={colors.warning} />
-          <Text style={[styles.offlineText, { color: colors.warning }]}>Offline mode — Showing cached timetable</Text>
+          <Text style={[styles.offlineText, { color: colors.warning }]}>Offline mode - Showing cached timetable</Text>
         </View>
       )}
 
@@ -372,6 +482,56 @@ export default function TimetableScreen() {
           </View>
         )}
 
+        {/* Class alarms for the selected day */}
+        {!loading && (
+          <GlassCard style={styles.alarmsCard}>
+            <View style={styles.alarmsHeader}>
+              <Bell size={16} color={colors.accent} />
+              <Text style={[styles.alarmsTitle, { color: colors.textPrimary }]}>Class alarms</Text>
+              <Text style={[styles.alarmsCount, { color: colors.textSecondary }]}>
+                {selectedDayLabel} - {dayReminders.length}{' '}
+                {dayReminders.length === 1 ? 'alarm' : 'alarms'}
+              </Text>
+            </View>
+
+            {dayReminders.length === 0 ? (
+              <Text style={[styles.alarmsEmpty, { color: colors.textSecondary }]}>
+                No alarm set for this day. Open a class to add one.
+              </Text>
+            ) : (
+              dayReminders.map((reminder) => (
+                <View
+                  key={reminder.slotId}
+                  style={[styles.alarmRow, { borderTopColor: colors.divider }]}
+                >
+                  <View style={styles.alarmInfo}>
+                    <Text
+                      style={[styles.alarmSubject, { color: colors.textPrimary }]}
+                      numberOfLines={1}
+                    >
+                      {reminder.subject}
+                    </Text>
+                    <Text style={[styles.alarmMeta, { color: colors.textSecondary }]}>
+                      {reminder.start} class - alarm {formatLeadTime(reminder.leadMinutes)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.alarmCancel}
+                    onPress={() => {
+                      void handleCancelReminder(reminder.slotId);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Cancel the alarm for ${reminder.subject}`}
+                    hitSlop={8}
+                  >
+                    <Text style={[styles.alarmCancelText, { color: colors.danger }]}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+          </GlassCard>
+        )}
+
         {/* Empty State */}
         {!loading && activeDaySlots.length === 0 && viewMode !== 'week' && (
           <EmptyState
@@ -403,7 +563,7 @@ export default function TimetableScreen() {
                         {slot.subject}
                       </Text>
                       <Text style={[styles.compactRoom, { color: colors.textSecondary }]}>
-                        {slot.room ? `${slot.room} • ` : ''}
+                        {slot.room ? `${slot.room} - ` : ''}
                         {slot.faculty || 'Department Faculty'}
                       </Text>
                     </View>
@@ -590,128 +750,190 @@ export default function TimetableScreen() {
         <Modal
           visible={!!selectedSlot}
           transparent
-          animationType="slide"
+          // Android only supports "none" and "fade"; "slide" leaves the modal
+          // window empty, so the sheet never appears.
+          animationType="none"
           onRequestClose={() => setSelectedSlot(null)}
         >
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
-              {/* Modal Drag Handle */}
-              <View style={[styles.dragHandle, { backgroundColor: colors.borderStrong }]} />
-
-              {/* Close Button */}
-              <View style={styles.modalTopRow}>
-                <View style={[styles.typeBadgePill, { backgroundColor: colors.accentSoft }]}>
-                  <Text style={[styles.typeBadgePillText, { color: colors.accent }]}>
-                    {selectedSlot.type?.toUpperCase() || 'CORE LECTURE'}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.closeBtn, { backgroundColor: colors.surfaceAlt }]}
-                  onPress={() => setSelectedSlot(null)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <X size={16} color={colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-
-              {/* Subject Title */}
-              <Text style={[styles.modalSubject, { color: colors.textPrimary }]}>{selectedSlot.subject}</Text>
-              <Text style={[styles.modalCode, { color: colors.textSecondary }]}>
-                {selectedSlot.subjectCode || currentSection} • Period {selectedSlot.period}
-              </Text>
-
-              {/* Time & Venue Grid */}
-              <View style={[styles.modalGrid, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
-                {/* Time */}
-                <View style={styles.gridItem}>
-                  <Clock size={16} color={colors.accent} />
-                  <View style={{ marginLeft: 10 }}>
-                    <Text style={[styles.gridLabel, { color: colors.textSecondary }]}>Time & Duration</Text>
-                    <Text style={[styles.gridValue, { color: colors.textPrimary }]}>
-                      {selectedSlot.start} - {selectedSlot.end}
-                      {slotDurationMinutes(selectedSlot) !== null
-                        ? ` (${slotDurationMinutes(selectedSlot)} min)`
-                        : ''}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Location */}
-                <View style={styles.gridItem}>
-                  <MapPin size={16} color={colors.accent} />
-                  <View style={{ marginLeft: 10 }}>
-                    <Text style={[styles.gridLabel, { color: colors.textSecondary }]}>Lecture Room</Text>
-                    <Text style={[styles.gridValue, { color: colors.textPrimary }]}>
-                      {selectedSlot.room || 'TBD'}
-                      {classSelection?.school ? ` • ${classSelection.school} Building` : ''}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Faculty */}
-                <View style={styles.gridItem}>
-                  <User size={16} color={colors.accent} />
-                  <View style={{ marginLeft: 10 }}>
-                    <Text style={[styles.gridLabel, { color: colors.textSecondary }]}>Instructor</Text>
-                    <Text style={[styles.gridValue, { color: colors.textPrimary }]}>
-                      {selectedSlot.faculty || 'Department Faculty'}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Quick Attendance Actions */}
-              <View style={styles.actionSection}>
-                <Text style={[styles.actionHeader, { color: colors.textSecondary }]}>Quick Attendance Logging</Text>
-                <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={[styles.actionBtn, styles.presentBtn, { backgroundColor: colors.successSoft, borderColor: colors.success }]}
-                    onPress={() => {
-                      markAttended(selectedSlot.subjectCode || selectedSlot.subject);
-                      if (Platform.OS !== 'web') {
-                        try {
-                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                        } catch {
-                          // ignore
-                        }
-                      }
-                      showToast('Marked Present (+1 class attended)');
-                    }}
-                  >
-                    <CheckCircle size={16} color={colors.success} />
-                    <Text style={[styles.presentBtnText, { color: colors.success }]}>+ Present</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionBtn, styles.absentBtn, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}
-                    onPress={() => {
-                      markMissed(selectedSlot.subjectCode || selectedSlot.subject);
-                      if (Platform.OS !== 'web') {
-                        try {
-                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                        } catch {
-                          // ignore
-                        }
-                      }
-                      showToast('Marked Absent');
-                    }}
-                  >
-                    <XCircle size={16} color={colors.danger} />
-                    <Text style={[styles.absentBtnText, { color: colors.danger }]}>+ Absent</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Reminder Button */}
-              <TouchableOpacity
-                style={[styles.reminderBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}
-                onPress={() => {
-                  void handleScheduleReminder();
-                }}
+            <View style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalContent}
+                showsVerticalScrollIndicator={false}
+                bounces={false}
               >
-                <Bell size={16} color={colors.textPrimary} />
-                <Text style={[styles.reminderBtnText, { color: colors.textPrimary }]}>Set Class Reminder Notification</Text>
-              </TouchableOpacity>
+                {/* Modal Drag Handle */}
+                <View style={[styles.dragHandle, { backgroundColor: colors.borderStrong }]} />
+
+                {/* Close Button */}
+                <View style={styles.modalTopRow}>
+                  <View style={[styles.typeBadgePill, { backgroundColor: colors.accentSoft }]}>
+                    <Text style={[styles.typeBadgePillText, { color: colors.accent }]}>
+                      {selectedSlot.type?.toUpperCase() || 'CORE LECTURE'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.closeBtn, { backgroundColor: colors.surfaceAlt }]}
+                    onPress={() => setSelectedSlot(null)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Subject Title */}
+                <Text style={[styles.modalSubject, { color: colors.textPrimary }]}>{selectedSlot.subject}</Text>
+                <Text style={[styles.modalCode, { color: colors.textSecondary }]}>
+                  {selectedSlot.subjectCode || currentSection} - Period {selectedSlot.period}
+                </Text>
+
+                {/* Time & Venue Grid */}
+                <View style={[styles.modalGrid, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
+                  {/* Time */}
+                  <View style={styles.gridItem}>
+                    <Clock size={16} color={colors.accent} />
+                    <View style={{ marginLeft: 10 }}>
+                      <Text style={[styles.gridLabel, { color: colors.textSecondary }]}>Time & Duration</Text>
+                      <Text style={[styles.gridValue, { color: colors.textPrimary }]}>
+                        {selectedSlot.start} - {selectedSlot.end}
+                        {slotDurationMinutes(selectedSlot) !== null
+                          ? ` (${slotDurationMinutes(selectedSlot)} min)`
+                          : ''}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Location */}
+                  <View style={styles.gridItem}>
+                    <MapPin size={16} color={colors.accent} />
+                    <View style={{ marginLeft: 10 }}>
+                      <Text style={[styles.gridLabel, { color: colors.textSecondary }]}>Lecture Room</Text>
+                      <Text style={[styles.gridValue, { color: colors.textPrimary }]}>
+                        {selectedSlot.room || 'TBD'}
+                        {classSelection?.school ? ` - ${classSelection.school} Building` : ''}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Faculty */}
+                  <View style={styles.gridItem}>
+                    <User size={16} color={colors.accent} />
+                    <View style={{ marginLeft: 10 }}>
+                      <Text style={[styles.gridLabel, { color: colors.textSecondary }]}>Instructor</Text>
+                      <Text style={[styles.gridValue, { color: colors.textPrimary }]}>
+                        {selectedSlot.faculty || 'Department Faculty'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Quick Attendance Actions */}
+                <View style={styles.actionSection}>
+                  <Text style={[styles.actionHeader, { color: colors.textSecondary }]}>Quick Attendance Logging</Text>
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.presentBtn, { backgroundColor: colors.successSoft, borderColor: colors.success }]}
+                      onPress={() => {
+                        markAttended(selectedSlot.subjectCode || selectedSlot.subject);
+                        if (Platform.OS !== 'web') {
+                          try {
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                          } catch {
+                            // ignore
+                          }
+                        }
+                        showToast('Marked Present (+1 class attended)');
+                      }}
+                    >
+                      <CheckCircle size={16} color={colors.success} />
+                      <Text style={[styles.presentBtnText, { color: colors.success }]}>+ Present</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.absentBtn, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}
+                      onPress={() => {
+                        markMissed(selectedSlot.subjectCode || selectedSlot.subject);
+                        if (Platform.OS !== 'web') {
+                          try {
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                          } catch {
+                            // ignore
+                          }
+                        }
+                        showToast('Marked Absent');
+                      }}
+                    >
+                      <XCircle size={16} color={colors.danger} />
+                      <Text style={[styles.absentBtnText, { color: colors.danger }]}>+ Absent</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Class alarm: the student picks how early it rings */}
+                <View style={styles.reminderSection}>
+                  <Text style={[styles.actionHeader, { color: colors.textSecondary }]}>
+                    Class alarm
+                  </Text>
+                  <Text style={[styles.reminderHint, { color: colors.textSecondary }]}>
+                    Pick how long before the class the alarm rings.
+                  </Text>
+
+                  <View style={styles.leadChipRow}>
+                    {leadTimeOptions().map((option) => (
+                      <Chip
+                        key={option.minutes}
+                        label={option.label}
+                        selected={option.minutes === leadMinutes}
+                        onPress={() => setLeadMinutes(option.minutes)}
+                      />
+                    ))}
+                  </View>
+
+                  {slotReminder ? (
+                    <View
+                      style={[
+                        styles.scheduledRow,
+                        { backgroundColor: colors.successSoft, borderColor: colors.success },
+                      ]}
+                    >
+                      <CheckCircle size={16} color={colors.success} />
+                      <Text style={[styles.scheduledText, { color: colors.success }]}>
+                        {slotReminder.leadMinutes === leadMinutes
+                          ? `Alarm set ${formatLeadTime(slotReminder.leadMinutes)}`
+                          : `Alarm set ${formatLeadTime(slotReminder.leadMinutes)} - tap below to change it`}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.scheduledCancel}
+                        onPress={() => {
+                          void handleCancelReminder(slotReminder.slotId);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Cancel the alarm for ${slotReminder.subject}`}
+                        hitSlop={8}
+                      >
+                        <Text style={[styles.scheduledCancelText, { color: colors.danger }]}>
+                          Cancel
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+
+                  <TouchableOpacity
+                    style={[styles.reminderBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}
+                    onPress={() => {
+                      void handleScheduleReminder();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Set class reminder notification ${formatLeadTime(leadMinutes)}`}
+                  >
+                    <Bell size={16} color={colors.textPrimary} />
+                    <Text style={[styles.reminderBtnText, { color: colors.textPrimary }]}>
+                      Set Class Reminder Notification - {formatLeadTime(leadMinutes)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -1079,14 +1301,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   modalOverlay: {
-    flex: 1,
+    ...MODAL_OVERLAY_SIZE,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'flex-end',
   },
-  modalContent: {
+  modalSheet: {
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     borderWidth: 1,
+    // A percentage height does not resolve inside a React Native Modal, so
+    // the sheet is sized in pixels from the window height.
+    maxHeight: MODAL_SHEET_MAX_HEIGHT,
+    height: MODAL_SHEET_MAX_HEIGHT,
+  },
+  modalScroll: {
+    flexGrow: 1,
+    flexShrink: 1,
+  },
+  modalContent: {
     padding: theme.spacing.lg,
     paddingBottom: 36,
   },
@@ -1194,6 +1426,97 @@ const styles = StyleSheet.create({
   reminderBtnText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
+  },
+  reminderSection: {
+    marginTop: 4,
+  },
+  reminderHint: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  leadChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  scheduledRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: theme.radius.chip,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  scheduledText: {
+    flex: 1,
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+  },
+  scheduledCancel: {
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scheduledCancelText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+  },
+  alarmsCard: {
+    marginBottom: 14,
+  },
+  alarmsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  alarmsTitle: {
+    flex: 1,
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 14,
+  },
+  alarmsCount: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 12,
+  },
+  alarmsEmpty: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  alarmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 10,
+    marginTop: 8,
+    borderTopWidth: 1,
+  },
+  alarmInfo: {
+    flex: 1,
+  },
+  alarmSubject: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
+  },
+  alarmMeta: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  alarmCancel: {
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alarmCancelText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
   },
   toastContainer: {
     position: 'absolute',
