@@ -1293,13 +1293,6 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     paddingBottom: 36,
   },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 14,
-  },
   modalTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
