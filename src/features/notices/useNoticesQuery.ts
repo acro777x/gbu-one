@@ -57,8 +57,13 @@ async function fetchNoticesLive(): Promise<NoticeItem[] | null> {
 /**
  * Fetches the real notices straight from the university's public pages. They
  * are plain server-rendered HTML, so no account or backend is needed.
+ *
+ * The wait keeps the parsing of those pages (a couple of hundred kilobytes
+ * of HTML) off the first frames after the app opens, so the startup stays
+ * smooth and the screen paints with what is already cached.
  */
 export async function fetchNoticesFromUniversity(): Promise<NoticeItem[]> {
+  await new Promise((resolve) => setTimeout(resolve, 900));
   const result = await fetchLiveNotices({ timeoutMs: 15000 });
   return toNoticeItems(result.notices);
 }

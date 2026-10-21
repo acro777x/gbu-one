@@ -75,10 +75,10 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({
       setShowTagline(true);
     }, 350);
 
-    // 1700ms: Streamlined, punchy splash sequence
+    // 1250ms: Streamlined, punchy splash sequence
     const handoffTimer = setTimeout(() => {
       finishHandoff();
-    }, 1700);
+    }, 1250);
 
     return () => {
       clearTimeout(wordmarkTimer);

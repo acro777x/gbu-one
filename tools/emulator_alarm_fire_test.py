@@ -65,18 +65,20 @@ def posted_notifications():
     out = adb('shell', 'dumpsys', 'notification', '--noredact')
     if not out:
         return []
-    # The package's own notification records live between the package tag and
-    # the end of its section.
-    blocks = out.split(f'pkg={PACKAGE}')
-    if len(blocks) < 2:
-        return []
-    body = blocks[1]
-    end = body.find('}') if False else len(body)
-    return [
-        line.strip()
-        for line in body[:end].splitlines()
-        if 'NotificationRecord' in line or 'android.title' in line or 'android.text' in line
-    ]
+    records = []
+    for line in out.splitlines():
+        if 'NotificationRecord' in line and f'pkg={PACKAGE}' in line:
+            records.append(line.strip())
+    return records
+
+
+def notification_sound():
+    """The sound the posted notification will play."""
+    out = adb('shell', 'dumpsys', 'notification', '--noredact')
+    for line in out.splitlines():
+        if 'mSound=' in line and 'class_alarm' in line:
+            return line.strip()
+    return ''
 
 
 def scheduled_alarms():
@@ -108,7 +110,22 @@ def main() -> None:
         raise SystemExit(1)
     print(f'  pressing "Ring in 30 s" at {pos}')
     adb('shell', 'input', 'tap', str(pos[0]), str(pos[1]))
-    time.sleep(4)
+    time.sleep(3)
+
+    # On a fresh install the app asks for the notification permission first.
+    for _ in range(4):
+        xml = dump()
+        allow = find(xml, 'Allow', exact=True)
+        if allow is None:
+            break
+        print(f'  granting the notification permission at {allow}')
+        adb('shell', 'input', 'tap', str(allow[0]), str(allow[1]))
+        time.sleep(3)
+        # The screen may need the button pressed again after the prompt.
+        again = find(dump(), 'Ring in 30 s')
+        if again is not None:
+            adb('shell', 'input', 'tap', str(again[0]), str(again[1]))
+            time.sleep(3)
 
     print('  scheduled alarms for the app:', len(scheduled_alarms()))
     for line in scheduled_alarms()[:4]:
@@ -135,6 +152,9 @@ def main() -> None:
         print('\nFIRED: the notification reached the system while the app was in the background.')
         for line in posted_notifications()[:6]:
             print('   ', line[:170])
+        sound = notification_sound()
+        if sound:
+            print('\n   the sound it plays:', sound[:120])
         return
 
     print('\nNOT FIRED: the alarm was scheduled but no notification arrived.')
