@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Modal,
   Platform,
   Dimensions,
 } from 'react-native';
@@ -25,7 +24,7 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
-import { GlassCard, Skeleton, EmptyState, Chip } from '../../src/components/ui';
+import { GlassCard, Skeleton, EmptyState, Chip, SheetOverlay } from '../../src/components/ui';
 import {
   Timetable,
   Slot,
@@ -83,16 +82,6 @@ const DEFAULT_LEAD_MINUTES = 30;
 
 /** The class detail sheet covers most of the screen. */
 const MODAL_SHEET_MAX_HEIGHT = Math.round(Dimensions.get('window').height * 0.9);
-
-/**
- * Inside a React Native Modal on Android the content view is measured without
- * constraints, so `flex: 1` resolves to zero and the modal paints nothing.
- * The overlay therefore carries explicit window-sized dimensions.
- */
-const MODAL_OVERLAY_SIZE = {
-  width: Dimensions.get('window').width,
-  height: Dimensions.get('window').height,
-};
 
 async function cancelScheduledForSlot(slotId: string): Promise<void> {
   try {
@@ -745,27 +734,20 @@ export default function TimetableScreen() {
         )}
       </ScrollView>
 
-      {/* Period Details Modal */}
+      {/* Period Details Sheet */}
       {selectedSlot && (
-        <Modal
+        <SheetOverlay
           visible={!!selectedSlot}
-          transparent
-          // Android only supports "none" and "fade"; "slide" leaves the modal
-          // window empty, so the sheet never appears.
-          animationType="none"
-          onRequestClose={() => setSelectedSlot(null)}
+          onClose={() => setSelectedSlot(null)}
+          height={MODAL_SHEET_MAX_HEIGHT}
         >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
               <ScrollView
                 style={styles.modalScroll}
                 contentContainerStyle={styles.modalContent}
                 showsVerticalScrollIndicator={false}
                 bounces={false}
               >
-                {/* Modal Drag Handle */}
-                <View style={[styles.dragHandle, { backgroundColor: colors.borderStrong }]} />
-
                 {/* Close Button */}
                 <View style={styles.modalTopRow}>
                   <View style={[styles.typeBadgePill, { backgroundColor: colors.accentSoft }]}>
@@ -935,8 +917,7 @@ export default function TimetableScreen() {
                 </View>
               </ScrollView>
             </View>
-          </View>
-        </Modal>
+        </SheetOverlay>
       )}
 
       {/* Floating Toast Notice */}
@@ -1300,19 +1281,9 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     fontSize: 11,
   },
-  modalOverlay: {
-    ...MODAL_OVERLAY_SIZE,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    justifyContent: 'flex-end',
-  },
   modalSheet: {
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    borderWidth: 1,
-    // A percentage height does not resolve inside a React Native Modal, so
-    // the sheet is sized in pixels from the window height.
-    maxHeight: MODAL_SHEET_MAX_HEIGHT,
-    height: MODAL_SHEET_MAX_HEIGHT,
+    // The overlay provides the sheet's own frame, height and rounded corners.
+    flex: 1,
   },
   modalScroll: {
     flexGrow: 1,

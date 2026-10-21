@@ -5,6 +5,7 @@ export * from './Avatar';
 export * from './Skeleton';
 export * from './Toast';
 export * from './EmptyState';
+export * from './SheetOverlay';
 export * from './BottomSheet';
 export * from './FloatingTabBar';
 export * from './HeroCarousel';

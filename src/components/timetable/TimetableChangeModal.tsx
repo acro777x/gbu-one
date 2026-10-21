@@ -1,17 +1,14 @@
 import React from 'react';
-import { StyleSheet, View, Text, Modal, Pressable, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, Pressable } from 'react-native';
 import Animated, {
-  FadeIn,
-  FadeOut,
   SlideInUp,
   SlideOutDown,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAppTheme } from '../../lib/ThemeContext';
+import { SheetOverlay } from '../ui/SheetOverlay';
 import { radius, spacing } from '../../lib/theme';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export interface TimetableChangeModalProps {
   visible: boolean;
@@ -79,19 +76,7 @@ export const TimetableChangeModal: React.FC<TimetableChangeModalProps> = ({
   const badge = getBadgeInfo();
 
   return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="none"
-      onRequestClose={onDismiss}
-    >
-      <Animated.View
-        entering={FadeIn.duration(200)}
-        exiting={FadeOut.duration(150)}
-        style={styles.backdrop}
-      >
-        <Pressable style={StyleSheet.absoluteFill} onPress={onDismiss} />
-
+    <SheetOverlay visible={visible} onClose={onDismiss} variant="center">
         <Animated.View
           entering={SlideInUp.springify().damping(16).stiffness(160)}
           exiting={SlideOutDown.duration(200)}
@@ -140,23 +125,11 @@ export const TimetableChangeModal: React.FC<TimetableChangeModalProps> = ({
             </Pressable>
           </View>
         </Animated.View>
-      </Animated.View>
-    </Modal>
+    </SheetOverlay>
   );
 };
 
 const styles = StyleSheet.create({
-  backdrop: {
-    // A React Native Modal on Android measures its content without
-    // constraints, so `flex: 1` resolves to zero and the card paints
-    // nothing. The backdrop therefore carries explicit window dimensions.
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
   modalCard: {
     width: '100%',
     maxWidth: 380,

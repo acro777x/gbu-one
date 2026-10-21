@@ -3,11 +3,15 @@ import { View, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { FloatingTabBar } from '../../src/components/ui/FloatingTabBar';
 import { useAuthStore } from '../../src/store/useAuthStore';
+import { useSheetStore } from '../../src/store/useSheetStore';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 
 export default function TabLayout() {
   const { user, isGuest } = useAuthStore();
   const { colors } = useAppTheme();
+  // A sheet is drawn inside the screen, so the tab bar has to step aside
+  // while one is open instead of floating on top of it.
+  const isSheetOpen = useSheetStore((state) => state.isSheetOpen);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -17,6 +21,8 @@ export default function TabLayout() {
           tabBarStyle: { display: 'none' }, // Using our custom floating tab bar
         }}
         tabBar={(props) => {
+          if (isSheetOpen) return null;
+
           const currentRoute = props.state.routes[props.state.index].name;
           const activeKey = currentRoute === 'index' ? 'home' : currentRoute;
 
