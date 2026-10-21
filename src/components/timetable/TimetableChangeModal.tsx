@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, Text, Modal, Pressable } from 'react-native';
+import { StyleSheet, View, Text, Modal, Pressable, Dimensions } from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -10,6 +10,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAppTheme } from '../../lib/ThemeContext';
 import { radius, spacing } from '../../lib/theme';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export interface TimetableChangeModalProps {
   visible: boolean;
@@ -145,7 +147,11 @@ export const TimetableChangeModal: React.FC<TimetableChangeModalProps> = ({
 
 const styles = StyleSheet.create({
   backdrop: {
-    flex: 1,
+    // A React Native Modal on Android measures its content without
+    // constraints, so `flex: 1` resolves to zero and the card paints
+    // nothing. The backdrop therefore carries explicit window dimensions.
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',

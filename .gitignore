@@ -27,3 +27,6 @@ lint_out.txt
 tc_out.txt
 qa_ui.xml
 targets_ui.xml
+
+# scratch output of the on-device QA scripts; the curated set lives in docs/qa/release
+docs/qa/emulator/

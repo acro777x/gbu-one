@@ -26,7 +26,7 @@ export interface BottomSheetProps {
   height?: number | string;
 }
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export const BottomSheet: React.FC<BottomSheetProps> = ({
   visible,
@@ -101,7 +101,11 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1,
+    // A React Native Modal on Android measures its content without
+    // constraints, so `flex: 1` resolves to zero and the sheet paints
+    // nothing. The overlay therefore carries explicit window dimensions.
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     justifyContent: 'flex-end',
   },
   backdrop: {
