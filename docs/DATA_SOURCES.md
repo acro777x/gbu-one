@@ -16,6 +16,18 @@ Verified in October 2026; TLS and host status re-verified live on **2026-10-21**
 | Hostels | `http://hostels.gbu.ac.in/` | Hostel info | Check for a notice list; link out otherwise. |
 | Incubation | `https://www.gburif.org/` | Incubation centre | Link out (Explore section). |
 | Faculty directory | `https://faculty.gbu.ac.in` | Faculty | Optional, link out. |
+| End-semester date sheet | `https://exams.gbu.ac.in/uploads/datesheet/<code>-end-sem-<mon>-<yr>.pdf` | One PDF per school (`sobsc`, `sobt`, `soe`, `sohss`, `soict`, `soljg`, `som`, `sovasas`) | The portal publishes a copy with a **text layer**, so the grid can be rebuilt (`worker/examDateSheet.ts`). The combined 34-page scan under `/admin/public/uploads/notices/` is image-only, so do not use it. The set for the running session is published towards the end of the semester; a 404 is reported, never filled with the old sheet. |
+| Result sheets | `https://exams.gbu.ac.in/uploads/results/<code>.pdf` and `/uploads/results/passout/p<code>.pdf` | The published marks, one scan per school | Image-only scans (9-15 MB), so the app opens them in the PDF viewer and the student reads their own row. The personal result and the admit card live behind `gbuexam.in` — link out, never scrape. |
+| Admit card notice | `https://exams.gbu.ac.in/admin/public/uploads/notices/Admit Cards.pdf` | The notice announcing the admit cards | A notice about the cards, not the cards themselves. |
+| Incubation announcements | `https://gburif.org/announcements.php` | The incubation centre's own notices | 15 items, none of them academic. Link out. |
+
+### Read directly by the app
+The app reads the two public notice pages itself when the backend is not
+connected, so the student sees real notices without any account:
+`src/features/notices/liveNotices.ts` fetches `https://www.gbu.ac.in/page/notices`
+and `https://exams.gbu.ac.in/`, parses them, and never throws — a failing
+source is reported and the other one still comes through. The bundled sample
+is only the offline fallback and is labelled as a sample in the app.
 
 ## Host status (verified live 2026-10-21)
 | Host | Result |

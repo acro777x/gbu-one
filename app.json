@@ -60,8 +60,7 @@
           ]
         }
       ],
-      "./plugins/withReleaseSigning",
-      "react-native-blob-util"
+      "./plugins/withReleaseSigning"
     ],
     "scheme": "gbuone"
   }

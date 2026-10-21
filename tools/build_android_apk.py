@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
+import hashlib
 
 SOURCE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 BUILD = os.environ.get('GBU_BUILD_DIR', r'C:\gbuone-build')
@@ -43,6 +44,41 @@ def sync() -> None:
     env_file = os.path.join(SOURCE, '.env')
     if os.path.exists(env_file):
         shutil.copy2(env_file, os.path.join(BUILD, '.env'))
+
+
+def dependency_fingerprint() -> str:
+    """A cheap fingerprint of the dependency files, so a changed lockfile is
+    noticed without hashing the whole tree."""
+    parts = []
+    for name in ('package.json', 'package-lock.json'):
+        path = os.path.join(SOURCE, name)
+        if os.path.exists(path):
+            with open(path, 'rb') as handle:
+                parts.append(handle.read())
+    return hashlib.sha256(b''.join(parts)).hexdigest()
+
+
+def install_dependencies() -> None:
+    """Keeps the build copy's node_modules in step with package.json.
+
+    The copy skips node_modules, so a new dependency (a native module, for
+    example) would otherwise be missing from the Gradle build.
+    """
+    marker = os.path.join(BUILD, '.gbu-deps-fingerprint')
+    current = dependency_fingerprint()
+    previous = ''
+    if os.path.exists(marker):
+        with open(marker, encoding='utf-8') as handle:
+            previous = handle.read().strip()
+
+    if previous == current and os.path.isdir(os.path.join(BUILD, 'node_modules')):
+        print('dependencies unchanged, skipping the install')
+        return
+
+    print('installing dependencies in the build copy')
+    run(['npm', 'install', '--no-audit', '--no-fund'], BUILD)
+    with open(marker, 'w', encoding='utf-8') as handle:
+        handle.write(current)
 
 
 def find_apksigner():
@@ -85,6 +121,7 @@ def main() -> None:
     release = '--release' in sys.argv
     os.makedirs(BUILD, exist_ok=True)
     sync()
+    install_dependencies()
 
     # Always prebuild: the signing plugin writes the GBU_ANDROID_* values into
     # android/gradle.properties, so a prebuild that is skipped would leave the
