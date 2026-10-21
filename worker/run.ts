@@ -7,12 +7,14 @@
  * with an empty parse (layout-change guard lives in noticesJob).
  */
 import { NoticesWorkerJob, fetchWithTlsTolerance } from './noticesJob';
+import { collectCalendarRows } from './calendarJob';
 import {
   ensureSchema, upsertNotices, recordWorkerRun, fetchKnownSourceIds,
   isWorkerSupabaseConfigured, fetchTimetableSnapshots, upsertTimetableSnapshots,
   recordTimetableChanges, fetchPushedChangeKeys,
   saveNoticeRawText, fetchProcessedAttachmentHashes, recordAttachmentProcessing,
   fetchProcessedAttachmentSources,
+  upsertCalendarEvents, upsertExamDateSlots,
 } from './supabaseClient';
 import { sendPushForCandidates, sendPushForTimetableChanges, normaliseClassKey } from './pushSender';
 import {
@@ -94,6 +96,10 @@ async function main(): Promise<void> {
 
   if (supa) {
     await runTimetableStage();
+  }
+
+  if (supa) {
+    await runCalendarStage();
   }
 
   if (supa) {
@@ -271,6 +277,40 @@ async function runTimetableStage(): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(JSON.stringify({ event: 'worker_timetable_error', error: msg }));
     await recordWorkerRun('timetable', 'error', 0, 0, msg);
+  }
+}
+
+/**
+ * Calendar stage: read the university's academic calendar, the holiday list
+ * and (when it is published) the end-semester date sheet, then store them.
+ */
+async function runCalendarStage(): Promise<void> {
+  try {
+    const result = await collectCalendarRows();
+    console.log(JSON.stringify({
+      event: 'worker_calendar_scraped',
+      events: result.events.length,
+      slots: result.slots.length,
+      reasons: result.reasons,
+    }));
+
+    if (!result.ok) {
+      await recordWorkerRun('calendar', 'error', 0, 0, result.reasons.join('; ') || 'no calendar data');
+      return;
+    }
+
+    const written = await upsertCalendarEvents(result.events);
+    const slotsWritten = await upsertExamDateSlots(result.slots);
+    console.log(JSON.stringify({
+      event: 'worker_calendar_upserted',
+      events: written,
+      slots: slotsWritten,
+    }));
+    await recordWorkerRun('calendar', 'ok', result.events.length, result.slots.length);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(JSON.stringify({ event: 'worker_calendar_error', error: msg }));
+    await recordWorkerRun('calendar', 'error', 0, 0, msg);
   }
 }
 

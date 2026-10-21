@@ -1,11 +1,18 @@
 /**
  * GBU One — Notices query (offline-first: cache, then refresh).
- * Order of truth: 1) SQLite cache renders instantly; 2) Supabase `notices`
- * table refreshes in background and rewrites the cache; 3) bundled seed
- * (MOCK_NOTICES) only when BOTH are empty (first launch, no network).
+ * Order of truth:
+ *  1) Supabase `notices` table, when the project is configured.
+ *  2) The live public GBU pages (gbu.ac.in and exams.gbu.ac.in), which need
+ *     no account and no backend.
+ *  3) The SQLite cache, so a screen that has been opened before paints
+ *     instantly and still works offline.
+ *  4) The bundled sample, clearly labelled as a sample, so a first launch
+ *     without a network shows something instead of an empty screen.
  */
 import { useQuery } from '@tanstack/react-query';
 import { MOCK_NOTICES, NoticeItem } from './noticeService';
+import { fetchLiveNotices } from './liveNotices';
+import { toNoticeItems } from './liveNoticeMapping';
 import { readCachedNotices, writeCachedNotices } from '../../lib/db';
 import { NOTICE_QUERY_KEY } from '../../lib/queryClient';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
@@ -28,6 +35,7 @@ function rowToNotice(r: Record<string, unknown>): NoticeItem {
     deadlineAt: (r.deadline_at as string | null | undefined) ?? null,
     threadId: (r.thread_id as string | null | undefined) ?? null,
     threadUpdateCount: Number(r.thread_update_count ?? 0) || undefined,
+    isSample: false,
   };
 }
 
@@ -46,6 +54,15 @@ async function fetchNoticesLive(): Promise<NoticeItem[] | null> {
   }
 }
 
+/**
+ * Fetches the real notices straight from the university's public pages. They
+ * are plain server-rendered HTML, so no account or backend is needed.
+ */
+export async function fetchNoticesFromUniversity(): Promise<NoticeItem[]> {
+  const result = await fetchLiveNotices({ timeoutMs: 15000 });
+  return toNoticeItems(result.notices);
+}
+
 export function useNoticesQuery() {
   return useQuery<NoticeItem[]>({
     queryKey: NOTICE_QUERY_KEY,
@@ -55,6 +72,14 @@ export function useNoticesQuery() {
         writeCachedNotices(live);
         return live;
       }
+
+      // No backend yet, so read the university's own pages.
+      const fromUniversity = await fetchNoticesFromUniversity();
+      if (fromUniversity.length > 0) {
+        writeCachedNotices(fromUniversity);
+        return fromUniversity;
+      }
+
       const cached = readCachedNotices();
       if (cached.length > 0) return cached;
       return MOCK_NOTICES;

@@ -12,6 +12,8 @@ import {
   RawGBUTimetableItem,
   Slot,
   GBU_PERIOD_TIMES,
+  buildStableSlotIds,
+  rowBelongsToSession,
 } from '../src/features/timetable/timetableProvider';
 import { WORKER_CONFIG } from './sources.config';
 import { fetchWithTlsTolerance } from './noticesJob';
@@ -33,19 +35,28 @@ export function snapshotKey(classKey: string, semesterSessionId: string): string
   return `${classKey.trim().toUpperCase()}#${semesterSessionId}`;
 }
 
-/** Deterministic content hash of a timetable's slots (order independent). */
+/**
+ * Deterministic content hash of a timetable's slots (order independent).
+ *
+ * The hash covers everything a student would notice: the day, the period,
+ * the subject (code and name), the room, the teacher and the kind of class
+ * (lecture / lab / tutorial). A teacher swap therefore changes the hash -
+ * without it, the stored baseline would never notice one.
+ */
 export function buildTimetableHash(timetable: Timetable): string {
-  const canonical = [...timetable.slots]
-    .sort((a, b) => a.day - b.day || a.period - b.period)
+  const canonical = timetable.slots
     .map((s) =>
       [
         s.day,
         s.period,
         (s.subjectCode || s.subject || '').trim().toUpperCase(),
+        (s.subject || '').trim().toUpperCase(),
         (s.room || '').trim().toUpperCase(),
+        (s.faculty || '').trim().toUpperCase(),
         s.type || '',
       ].join('|'),
-    );
+    )
+    .sort();
   return createHash('sha256').update(canonical.join('\n')).digest('hex');
 }
 
@@ -53,6 +64,9 @@ export function buildTimetableHash(timetable: Timetable): string {
  * Stable identity for a detected change. The same schedule edit always
  * produces the same key, so a rerun never re-pushes an already delivered
  * change, while a genuinely new edit produces a new key.
+ *
+ * The changed attribute and the teacher are part of the signature, so a
+ * teacher swap is a different change from a room move of the same slot.
  */
 export function computeChangeKey(
   classKey: string,
@@ -65,11 +79,15 @@ export function computeChangeKey(
       const old = d.oldSlot;
       return [
         d.type,
+        d.changedField || '-',
         slot.day,
         slot.period,
         (slot.subjectCode || slot.subject || '').trim().toUpperCase(),
         (slot.room || '').trim().toUpperCase(),
-        old ? `${old.day}.${old.period}:${(old.room || '').trim().toUpperCase()}` : '-',
+        (slot.faculty || '').trim().toUpperCase(),
+        old
+          ? `${old.day}.${old.period}:${(old.room || '').trim().toUpperCase()}:${(old.faculty || '').trim().toUpperCase()}`
+          : '-',
       ].join('|');
     })
     .sort()
@@ -132,18 +150,41 @@ export interface TimetableWorkerResult {
   changedClassesCount: number;
   changes: TimetableChangeRecord[];
   timestamp: string;
+  /**
+   * Sessions the API answered, but which hold no rows of their own. GBU
+   * ignores the `schd` parameter, so a session that does not exist comes
+   * back as a copy of the current one - it is reported as "no data" here
+   * instead of being stored as a second copy.
+   */
+  emptySessions: string[];
+  /** Sessions whose fetch failed. */
+  failedSessions: string[];
+  /** False when the previous snapshot could not be read. */
+  baselineLoaded: boolean;
+  /** True when the run stopped before diffing or writing anything. */
+  aborted: boolean;
+  /** Why the run was aborted. */
+  abortReason: string | null;
 }
 
 /**
  * Normalises raw timetable items into a canonical Timetable object for a section
+ *
+ * Only the rows of the requested session are used: GBU answers every
+ * session request with the rows of the current session, so asking for
+ * another one would otherwise store a byte-identical copy of it.
  */
 export function buildTimetableFromRawItems(
   classKey: string,
   rawItems: RawGBUTimetableItem[],
   semesterSessionId: string,
 ): Timetable {
+  const norm = classKey.trim().toUpperCase();
   const filtered = rawItems.filter(
-    (item) => item.SectionName && item.SectionName.trim().toUpperCase() === classKey.trim().toUpperCase(),
+    (item) =>
+      item.SectionName &&
+      item.SectionName.trim().toUpperCase() === norm &&
+      rowBelongsToSession(item, semesterSessionId),
   );
 
   const slots: Slot[] = filtered.map((item) => {
@@ -157,7 +198,7 @@ export function buildTimetableFromRawItems(
     if (tagLower.includes('tut')) actType = 'tutorial';
 
     return {
-      id: item.TimeTableId || `${item.TT_Day}-${item.TT_Period}-${item.Subject_Code}`,
+      id: '',
       day: dayNum,
       period: periodNum,
       start: timing.start,
@@ -170,11 +211,17 @@ export function buildTimetableFromRawItems(
     };
   });
 
+  // `TimeTableId` is the same constant on every published row and `TTId`
+  // repeats whenever the same slot is published twice, so neither is an
+  // identifier. The stable id is derived from the slot itself.
+  const withIds = buildStableSlotIds(slots);
+  withIds.sort((a, b) => a.day - b.day || a.period - b.period || a.id.localeCompare(b.id));
+
   return {
     classKey,
     fetchedAt: new Date().toISOString(),
     semesterSessionId,
-    slots,
+    slots: withIds,
   };
 }
 
@@ -193,6 +240,15 @@ export function formatTimetableChangeNotification(
       return `${diff.slot.subject} moved to Day ${diff.slot.day} at ${diff.slot.start} (${diff.slot.room || 'Room TBD'})`;
     }
     if (diff.type === 'room_changed') {
+      if (diff.changedField === 'faculty') {
+        return `${diff.slot.subject} teacher changed to ${diff.slot.faculty || 'TBD'} (${diff.slot.start})`;
+      }
+      if (diff.changedField === 'subject') {
+        return `${diff.slot.subject} was renamed by the university (${diff.slot.start})`;
+      }
+      if (diff.changedField === 'type') {
+        return `${diff.slot.subject} is now a ${diff.slot.type || 'class'} (${diff.slot.start})`;
+      }
       return `${diff.slot.subject} room changed to ${diff.slot.room} (${diff.slot.start})`;
     }
     if (diff.type === 'added') {
@@ -229,11 +285,29 @@ function getDayName(day: number): string {
 
 export class TimetablePollerJob {
   private previousSnapshots: Map<string, Timetable> = new Map();
+  private baselineError: string | null = null;
 
   constructor(initialSnapshots?: Map<string, Timetable>) {
     if (initialSnapshots) {
       this.previousSnapshots = new Map(initialSnapshots);
     }
+  }
+
+  /**
+   * Records that the previous snapshot could not be read.
+   *
+   * A failed read must never look like "there was no previous snapshot":
+   * the poller would then diff against nothing and overwrite the stored
+   * baseline with the new data, losing the change for good. The next poll
+   * therefore refuses to diff and to write.
+   */
+  markBaselineUnavailable(reason: string): void {
+    this.baselineError = reason;
+  }
+
+  /** True when the previous snapshot was read successfully. */
+  isBaselineLoaded(): boolean {
+    return this.baselineError === null;
   }
 
   getSnapshot(classKey: string): Timetable | undefined {
@@ -247,6 +321,20 @@ export class TimetablePollerJob {
   /** All current snapshots (keyed by snapshotKey) for persistence. */
   getSnapshots(): Map<string, Timetable> {
     return new Map(this.previousSnapshots);
+  }
+
+  /**
+   * Drops the stored snapshots of one session.
+   *
+   * Used when the API answers a session request with the rows of another
+   * session: the snapshot of that session can only be a duplicate of the
+   * one that really exists.
+   */
+  private dropSessionSnapshots(sessionId: string): void {
+    const suffix = `#${sessionId}`;
+    for (const key of [...this.previousSnapshots.keys()]) {
+      if (key.endsWith(suffix)) this.previousSnapshots.delete(key);
+    }
   }
 
   /**
@@ -284,7 +372,29 @@ export class TimetablePollerJob {
   ): Promise<TimetableWorkerResult> {
     const sessionIds = WORKER_CONFIG.sources.timetableApi.activeSemesters;
     const allChanges: TimetableChangeRecord[] = [];
+    const emptySessions: string[] = [];
+    const failedSessions: string[] = [];
     let totalClassesScanned = 0;
+
+    if (this.baselineError) {
+      // The stored snapshot could not be read: stop before diffing and
+      // before touching the snapshots, so nothing is lost.
+      console.warn(
+        `Worker: Timetable poll aborted, the previous snapshot could not be read: ${this.baselineError}`,
+      );
+      return {
+        sessionIds,
+        totalClassesScanned: 0,
+        changedClassesCount: 0,
+        changes: [],
+        timestamp: new Date().toISOString(),
+        emptySessions,
+        failedSessions,
+        baselineLoaded: false,
+        aborted: true,
+        abortReason: this.baselineError,
+      };
+    }
 
     for (const sessionId of sessionIds) {
       let rawData: RawGBUTimetableItem[];
@@ -294,14 +404,34 @@ export class TimetablePollerJob {
         try {
           rawData = await this.fetchSessionData(sessionId);
         } catch (err) {
+          failedSessions.push(sessionId);
           console.warn(`Worker: Timetable fetch failed for session ${sessionId}:`, err);
           continue;
         }
       }
 
+      // GBU ignores the session parameter and answers with the rows of the
+      // current session. Rows that belong to another session are dropped,
+      // so a session without rows of its own is reported as "no data"
+      // instead of being stored as a copy of the current session.
+      const sessionRows = rawData.filter((item) => rowBelongsToSession(item, sessionId));
+      if (sessionRows.length === 0) {
+        emptySessions.push(sessionId);
+        // A session without rows of its own can only be a phantom copy of
+        // another session (GBU ignores the session parameter). A snapshot
+        // stored for it is a duplicate and is dropped, so it does not
+        // survive in the stored payload either.
+        this.dropSessionSnapshots(sessionId);
+        console.warn(
+          `Worker: Timetable session ${sessionId} has no rows of its own ` +
+            `(the API answered with ${rawData.length} rows of other sessions)`,
+        );
+        continue;
+      }
+
       // Group by SectionName
       const sections = new Set<string>();
-      for (const item of rawData) {
+      for (const item of sessionRows) {
         if (item.SectionName && item.SectionName.trim()) {
           sections.add(item.SectionName.trim());
         }
@@ -342,6 +472,11 @@ export class TimetablePollerJob {
       changedClassesCount: allChanges.length,
       changes: allChanges,
       timestamp: new Date().toISOString(),
+      emptySessions,
+      failedSessions,
+      baselineLoaded: true,
+      aborted: false,
+      abortReason: null,
     };
   }
 }

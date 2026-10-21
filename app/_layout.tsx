@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, StatusBar } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -85,30 +86,40 @@ function AppShell() {
         backgroundColor={colors.bg}
         translucent
       />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.bg },
-          animation: 'fade_from_bottom',
-        }}
-      >
-        <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
-        <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
-        <Stack.Screen name="goal" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="boost" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="teamwork-preview" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="mail" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="exams" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="calendar" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="login" options={{ animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="class-setup" options={{ animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="moderation" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="notice/[id]" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="dev/motion" />
-      </Stack>
-      {!splashFinished && (
+      {/*
+        The app is mounted only after the intro has finished. Rendering it
+        behind the splash meant the Home screen (carousel, images, cards) was
+        decoding and laying out while the mark was animating, which made the
+        startup visibly stutter: 42% janky frames on the release build.
+      */}
+      {!splashFinished ? (
         <SplashScreenView onFinish={handleSplashFinish} />
+      ) : (
+        <Animated.View style={styles.app} entering={FadeIn.duration(220)}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.bg },
+              animation: 'fade_from_bottom',
+            }}
+          >
+            <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
+            <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+            <Stack.Screen name="goal" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="boost" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="teamwork-preview" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="mail" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="exams" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="calendar" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="login" options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="class-setup" options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="moderation" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="notice/[id]" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="pdf" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="dev/motion" />
+          </Stack>
+        </Animated.View>
       )}
     </SafeAreaProvider>
   );
@@ -126,4 +137,5 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  app: { flex: 1 },
 });

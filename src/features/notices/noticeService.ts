@@ -35,6 +35,12 @@ export interface NoticeItem {
   deadlineAt?: string | null;
   threadId?: string | null;
   threadUpdateCount?: number;
+  /**
+   * True when the notice comes from the bundled sample instead of a live
+   * source. The app says so out loud rather than passing the sample off as
+   * a real notice from the university.
+   */
+  isSample?: boolean;
 }
 
 const GBU_SCHOOLS = ['SOICT', 'SOM', 'SOBT', 'SOE', 'SOL', 'SOVSAS', 'SOHSS', 'SOBSC'];
@@ -412,15 +418,21 @@ export function filterNotices(notices: NoticeItem[], filters: NoticeFilters = {}
   });
 }
 
+/**
+ * The bundled sample. It is only shown when the live notices cannot be
+ * reached, and every entry carries `isSample: true` so the app can say so
+ * instead of passing the sample off as a real university notice.
+ */
 export const MOCK_NOTICES: NoticeItem[] = [
   {
     id: 'not_revised_datesheet',
+    isSample: true,
     source: 'exams',
     sourceId: 'src_exam_midsem_revised_2026',
     title: 'Revised Schedule for Mid Semester Examination Autumn Session 2026-27',
     cleanTitle: 'Revised Mid-Semester Exam Datesheet (Autumn 2026)',
     postedAt: '2026-10-19T08:00:00.000Z',
-    fileUrl: 'https://exam.gbu.ac.in',
+    fileUrl: 'https://exams.gbu.ac.in',
     fileType: 'pdf',
     rawText:
       'Gautam Buddha University, Greater Noida\nOffice of the Controller (Examinations)\nRevised Schedule for Mid Semester Examination, Autumn Session 2026-27\n\nThe schedule of the Mid Semester Examination for the Autumn Session 2026-27 has been revised. Students are advised to note the revised dates of their papers carefully.\n\nB.Tech (Computer Science) - III Semester\nSubject Code: BCS-301, Data Structures & Algorithms\nDate of Examination: 03 November 2026\nTime: 09:30 AM to 11:00 AM\n\nSubject Code: BCS-302, Operating System\nDate of Examination: 03 November 2026\nTime: 11:30 AM to 01:00 PM\n\nB.Tech (Computer Science) - V Semester\nSubject Code: BCS-501, Compiler Design\nDate of Examination: 05 November 2026\nTime: 09:30 AM to 11:00 AM\n\nNote: The revised schedule supersedes the earlier notification. Candidates must carry their identity card and a printed copy of the admit card. Reporting time is 20 minutes before the start of the paper.\n\nLast Date for reporting: 03 Nov 2026',
@@ -433,12 +445,13 @@ export const MOCK_NOTICES: NoticeItem[] = [
   },
   {
     id: 'not_1',
+    isSample: true,
     source: 'exams',
     sourceId: 'src_exam_midsem_2026',
     title: 'Schedule for Mid Semester Examination Autumn Session 2026-27',
     cleanTitle: 'Mid Sem Exam Datesheet (Autumn 2026) - Official Schedule',
     postedAt: '2026-10-18T10:00:00.000Z',
-    fileUrl: 'https://exam.gbu.ac.in',
+    fileUrl: 'https://exams.gbu.ac.in',
     fileType: 'pdf',
     category: 'datesheet',
     audience: { all: true },
@@ -449,6 +462,7 @@ export const MOCK_NOTICES: NoticeItem[] = [
   },
   {
     id: 'not_2',
+    isSample: true,
     source: 'main',
     sourceId: 'src_fee_ext_3',
     title: 'Office Order: Final Extension of Fee Submission Date for Monsoon Semester 2026-27',
@@ -467,6 +481,7 @@ export const MOCK_NOTICES: NoticeItem[] = [
   },
   {
     id: 'not_3',
+    isSample: true,
     source: 'main',
     sourceId: 'src_up_scholarship_2026',
     title: 'Submission of Online Application Form for UP Post Matric Scholarship 2026-27',
@@ -481,6 +496,7 @@ export const MOCK_NOTICES: NoticeItem[] = [
   },
   {
     id: 'not_4',
+    isSample: true,
     source: 'hostel',
     sourceId: 'src_hostel_allot_2',
     title: 'Second List of Hostel Allotment for Newly Admitted PG Students 2026',
@@ -494,6 +510,7 @@ export const MOCK_NOTICES: NoticeItem[] = [
   },
   {
     id: 'not_5',
+    isSample: true,
     source: 'exams',
     sourceId: 'src_res_backpaper_2026',
     title: 'Declaration of Results on GBU Exam Portal for Special Back Paper 2026',
@@ -507,6 +524,7 @@ export const MOCK_NOTICES: NoticeItem[] = [
   },
   {
     id: 'not_6',
+    isSample: true,
     source: 'main',
     sourceId: 'src_placement_drive_2026',
     title: 'Corporate Relations Cell (CRC): Campus Placement Drive for B.Tech SOICT 2026 Batch',
@@ -521,6 +539,7 @@ export const MOCK_NOTICES: NoticeItem[] = [
   },
   {
     id: 'not_7',
+    isSample: true,
     source: 'ohms',
     sourceId: 'src_ohms_room_phase2',
     title: 'OHMS Portal: Phase-2 Hostel Room Reallotment and Repaired Wing Occupancy',
@@ -535,6 +554,7 @@ export const MOCK_NOTICES: NoticeItem[] = [
   },
   {
     id: 'not_8',
+    isSample: true,
     source: 'csms',
     sourceId: 'src_csms_reg_autumn',
     title: 'Mandatory Student Profile Verification & Course Registration on CSMS Portal',
@@ -549,6 +569,7 @@ export const MOCK_NOTICES: NoticeItem[] = [
   },
   {
     id: 'not_9',
+    isSample: true,
     source: 'digiforms',
     sourceId: 'src_digiforms_tablet_dist',
     title: 'DigiForms Single-Window: Submission for UP Free Tablet/Smartphone Scheme 2026-27',

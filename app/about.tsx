@@ -86,7 +86,7 @@ export default function AboutScreen() {
             GBU One is an open-source student platform developed for Gautam Buddha University (GBU), Greater Noida.
           </Text>
           <Text style={[styles.bodyParagraph, { color: colors.textPrimary }]}>
-            Notices, examination schedules, academic calendars, and class timetables are mirrored directly from public university websites (gbu.ac.in, test.gbu.ac.in, exam.gbu.ac.in, gbuexam.in, and mygbu.in).
+            Notices, examination schedules, academic calendars, and class timetables are mirrored directly from public university websites (gbu.ac.in, test.gbu.ac.in, exams.gbu.ac.in, gbuexam.in, and mygbu.in).
           </Text>
           <Text style={[styles.bodyParagraph, { color: colors.textPrimary }]}>
             Official records maintained by the Office of the Registrar and Examination Controller take precedence over electronic summaries.

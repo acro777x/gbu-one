@@ -9,6 +9,9 @@ export interface GlassCardProps {
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
   onPress?: () => void;
+  /** A long press opens the card's detail in place instead of the sheet. */
+  onLongPress?: () => void;
+  delayLongPress?: number;
   accentBorder?: boolean;
   glow?: boolean;
   variant?: 'default' | 'elevated' | 'accent' | 'subtle';
@@ -21,6 +24,8 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   style,
   contentStyle,
   onPress,
+  onLongPress,
+  delayLongPress,
   accentBorder = false,
   glow = false,
   variant = 'default',
@@ -45,6 +50,8 @@ export const GlassCard: React.FC<GlassCardProps> = ({
     return (
       <AnimatedPressable
         onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={delayLongPress}
         onPressIn={() => (scale.value = withTiming(0.985, { duration: 120 }))}
         onPressOut={() => (scale.value = withTiming(1, { duration: 160 }))}
         accessibilityRole="button"

@@ -112,6 +112,41 @@ create table if not exists public.results (
   text_index_url text
 );
 
+-- The official academic calendar and the holiday list, as read from the
+-- university's own documents. The event_key keeps the upsert idempotent.
+create table if not exists public.calendar_events (
+  id uuid primary key default gen_random_uuid(),
+  event_key text not null unique,
+  title text not null,
+  date_from date not null,
+  date_to date not null,
+  type text not null default 'academic',
+  semester text not null default '',
+  source_url text not null default '',
+  source text not null default '',
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_calendar_events_from on public.calendar_events (date_from);
+
+-- The end-semester date sheet, read from the per-school PDF the examination
+-- portal publishes.
+create table if not exists public.exam_date_slots (
+  id uuid primary key default gen_random_uuid(),
+  slot_key text not null unique,
+  school_code text not null,
+  programme text not null default '',
+  exam_date date not null,
+  slot text not null,
+  subject_code text not null default '',
+  subject_name text not null,
+  is_back_paper boolean not null default false,
+  source_url text not null default '',
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_exam_date_slots_date on public.exam_date_slots (exam_date);
+
 create table if not exists public.pyq_papers (
   id uuid primary key default gen_random_uuid(),
   school text not null,

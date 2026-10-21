@@ -38,6 +38,18 @@ export interface Timetable {
 
 export interface TimetableDiffItem {
   type: 'added' | 'removed' | 'moved' | 'room_changed';
+  /**
+   * Which attribute of a matched slot changed. `room` when the class moved
+   * to another room, `faculty` when the teacher was swapped, `subject` when
+   * the subject was renamed and `type` when a lecture became a lab (or the
+   * other way round). Absent for `added`, `removed` and `moved`, which are
+   * about the slot itself rather than one of its attributes.
+   *
+   * The `type` stays `room_changed` for every attribute change so that
+   * screens which only know the four kinds keep working; read
+   * `changedField` to tell them apart.
+   */
+  changedField?: 'room' | 'faculty' | 'subject' | 'type';
   slot: Slot;
   oldSlot?: Slot;
   message: string;
@@ -62,6 +74,44 @@ export const GBU_PERIOD_TIMES: Record<number, { start: string; end: string }> = 
   10: { start: '05:30', end: '06:30' },
   11: { start: '06:30', end: '07:30' },
 };
+
+/**
+ * Normalises a value that becomes part of a slot identity.
+ */
+function slotIdPart(value: string | undefined): string {
+  return (value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+/**
+ * Gives every slot of a timetable a stable identity inside its class.
+ *
+ * Neither identifier the university publishes identifies a slot on its own:
+ * `TimeTableId` is the same constant ("23001") on every live row and
+ * `TTId` repeats whenever the same slot is published twice (GBU sends a
+ * second, room-less copy of a slot). The identity is therefore built from
+ * the values that make a slot unique - day, period, subject, room and
+ * teacher - and slots that are identical in all of them get a counter.
+ *
+ * The result is stable across polls: an unchanged timetable always
+ * produces the same ids, so change markers land on the right slot instead
+ * of piling up on one key.
+ */
+export function buildStableSlotIds(slots: Slot[]): Slot[] {
+  const used = new Map<string, number>();
+  return slots.map((slot) => {
+    const base = [
+      `d${slot.day}`,
+      `p${slot.period}`,
+      slotIdPart(slot.subjectCode || slot.subject),
+      slotIdPart(slot.room),
+      slotIdPart(slot.faculty),
+    ].join('|');
+    const seen = used.get(base) ?? 0;
+    used.set(base, seen + 1);
+    const id = seen === 0 ? base : `${base}|${seen}`;
+    return slot.id === id ? slot : { ...slot, id };
+  });
+}
 
 // Raw entry format from the Samay API (https://samay.mygbu.in/api.php).
 // Verified live 2026-10-20: 4,277 records for schd=39 with NO query params,
@@ -90,6 +140,23 @@ export interface RawGBUTimetableItem {
   abbr: string;
   subject_id: string;
   SessionId: string;
+}
+
+/**
+ * Tells whether a raw row belongs to the session that was asked for.
+ *
+ * GBU ignores the `schd` query parameter: every request comes back with
+ * the rows of the current session (SessionId 39). Asking for another
+ * session must therefore not copy the current one - the request is
+ * answered with "no data of its own" for that session instead.
+ *
+ * A row without a session id cannot be attributed to another session, so
+ * it is kept.
+ */
+export function rowBelongsToSession(item: RawGBUTimetableItem, sessionId: string): boolean {
+  const rowSession = (item.SessionId || '').trim();
+  if (!rowSession) return true;
+  return rowSession === sessionId.trim();
 }
 
 export interface ParsedClassCode {
@@ -181,6 +248,8 @@ function rawToTimetable(
   const slots: Slot[] = [];
   for (const item of items) {
     if ((item.SectionName || '').trim().toUpperCase() !== norm) continue;
+    // GBU answers every session request with the current session's rows.
+    if (!rowBelongsToSession(item, sessionId)) continue;
     const dayNum = Math.min(7, Math.max(1, parseInt(item.TT_Day, 10) || 1)) as Slot['day'];
     const periodNum = parseInt(item.TT_Period, 10) || 1;
     const timing = GBU_PERIOD_TIMES[periodNum] ?? { start: '08:30', end: '09:30' };
@@ -188,7 +257,7 @@ function rawToTimetable(
     const type = tag.includes('lab') || tag.includes('practical')
       ? 'lab' : tag.includes('tut') ? 'tutorial' : 'lecture';
     slots.push({
-      id: item.TTId || `${item.TimeTableId}-${item.TT_Day}-${item.TT_Period}`,
+      id: '',
       day: dayNum,
       period: periodNum,
       start: timing.start,
@@ -200,8 +269,9 @@ function rawToTimetable(
       type,
     });
   }
-  slots.sort((a, b) => a.day - b.day || a.period - b.period);
-  return { classKey: norm, fetchedAt: new Date().toISOString(), semesterSessionId: sessionId, slots, source };
+  const withIds = buildStableSlotIds(slots);
+  withIds.sort((a, b) => a.day - b.day || a.period - b.period || a.id.localeCompare(b.id));
+  return { classKey: norm, fetchedAt: new Date().toISOString(), semesterSessionId: sessionId, slots: withIds, source };
 }
 
 async function fetchSamaySession(sessionId: string): Promise<RawGBUTimetableItem[]> {
@@ -427,6 +497,12 @@ export function parseGBUClassCode(rawCode: string): ParsedClassCode {
 /**
  * Computes structured diffs between old and new timetable snapshots
  * Per docs/ARCHITECTURE.md section "Timetable change detection"
+ *
+ * GBU publishes the same logical slot more than once: a class appears as
+ * two rows with the same day, period and subject - one carrying the room
+ * and one with a null room. Rows are therefore never paired positionally:
+ * everything inside a slot is compared as a multiset, so an unchanged
+ * timetable produces no diffs at all.
  */
 export function computeTimetableDiff(
   oldTimetable: Timetable,
@@ -439,60 +515,54 @@ export function computeTimetableDiff(
 
   const diffs: TimetableDiffItem[] = [];
 
-  const remainingOldSlots = [...oldTimetable.slots];
-  const remainingNewSlots = [...newTimetable.slots];
+  const oldGroups = groupSlotsByKey(oldTimetable.slots);
+  const newGroups = groupSlotsByKey(newTimetable.slots);
 
-  // 1. Match unchanged day & period for the same subject
-  for (let i = remainingNewSlots.length - 1; i >= 0; i--) {
-    const newSlot = remainingNewSlots[i];
-    const oldIdx = remainingOldSlots.findIndex((os) => {
-      const sameSubject =
-        os.subjectCode && newSlot.subjectCode
-          ? os.subjectCode.toUpperCase() === newSlot.subjectCode.toUpperCase()
-          : os.subject.toLowerCase() === newSlot.subject.toLowerCase();
-      return os.day === newSlot.day && os.period === newSlot.period && sameSubject;
-    });
+  // 1. Slots that kept their day, period and subject: compare their
+  //    attributes (room, teacher, subject name, lecture/lab).
+  const leftoverOldGroups = new Map(oldGroups);
+  const leftoverNewGroups = new Map(newGroups);
 
-    if (oldIdx !== -1) {
-      const oldSlot = remainingOldSlots[oldIdx];
-      const oldRoom = (oldSlot.room || '').trim();
-      const newRoom = (newSlot.room || '').trim();
-      if (oldRoom !== newRoom && (oldRoom || newRoom)) {
-        diffs.push({
-          type: 'room_changed',
-          slot: newSlot,
-          oldSlot,
-          message: `${newSlot.subject} room changed to ${newRoom || 'Room TBD'} (was ${oldRoom || 'TBD'})`,
-        });
-      }
-      remainingOldSlots.splice(oldIdx, 1);
-      remainingNewSlots.splice(i, 1);
-    }
+  for (const [key, newSlots] of newGroups) {
+    const oldSlots = oldGroups.get(key);
+    if (!oldSlots) continue;
+    leftoverOldGroups.delete(key);
+    leftoverNewGroups.delete(key);
+    diffs.push(...compareSlotAttributes(oldSlots, newSlots));
   }
 
-  // 2. Match moved classes (same subject, different day or period)
-  for (let i = remainingNewSlots.length - 1; i >= 0; i--) {
-    const newSlot = remainingNewSlots[i];
-    const oldIdx = remainingOldSlots.findIndex((os) => {
-      return os.subjectCode && newSlot.subjectCode
-        ? os.subjectCode.toUpperCase() === newSlot.subjectCode.toUpperCase()
-        : os.subject.toLowerCase() === newSlot.subject.toLowerCase();
-    });
+  // 2. Slots that changed their day or period: they are the same class,
+  //    so they are matched by subject.
+  const oldGroupsBySubject = indexGroupsBySubject(leftoverOldGroups);
+  const remainingOldSlots: Slot[] = [];
+  const remainingNewSlots: Slot[] = [];
 
-    if (oldIdx !== -1) {
-      const oldSlot = remainingOldSlots[oldIdx];
+  for (const newSlots of leftoverNewGroups.values()) {
+    const candidates = oldGroupsBySubject.get(subjectKeyOf(newSlots));
+    const oldSlots = candidates && candidates.length > 0 ? candidates.shift() : undefined;
+    if (!oldSlots) {
+      remainingNewSlots.push(...newSlots);
+      continue;
+    }
+    const pairs = Math.min(oldSlots.length, newSlots.length);
+    for (let i = 0; i < pairs; i++) {
       diffs.push({
         type: 'moved',
-        slot: newSlot,
-        oldSlot,
-        message: `${newSlot.subject} moved to Day ${newSlot.day} at ${newSlot.start} (${newSlot.room || 'Room TBD'})`,
+        slot: newSlots[i],
+        oldSlot: oldSlots[i],
+        message: `${newSlots[i].subject} moved to Day ${newSlots[i].day} at ${newSlots[i].start} (${newSlots[i].room || 'Room TBD'})`,
       });
-      remainingOldSlots.splice(oldIdx, 1);
-      remainingNewSlots.splice(i, 1);
     }
+    remainingOldSlots.push(...oldSlots.slice(pairs));
+    remainingNewSlots.push(...newSlots.slice(pairs));
   }
 
-  // 3. Any remaining new slots are newly added
+  // 3. The old slots that were never matched are cancelled / removed.
+  for (const groups of oldGroupsBySubject.values()) {
+    for (const slots of groups) remainingOldSlots.push(...slots);
+  }
+
+  // 4. Any remaining new slots are newly added.
   for (const newSlot of remainingNewSlots) {
     diffs.push({
       type: 'added',
@@ -501,7 +571,7 @@ export function computeTimetableDiff(
     });
   }
 
-  // 4. Any remaining old slots are cancelled / removed
+  // 5. Any remaining old slots are cancelled / removed.
   for (const oldSlot of remainingOldSlots) {
     diffs.push({
       type: 'removed',
@@ -512,6 +582,166 @@ export function computeTimetableDiff(
   }
 
   return diffs;
+}
+
+/**
+ * Key of one logical slot: the day, the period and the subject. GBU sends
+ * the same slot twice (once with a null room), so this key is what groups
+ * the rows of a single class occurrence.
+ */
+function slotGroupKey(slot: Slot): string {
+  return `${slot.day}|${slot.period}|${subjectKeyOf([slot])}`;
+}
+
+/** The subject identity of a slot: its code, or its name without a code. */
+function subjectKeyOf(slots: Slot[]): string {
+  const slot = slots[0];
+  if (!slot) return '';
+  return (slot.subjectCode || slot.subject || '').trim().toUpperCase();
+}
+
+/** Groups the slots of a timetable by their logical slot. */
+function groupSlotsByKey(slots: Slot[]): Map<string, Slot[]> {
+  const groups = new Map<string, Slot[]>();
+  for (const slot of slots) {
+    const key = slotGroupKey(slot);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(slot);
+    else groups.set(key, [slot]);
+  }
+  return groups;
+}
+
+/** Indexes slot groups by subject so a moved class can be found. */
+function indexGroupsBySubject(groups: Map<string, Slot[]>): Map<string, Slot[][]> {
+  const index = new Map<string, Slot[][]>();
+  for (const slots of groups.values()) {
+    const subject = subjectKeyOf(slots);
+    const bucket = index.get(subject);
+    if (bucket) bucket.push(slots);
+    else index.set(subject, [slots]);
+  }
+  return index;
+}
+
+/** One attribute value of one slot, kept together with its slot. */
+interface AttributeValue {
+  /** The normalised value used for the comparison. */
+  value: string;
+  /** The value as the university published it. */
+  display: string;
+  slot: Slot;
+}
+
+/**
+ * Collects one attribute of every slot of a group. A slot that does not
+ * carry the attribute at all (a row without a room) contributes nothing:
+ * it says "unknown", not "no room".
+ */
+function collectAttribute(
+  slots: Slot[],
+  pick: (slot: Slot) => string | undefined,
+): AttributeValue[] {
+  const values: AttributeValue[] = [];
+  for (const slot of slots) {
+    const display = (pick(slot) || '').trim();
+    if (!display) continue;
+    values.push({ value: display.toUpperCase(), display, slot });
+  }
+  values.sort((a, b) => (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
+  return values;
+}
+
+/**
+ * Pairs the old and the new values of one attribute: equal values cancel
+ * out, whatever is left over is a change.
+ */
+function pairAttributeValues(
+  oldValues: AttributeValue[],
+  newValues: AttributeValue[],
+): Array<{ old?: AttributeValue; new?: AttributeValue }> {
+  const remainingOld = [...oldValues];
+  const remainingNew = [...newValues];
+  for (const candidate of [...remainingNew]) {
+    const index = remainingOld.findIndex((old) => old.value === candidate.value);
+    if (index === -1) continue;
+    remainingOld.splice(index, 1);
+    remainingNew.splice(remainingNew.indexOf(candidate), 1);
+  }
+  const pairs: Array<{ old?: AttributeValue; new?: AttributeValue }> = [];
+  const count = Math.max(remainingOld.length, remainingNew.length);
+  for (let i = 0; i < count; i++) {
+    pairs.push({ old: remainingOld[i], new: remainingNew[i] });
+  }
+  return pairs;
+}
+
+/**
+ * Compares the attributes of a slot that stayed in place.
+ *
+ * Compared attributes and why:
+ * - room: students have to know where to go.
+ * - faculty: a teacher swap changes who takes the class.
+ * - subject: the university sometimes renames a subject in place.
+ * - type: a lecture that becomes a lab (or the other way round) changes
+ *   the whole shape of the slot.
+ */
+function compareSlotAttributes(oldSlots: Slot[], newSlots: Slot[]): TimetableDiffItem[] {
+  const diffs: TimetableDiffItem[] = [];
+  const reference = newSlots[0] || oldSlots[0];
+
+  const pushAttributeDiff = (
+    changedField: 'room' | 'faculty' | 'subject' | 'type',
+    message: (before: string, after: string, slot: Slot) => string,
+  ): void => {
+    for (const pair of pairAttributeValues(
+      collectAttribute(oldSlots, (slot) => attributeOf(slot, changedField)),
+      collectAttribute(newSlots, (slot) => attributeOf(slot, changedField)),
+    )) {
+      const before = pair.old ? pair.old.display : '';
+      const after = pair.new ? pair.new.display : '';
+      if (before === after) continue;
+      const slot = (pair.new ? pair.new.slot : pair.old ? pair.old.slot : undefined) || reference;
+      diffs.push({
+        type: 'room_changed',
+        changedField,
+        slot,
+        oldSlot: pair.old ? pair.old.slot : undefined,
+        message: message(before, after, slot),
+      });
+    }
+  };
+
+  pushAttributeDiff('room', (before, after, slot) =>
+    `${slot.subject} room changed to ${after || 'Room TBD'} (was ${before || 'TBD'})`,
+  );
+  pushAttributeDiff('faculty', (before, after, slot) =>
+    `${slot.subject} teacher changed to ${after || 'TBD'} (was ${before || 'TBD'})`,
+  );
+  pushAttributeDiff('subject', (before, after) =>
+    `Subject renamed to ${after || 'Class'} (was ${before || 'Class'})`,
+  );
+  pushAttributeDiff('type', (before, after, slot) =>
+    `${slot.subject} changed from ${before || 'class'} to ${after || 'class'}`,
+  );
+
+  return diffs;
+}
+
+/** The attribute a diff is about, as it is written on the slot. */
+function attributeOf(slot: Slot, changedField: 'room' | 'faculty' | 'subject' | 'type'): string | undefined {
+  switch (changedField) {
+    case 'room':
+      return slot.room;
+    case 'faculty':
+      return slot.faculty;
+    case 'subject':
+      return slot.subject;
+    case 'type':
+      return slot.type;
+    default:
+      return undefined;
+  }
 }
 
 /**

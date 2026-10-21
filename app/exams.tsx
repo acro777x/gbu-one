@@ -22,17 +22,21 @@ import {
   Search,
   Bell,
   Award,
-  AlertCircle,
   ArrowLeft,
+  ExternalLink,
   X,
 } from 'lucide-react-native';
 import { GlassCard, PillButton, Toast } from '../src/components/ui';
 import { CountUp } from '../src/components/motion/CountUp';
 import {
-  searchRollNumberResult,
   calculateExamCountdown,
-  StudentResultRecord,
 } from '../src/features/exams/examService';
+import {
+  PUBLIC_RESULT_SHEETS,
+  openResultPortal,
+  resultSheetForSchool,
+  type ResultSheet,
+} from '../src/features/exams/resultPortals';
 import { useDatesheetQuery } from '../src/features/exams/useDatesheetQuery';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { theme } from '../src/lib/theme';
@@ -43,8 +47,6 @@ export default function ExamsScreen() {
   const { colors, isDark } = useAppTheme();
   const [activeTab, setActiveTab] = useState<'datesheet' | 'results'>('datesheet');
   const [rollQuery, setRollQuery] = useState(user?.rollNo || '22/ICS/042');
-  const [searchResult, setSearchResult] = useState<StudentResultRecord | null>(null);
-  const [hasSearched, setHasSearched] = useState(false);
   const [admitCardReminder, setAdmitCardReminder] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
@@ -56,11 +58,30 @@ export default function ExamsScreen() {
   const semester = classSelection?.semester || 'II';
   const { data: datesheet } = useDatesheetQuery(programmeCode, semester);
 
-  const handleSearchRoll = () => {
-    if (!rollQuery.trim()) return;
-    const res = searchRollNumberResult(rollQuery);
-    setSearchResult(res);
-    setHasSearched(true);
+  const handleOpenResultSheet = (sheet?: ResultSheet) => {
+    const target =
+      sheet ??
+      resultSheetForSchool(user?.classSelection?.school ?? null);
+    if (!target) {
+      setToastMessage('Pick your school from the list below to open your result sheet.');
+      setToastVisible(true);
+      return;
+    }
+    router.push({
+      pathname: '/pdf',
+      params: {
+        url: target.url,
+        title: `${target.school} result sheet`,
+      },
+    });
+  };
+
+  const handleOpenResultPortal = async () => {
+    const opened = await openResultPortal();
+    if (!opened) {
+      setToastMessage('Could not open the university result portal.');
+      setToastVisible(true);
+    }
   };
 
   const handleToggleReminder = (val: boolean) => {
@@ -71,7 +92,6 @@ export default function ExamsScreen() {
 
   const subtleBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.06)';
   const subtleBorder = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.10)';
-  const subtleDivider = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.05)';
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
@@ -213,9 +233,10 @@ export default function ExamsScreen() {
               <View style={styles.resultsHeaderRow}>
                 <Award size={22} color={colors.accent} />
                 <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={[styles.resultsHeaderTitle, { color: colors.textPrimary }]}>On-Device Result Finder</Text>
+                  <Text style={[styles.resultsHeaderTitle, { color: colors.textPrimary }]}>Result Finder</Text>
                   <Text style={[styles.resultsHeaderSub, { color: colors.textSecondary }]}>
-                    Search roll number in official university grade sheets. Data is processed locally and never leaves your device.
+                    The university publishes its results as PDF scans, one sheet per school. Open your
+                    sheet and find your roll number in it.
                   </Text>
                 </View>
               </View>
@@ -239,74 +260,56 @@ export default function ExamsScreen() {
               </View>
 
               <PillButton
-                label="Find My Result"
-                onPress={handleSearchRoll}
+                label="Open my result sheet"
+                onPress={handleOpenResultSheet}
                 variant="primary"
                 size="md"
                 style={{ marginTop: 12 }}
               />
+
+              <PillButton
+                label="Student result portal"
+                onPress={handleOpenResultPortal}
+                variant="outline"
+                size="md"
+                style={{ marginTop: 8 }}
+              />
+
+              <Text style={[styles.resultsHint, { color: colors.textTertiary }]}>
+                The portal asks for your roll number and your mobile number. GBU One never sees or
+                stores them.
+              </Text>
             </GlassCard>
 
-            {/* Results Display */}
-            {hasSearched && searchResult && (
-              <GlassCard style={styles.resultCard} accentBorder>
-                <View style={styles.resultHeader}>
-                  <View>
-                    <Text style={[styles.studentName, { color: colors.textPrimary }]}>{searchResult.studentName}</Text>
-                    <Text style={[styles.studentRoll, { color: colors.textSecondary }]}>{searchResult.rollNo} • {searchResult.programme}</Text>
-                  </View>
-                  <View style={[styles.statusBadge, searchResult.status === 'PASS' ? styles.statusPass : styles.statusPcp]}>
-                    <Text style={[styles.statusText, { color: colors.textPrimary }]}>{searchResult.status}</Text>
-                  </View>
+            {/* The published result sheets, one per school. */}
+            <View style={styles.resultSheetsHeader}>
+              <Text style={[styles.resultsHeaderTitle, { color: colors.textPrimary }]}>
+                Published result sheets
+              </Text>
+              <Text style={[styles.resultsHeaderSub, { color: colors.textSecondary }]}>
+                Every sheet the examination portal publishes for the last session.
+              </Text>
+            </View>
+
+            {PUBLIC_RESULT_SHEETS.filter((sheet) => !sheet.special).map((sheet) => (
+              <TouchableOpacity
+                key={sheet.code}
+                style={[styles.resultSheetRow, { backgroundColor: colors.surface, borderColor: subtleBorder }]}
+                onPress={() => handleOpenResultSheet(sheet)}
+                accessibilityRole="button"
+                accessibilityLabel={`Open the ${sheet.school} result sheet`}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.resultSheetName, { color: colors.textPrimary }]}>
+                    {sheet.school} result sheet
+                  </Text>
+                  <Text style={[styles.resultSheetMeta, { color: colors.textSecondary }]}>
+                    Official PDF published by the examination portal
+                  </Text>
                 </View>
-
-                {/* GPA Stats */}
-                <View
-                  style={[
-                    styles.gpaRow,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.borderGlass,
-                      borderWidth: 1,
-                    },
-                  ]}
-                >
-                  <View style={styles.gpaBox}>
-                    <Text style={[styles.gpaLabel, { color: colors.textSecondary }]}>SGPA</Text>
-                    <Text style={[styles.gpaValue, { color: colors.accent }]}>{searchResult.sgpa.toFixed(2)}</Text>
-                  </View>
-                  <View style={[styles.gpaDivider, { backgroundColor: subtleBorder }]} />
-                  <View style={styles.gpaBox}>
-                    <Text style={[styles.gpaLabel, { color: colors.textSecondary }]}>CGPA</Text>
-                    <Text style={[styles.gpaValue, { color: colors.accent }]}>{searchResult.cgpa.toFixed(2)}</Text>
-                  </View>
-                </View>
-
-                {/* Subject Grades */}
-                <Text style={[styles.gradesTableTitle, { color: colors.textSecondary }]}>Subject-wise Performance</Text>
-                {searchResult.grades.map((g) => (
-                  <View key={g.subjectCode} style={[styles.gradeRow, { borderBottomColor: subtleDivider }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.gradeSubjectName, { color: colors.textPrimary }]}>{g.subjectName}</Text>
-                      <Text style={[styles.gradeSubjectCode, { color: colors.textSecondary }]}>{g.subjectCode} • {g.credits} Credits</Text>
-                    </View>
-                    <View style={[styles.gradeLetterBox, { backgroundColor: colors.accentSoft }]}>
-                      <Text style={[styles.gradeLetter, { color: colors.accent }]}>{g.grade}</Text>
-                    </View>
-                  </View>
-                ))}
-              </GlassCard>
-            )}
-
-            {hasSearched && !searchResult && (
-              <View style={styles.noResultBox}>
-                <AlertCircle size={24} color={colors.warning} />
-                <Text style={[styles.noResultTitle, { color: colors.textPrimary }]}>No matching record found</Text>
-                <Text style={[styles.noResultSub, { color: colors.textSecondary }]}>
-                  No published result found for roll number "{rollQuery}". Ensure your roll number matches university format (e.g. 22/ICS/042).
-                </Text>
-              </View>
-            )}
+                <ExternalLink size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ))}
           </>
         )}
       </ScrollView>
@@ -528,6 +531,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     lineHeight: 16,
+  },
+  resultsHint: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  resultSheetsHeader: {
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+  },
+  resultSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+    minHeight: 56,
+  },
+  resultSheetName: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
+  },
+  resultSheetMeta: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    marginTop: 2,
   },
   searchBar: {
     flexDirection: 'row',

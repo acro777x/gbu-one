@@ -3,15 +3,31 @@
  * Per docs/ARCHITECTURE.md & docs/NOTIFICATIONS.md
  */
 
+const mockLimit = jest.fn();
+const mockSelect = jest.fn(() => ({ limit: mockLimit }));
+const mockFrom = jest.fn(() => ({ select: mockSelect }));
+const mockSupabaseClient = { from: mockFrom };
+
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: jest.fn(() => mockSupabaseClient),
+}));
+
 import {
   TimetablePollerJob,
   buildTimetableFromRawItems,
+  buildTimetableHash,
+  computeChangeKey,
   formatTimetableChangeNotification,
 } from '../worker/timetableJob';
+import {
+  fetchTimetableSnapshots,
+  readTimetableSnapshots,
+} from '../worker/supabaseClient';
 import {
   RawGBUTimetableItem,
   Slot,
   applyDiffsToTimetable,
+  computeTimetableDiff,
 } from '../src/features/timetable/timetableProvider';
 
 describe('Timetable Worker Job & Diff Pipeline', () => {
@@ -177,5 +193,220 @@ describe('Timetable Worker Job & Diff Pipeline', () => {
     expect(cancelledSlot).toBeDefined();
     expect(cancelledSlot?.isChanged).toBe(true);
     expect(cancelledSlot?.changeNote).toContain('Data Structures & Algorithms was cancelled');
+  });
+
+  // GBU publishes the same logical slot twice - once with the room and once
+  // with a null room. The worker used to compare the rows positionally and
+  // reported a "room changed" for every one of them on every poll.
+  const duplicateRowItems: RawGBUTimetableItem[] = [
+    {
+      ...sampleRawItems[0],
+      TimeTableId: '23001',
+      TTId: '189605',
+      Room_Id: '0',
+      RoomName: null as unknown as string,
+      SessionId: '39',
+    },
+    {
+      ...sampleRawItems[0],
+      TimeTableId: '23001',
+      TTId: '175150',
+      Room_Id: '250',
+      RoomName: 'EL102        ',
+      SessionId: '39',
+    },
+    sampleRawItems[1],
+  ];
+
+  it('reports no diffs when the university repeats a slot with a null room', () => {
+    const before = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '39');
+    const after = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '39');
+
+    expect(before.slots.length).toBe(3);
+    expect(computeTimetableDiff(before, after)).toEqual([]);
+  });
+
+  it('reports one room change and one teacher change when the university edits a slot', () => {
+    const before = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '39');
+    const edited = duplicateRowItems.map((item) =>
+      item.TTId === '175150'
+        ? { ...item, RoomName: 'EL103        ', TeacherName: 'Dr. Arun Sharma' }
+        : item,
+    );
+    const after = buildTimetableFromRawItems('BCS-II B', edited, '39');
+
+    const diffs = computeTimetableDiff(before, after);
+    expect(diffs).toHaveLength(2);
+    const roomDiff = diffs.find((d) => d.changedField === 'room');
+    const teacherDiff = diffs.find((d) => d.changedField === 'faculty');
+    expect(roomDiff?.message).toContain('EL103');
+    expect(roomDiff?.oldSlot?.room).toBe('EL102');
+    expect(teacherDiff?.message).toContain('Dr. Arun Sharma');
+    expect(teacherDiff?.oldSlot?.faculty).toBe('Prashant Gaurav');
+  });
+
+  it('gives every slot an id that is unique inside the section and stable across polls', () => {
+    const first = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '39');
+    const second = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '39');
+
+    const ids = first.slots.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(second.slots.map((s) => s.id)).toEqual(ids);
+    // `TimeTableId` is the same constant on every published row.
+    expect(ids.every((id) => id !== '23001')).toBe(true);
+  });
+
+  it('changes the stored hash when the teacher of a slot changes', () => {
+    const before = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '39');
+    const swapped = duplicateRowItems.map((item) =>
+      item.TTId === '175150' ? { ...item, TeacherName: 'Dr. Arun Sharma' } : item,
+    );
+    const after = buildTimetableFromRawItems('BCS-II B', swapped, '39');
+
+    expect(buildTimetableHash(before)).not.toBe(buildTimetableHash(after));
+  });
+
+  it('gives a teacher swap its own change key', () => {
+    const before = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '39');
+    const swapped = duplicateRowItems.map((item) =>
+      item.TTId === '175150' ? { ...item, TeacherName: 'Dr. Arun Sharma' } : item,
+    );
+    const after = buildTimetableFromRawItems('BCS-II B', swapped, '39');
+    const moved = duplicateRowItems.map((item) =>
+      item.TTId === '175150' ? { ...item, RoomName: 'EL103        ' } : item,
+    );
+    const afterMove = buildTimetableFromRawItems('BCS-II B', moved, '39');
+
+    const teacherKey = computeChangeKey('BCS-II B', '39', computeTimetableDiff(before, after));
+    const roomKey = computeChangeKey('BCS-II B', '39', computeTimetableDiff(before, afterMove));
+    expect(teacherKey).not.toBe(roomKey);
+  });
+
+  it('uses only the rows of the requested session', () => {
+    const session39 = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '39');
+    const session40 = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '40');
+
+    expect(session39.slots.length).toBe(3);
+    // The API ignores `schd=40` and answers with the rows of session 39.
+    expect(session40.slots.length).toBe(0);
+  });
+
+  it('reports a session without rows of its own instead of storing a copy of it', async () => {
+    const job = new TimetablePollerJob();
+    const run = await job.pollAndComputeDiffs({
+      '39': duplicateRowItems,
+      '40': duplicateRowItems,
+    });
+
+    expect(run.emptySessions).toEqual(['40']);
+    expect(run.failedSessions).toEqual([]);
+    // One class of session 39 - session 40 is not counted a second time.
+    expect(run.totalClassesScanned).toBe(1);
+    expect(run.changedClassesCount).toBe(0);
+
+    const storedKeys = [...job.getSnapshots().keys()];
+    expect(storedKeys).toEqual(['BCS-II B#39']);
+    expect(storedKeys.some((key) => key.endsWith('#40'))).toBe(false);
+  });
+
+  it('drops a phantom snapshot of a session that has no rows of its own', async () => {
+    // A snapshot stored by the old bug: session 40 held a copy of session 39.
+    const phantom = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '40');
+    const job = new TimetablePollerJob(
+      new Map([
+        ['BCS-II B#39', buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '39')],
+        ['BCS-II B#40', phantom],
+      ]),
+    );
+
+    await job.pollAndComputeDiffs({ '39': duplicateRowItems, '40': duplicateRowItems });
+
+    expect([...job.getSnapshots().keys()]).toEqual(['BCS-II B#39']);
+  });
+
+  it('aborts the poll and keeps the stored snapshot when the baseline cannot be read', async () => {
+    const job = new TimetablePollerJob();
+    job.markBaselineUnavailable('supabase read failed: connection timeout');
+
+    const run = await job.pollAndComputeDiffs({ '39': duplicateRowItems, '40': [] });
+
+    expect(run.aborted).toBe(true);
+    expect(run.abortReason).toContain('connection timeout');
+    expect(run.baselineLoaded).toBe(false);
+    expect(run.changes).toHaveLength(0);
+    expect(run.totalClassesScanned).toBe(0);
+    // Nothing was written, so the stored baseline survives the failure.
+    expect(job.getSnapshots().size).toBe(0);
+  });
+
+  it('formats a teacher change as a teacher change', () => {
+    const before = buildTimetableFromRawItems('BCS-II B', duplicateRowItems, '39');
+    const swapped = duplicateRowItems.map((item) =>
+      item.TTId === '175150' ? { ...item, TeacherName: 'Dr. Arun Sharma' } : item,
+    );
+    const after = buildTimetableFromRawItems('BCS-II B', swapped, '39');
+
+    const message = formatTimetableChangeNotification(
+      'BCS-II B',
+      computeTimetableDiff(before, after),
+    );
+    expect(message).toContain('teacher changed to Dr. Arun Sharma');
+  });
+});
+
+describe('Timetable snapshot baseline', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      SUPABASE_URL: 'https://project.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+    };
+    mockFrom.mockClear();
+    mockSelect.mockClear();
+    mockLimit.mockReset();
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it('treats an empty table as a cold start', async () => {
+    mockLimit.mockResolvedValue({ data: [], error: null });
+
+    const read = await readTimetableSnapshots();
+
+    expect(read.ok).toBe(true);
+    expect(read.snapshots.size).toBe(0);
+    expect(read.error).toBeNull();
+  });
+
+  it('loads the stored snapshots', async () => {
+    mockLimit.mockResolvedValue({
+      data: [{ class_key: 'BCS-II B', hash: 'abc123', payload: { sessions: {} } }],
+      error: null,
+    });
+
+    const read = await readTimetableSnapshots();
+
+    expect(read.ok).toBe(true);
+    expect(read.snapshots.get('BCS-II B')?.hash).toBe('abc123');
+  });
+
+  it('reports a failed read instead of pretending the table is empty', async () => {
+    mockLimit.mockResolvedValue({ data: null, error: { message: 'connection refused' } });
+
+    const read = await readTimetableSnapshots();
+
+    expect(read.ok).toBe(false);
+    expect(read.error).toContain('connection refused');
+    expect(read.snapshots.size).toBe(0);
+  });
+
+  it('refuses to hand out a baseline that could not be read', async () => {
+    mockLimit.mockResolvedValue({ data: null, error: { message: 'connection refused' } });
+
+    await expect(fetchTimetableSnapshots()).rejects.toThrow('connection refused');
   });
 });

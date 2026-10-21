@@ -10,7 +10,6 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  Linking,
   FlatList,
   Platform,
 } from 'react-native';
@@ -31,6 +30,10 @@ import {
   CalendarEvent,
 } from '../src/features/calendar/calendarService';
 import { useCalendarQuery } from '../src/features/calendar/useCalendarQuery';
+import {
+  ACADEMIC_CALENDAR_PDF_URL,
+  HOLIDAY_LIST_PDF_URL,
+} from '../src/features/calendar/officialAcademicCalendar';
 import { theme } from '../src/lib/theme';
 
 import { useAppTheme } from '../src/lib/ThemeContext';
@@ -71,10 +74,25 @@ export default function CalendarScreen() {
   };
 
   const openOfficialCalendarPdf = () => {
-    Linking.openURL(
-      'https://exam.gbu.ac.in/uploads/imp_link/Academic%20Calendar%202026-27.pdf',
-    ).catch(() => {
-      Linking.openURL('https://gbu.ac.in').catch(() => {});
+    // The examination portal publishes the calendar; the host is
+    // `exams.gbu.ac.in` (with an s) - the old link used `exam.gbu.ac.in`,
+    // which does not resolve, so the button did nothing.
+    router.push({
+      pathname: '/pdf',
+      params: {
+        url: ACADEMIC_CALENDAR_PDF_URL,
+        title: 'Academic Calendar 2026-27',
+      },
+    });
+  };
+
+  const openHolidayListPdf = () => {
+    router.push({
+      pathname: '/pdf',
+      params: {
+        url: HOLIDAY_LIST_PDF_URL,
+        title: 'List of Holidays 2026',
+      },
     });
   };
 
@@ -171,6 +189,27 @@ export default function CalendarScreen() {
             <PillButton
               label="View PDF"
               onPress={openOfficialCalendarPdf}
+              variant="outline"
+              size="sm"
+              icon={<ExternalLink size={14} color={colors.accent} style={{ marginRight: 6 }} />}
+            />
+          </View>
+        }
+        ListHeaderComponent={
+          <View style={[styles.sourceCallout, styles.holidayCallout, {
+            backgroundColor: colors.warningSoft,
+            borderColor: colors.warning,
+          }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.sourceTitle, { color: colors.textPrimary }]}>List of holidays 2026</Text>
+              <Text style={[styles.sourceSub, { color: colors.textSecondary }]}>
+                The university publishes the holiday list as a scan in Hindi. It opens in the app so
+                you can read it straight away.
+              </Text>
+            </View>
+            <PillButton
+              label="Open"
+              onPress={openHolidayListPdf}
               variant="outline"
               size="sm"
               icon={<ExternalLink size={14} color={colors.accent} style={{ marginRight: 6 }} />}
@@ -288,6 +327,9 @@ const styles = StyleSheet.create({
     padding: 14,
     marginTop: 20,
     gap: 12,
+  },
+  holidayCallout: {
+    marginTop: 12,
   },
   sourceTitle: {
     fontFamily: 'Inter-SemiBold',

@@ -15,10 +15,11 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Search, Share2, BellRing, X, ExternalLink } from 'lucide-react-native';
+import { Search, Share2, BellRing, X, ExternalLink, Info } from 'lucide-react-native';
 import { NoticeCard, Chip, BottomSheet, PillButton, EmptyState } from '../../src/components/ui';
 import { NoticeItem, filterNotices } from '../../src/features/notices/noticeService';
 import { useNoticesQuery } from '../../src/features/notices/useNoticesQuery';
+import { allNoticesAreSample } from '../../src/features/notices/liveNoticeMapping';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
@@ -39,6 +40,11 @@ export default function NoticesScreen() {
   // Offline-first: renders instantly from SQLite cache (or bundled seed on
   // first launch), then refreshes from Supabase in the background.
   const { data: notices = [], isFetching, refetch } = useNoticesQuery();
+
+  // The bundled sample is only ever shown when the university's own pages
+  // could not be reached, and the app says so rather than passing it off as
+  // the real thing.
+  const isSampleData = useMemo(() => allNoticesAreSample(notices), [notices]);
 
   const availableSchools = useMemo(() => {
     const schools = new Set<string>();
@@ -94,9 +100,21 @@ export default function NoticesScreen() {
         <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
           {isFetching
             ? 'Syncing official GBU sources…'
-            : 'Official GBU, exams, hostel & council circulars • auto-updated every 15 min'}
+            : isSampleData
+              ? 'Sample data — the university pages could not be reached'
+              : 'Live from gbu.ac.in and exams.gbu.ac.in • auto-updated every 15 min'}
         </Text>
       </View>
+
+      {isSampleData ? (
+        <View style={[styles.sampleBanner, { backgroundColor: colors.warningSoft, borderColor: colors.warning }]}>
+          <Info size={15} color={colors.warning} style={{ marginRight: 8 }} />
+          <Text style={[styles.sampleBannerText, { color: colors.textPrimary }]}>
+            These are example notices, not real university notices. Pull to refresh once you are
+            online.
+          </Text>
+        </View>
+      ) : null}
 
       {/* Search Input */}
       <View style={styles.searchSection}>
@@ -305,6 +323,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 12,
     marginTop: 2,
+  },
+  sampleBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radius.card,
+    borderWidth: 1,
+  },
+  sampleBannerText: {
+    flex: 1,
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
   },
   searchSection: {
     paddingHorizontal: theme.spacing.lg,

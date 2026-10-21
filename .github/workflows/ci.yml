@@ -13,9 +13,33 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 22.19.0 is the floor imposed by the dependency tree:
+          #   * undici@8.12.3 declares "engines": { "node": ">=22.19.0" } and
+          #     does not merely warn on Node 20 — it fails to LOAD at all
+          #     (TypeError: Cannot read properties of undefined (reading 'bind')
+          #     at node_modules/undici/lib/interceptor/decompress.js:78).
+          #   * @supabase/supabase-js@2.118.0 calls createClient() ->
+          #     new RealtimeClient() -> getWebSocketConstructor(), which throws
+          #     "Node.js detected but native WebSocket not found." on any Node
+          #     without a global WebSocket (Node < 22).
+          # Node 22 is the first LTS line that satisfies both.
+          node-version: '22.19.0'
           cache: 'npm'
       - run: npm ci || npm install
+      - name: Guard - the runtime must be able to load undici and @supabase/supabase-js
+        run: |
+          node -e '
+            const [maj, min] = process.versions.node.split(".").map(Number);
+            if (maj < 22 || (maj === 22 && min < 19)) {
+              throw new Error("Node >= 22.19.0 required (undici engines), got " + process.versions.node);
+            }
+            if (typeof WebSocket !== "function") {
+              throw new Error("global WebSocket is missing - @supabase/supabase-js cannot create a client");
+            }
+            require("undici");
+            require("@supabase/supabase-js");
+            console.log("runtime ok:", process.version, "| WebSocket:", typeof WebSocket);
+          '
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test

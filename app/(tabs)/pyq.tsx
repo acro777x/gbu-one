@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -33,6 +33,11 @@ import {
   type PyqUploadResult,
 } from '../../src/features/pyq/pyqRepository';
 import { PYQ_ALLOWED_MIME_TYPES } from '../../src/features/pyq/pyqStorage';
+import {
+  buildQueuedUpload,
+  enqueueUpload,
+  readUploadQueue,
+} from '../../src/features/pyq/localUploadQueue';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
@@ -74,6 +79,18 @@ export default function PYQScreen() {
     size: number;
   } | null>(null);
   const [uploading, setUploading] = useState(false);
+  // Papers handed in before the cloud was reachable, waiting to go up.
+  const [queuedCount, setQueuedCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    void readUploadQueue().then((queue) => {
+      if (active) setQueuedCount(queue.length);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Approved papers from the backend; the bundled seed is the offline fallback.
   const { data: papers = MOCK_PAPERS, isFetching, refetch } = usePyqQuery();
@@ -105,11 +122,9 @@ export default function PYQScreen() {
   };
 
   const handleUploadPress = () => {
-    if (isGuest) {
-      setGuestGateVisible(true);
-    } else {
-      setUploadSheetVisible(true);
-    }
+    // The upload sheet is open for everyone: a guest can still hand the paper
+    // in, and it is kept on the phone until the cloud is reachable.
+    setUploadSheetVisible(true);
   };
 
   const handleOpenReport = (paper: PYQItem) => {
@@ -163,23 +178,42 @@ export default function PYQScreen() {
       return;
     }
 
+    const meta = {
+      school: uploadSchool,
+      programmeCode: uploadProgramme,
+      semester: uploadSemester,
+      subjectCode: uploadSubjectCode,
+      subjectName: uploadSubjectName,
+      year: Number(uploadYear),
+      examType: uploadExamType,
+    };
+
     setUploading(true);
-    const result: PyqUploadResult = await uploadPendingPaper(
-      pickedFile,
-      {
-        school: uploadSchool,
-        programmeCode: uploadProgramme,
-        semester: uploadSemester,
-        subjectCode: uploadSubjectCode,
-        subjectName: uploadSubjectName,
-        year: Number(uploadYear),
-        examType: uploadExamType,
-      },
-      user?.id ?? null,
-    );
+    const result: PyqUploadResult = await uploadPendingPaper(pickedFile, meta, user?.id ?? null);
     setUploading(false);
 
     if (!result.ok) {
+      // The cloud is not reachable yet, so the paper is kept on the phone
+      // instead of being thrown away.
+      if (result.reason === 'Cloud sync is not configured yet.') {
+        const entry = buildQueuedUpload(
+          {
+            uri: pickedFile.uri,
+            name: pickedFile.name,
+            mimeType: pickedFile.mimeType,
+            size: pickedFile.size,
+          },
+          meta,
+        );
+        const queue = await enqueueUpload(entry);
+        setQueuedCount(queue.length);
+        setUploadSheetVisible(false);
+        setUploadSubjectCode('');
+        setUploadSubjectName('');
+        setPickedFile(null);
+        showToast('Saved on this phone. It will go up once the library is connected.');
+        return;
+      }
       showToast(result.reason);
       return;
     }
@@ -324,6 +358,16 @@ export default function PYQScreen() {
       </View>
 
       {/* Search Bar */}
+      {queuedCount > 0 ? (
+        <View style={[styles.queuedBanner, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+          <UploadCloud size={15} color={colors.accent} style={{ marginRight: 8 }} />
+          <Text style={[styles.queuedBannerText, { color: colors.textPrimary }]}>
+            {queuedCount} {queuedCount === 1 ? 'paper is' : 'papers are'} waiting on this phone. They
+            will go up as soon as the library is connected.
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.searchSection}>
         <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
           <Search size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
@@ -592,7 +636,7 @@ export default function PYQScreen() {
           </View>
 
           <PillButton
-            label="Submit Question Paper"
+            label={isGuest ? 'Save on this phone' : 'Submit Question Paper'}
             onPress={handleSubmitUpload}
             loading={uploading}
             disabled={uploading}
@@ -601,6 +645,12 @@ export default function PYQScreen() {
             icon={<FileText size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
             style={{ marginTop: 14 }}
           />
+
+          <Text style={[styles.uploadHint, { color: colors.textTertiary }]}>
+            {isGuest
+              ? 'Without an account the paper is kept on this phone and goes up as soon as you sign in. Nothing is lost.'
+              : 'A moderator reviews the paper before it is listed for everyone.'}
+          </Text>
         </View>
       </BottomSheet>
 
@@ -682,6 +732,29 @@ const styles = StyleSheet.create({
   searchSection: {
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.xs,
+  },
+  queuedBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radius.card,
+    borderWidth: 1,
+  },
+  queuedBannerText: {
+    flex: 1,
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  uploadHint: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 8,
+    textAlign: 'center',
   },
   searchBar: {
     flexDirection: 'row',

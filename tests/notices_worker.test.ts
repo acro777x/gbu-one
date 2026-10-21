@@ -8,6 +8,7 @@ import {
   parseExamsNoticesHtml,
   generateSourceId,
   enrichScrapedNotice,
+  parseGbUNoticeDate,
   NoticesWorkerJob,
 } from '../worker/noticesJob';
 import { extractDeadlinesFromText } from '../worker/ocrService';
@@ -210,6 +211,62 @@ describe('Notices Scraper & Parser Worker', () => {
     expect(parsedIsoDate.getUTCFullYear()).toBe(2026);
     expect(parsedIsoDate.getUTCMonth()).toBe(9); // October
     expect(parsedIsoDate.getUTCDate()).toBe(18);
+  });
+
+  it('parses the date shapes GBU publishes', () => {
+    // The main notices page publishes "DD Mon YYYY" (all 214 live rows).
+    const mainDate = parseGbUNoticeDate('21 Oct 2026');
+    expect(mainDate).not.toBeNull();
+    const mainDay = new Date(mainDate as string);
+    expect(mainDay.getUTCFullYear()).toBe(2026);
+    expect(mainDay.getUTCMonth()).toBe(9); // October
+    expect(mainDay.getUTCDate()).toBe(21);
+
+    // The month may be written in lower case.
+    expect(parseGbUNoticeDate('21 oct 2026')).toBe(mainDate);
+
+    // The exams portal publishes "Posted on: DD-MM-YYYY" and does not pad
+    // the month.
+    const examsDate = parseGbUNoticeDate('Posted on: 01-7-2026');
+    expect(examsDate).not.toBeNull();
+    const examsDay = new Date(examsDate as string);
+    expect(examsDay.getUTCFullYear()).toBe(2026);
+    expect(examsDay.getUTCMonth()).toBe(6); // July
+    expect(examsDay.getUTCDate()).toBe(1);
+
+    // The numeric shapes stay supported.
+    const padded = parseGbUNoticeDate('05-09-2026');
+    expect(new Date(padded as string).getUTCMonth()).toBe(8); // September
+    expect(new Date(padded as string).getUTCDate()).toBe(5);
+    const slashed = parseGbUNoticeDate('17/10/2026');
+    expect(new Date(slashed as string).getUTCMonth()).toBe(9); // October
+    expect(new Date(slashed as string).getUTCDate()).toBe(17);
+
+    // The shape the worker writes itself.
+    const iso = parseGbUNoticeDate('2026-10-18');
+    expect(new Date(iso as string).getUTCMonth()).toBe(9);
+    expect(new Date(iso as string).getUTCDate()).toBe(18);
+
+    // Text without a date is reported as such.
+    expect(parseGbUNoticeDate('')).toBeNull();
+    expect(parseGbUNoticeDate('not a date')).toBeNull();
+  });
+
+  it('keeps the published date of a notice instead of calling it today', () => {
+    const enriched = enrichScrapedNotice({
+      source: 'main',
+      rawTitle: 'Notice for Scholarship on NSP Portal',
+      url: 'https://test.gbu.ac.in/Admissions/DownloadFile?nName=scholarship.pdf',
+      dateStr: '01 Oct 2026',
+    });
+
+    const posted = new Date(enriched.postedAt);
+    expect(posted.getUTCFullYear()).toBe(2026);
+    expect(posted.getUTCMonth()).toBe(9); // October
+    expect(posted.getUTCDate()).toBe(1);
+    // The published date is not "today", so the notice does not get the
+    // "published within 48 hours" bonus.
+    expect(enriched.postedAt).not.toBe(new Date().toISOString());
   });
 
   it('extracts OCR deadlines from raw text both with and without explicit year', () => {

@@ -5,7 +5,8 @@
  * the screen usable when the backend is not reachable.
  */
 import { useQuery } from '@tanstack/react-query';
-import { MOCK_CALENDAR_EVENTS, type CalendarEvent } from './calendarService';
+import { type CalendarEvent } from './calendarService';
+import { OFFICIAL_ACADEMIC_EVENTS } from './officialAcademicCalendar';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 export const CALENDAR_QUERY_KEY = ['calendar-events'] as const;
@@ -62,9 +63,11 @@ export function useCalendarQuery() {
     queryKey: CALENDAR_QUERY_KEY,
     queryFn: async () => {
       const events = await listCalendarEvents();
-      return events.length > 0 ? events : MOCK_CALENDAR_EVENTS;
+      // The official calendar ships with the app, so the screen is right even
+      // before the worker has pushed the parsed rows to the backend.
+      return events.length > 0 ? events : OFFICIAL_ACADEMIC_EVENTS;
     },
-    initialData: MOCK_CALENDAR_EVENTS,
+    initialData: OFFICIAL_ACADEMIC_EVENTS,
     staleTime: 30 * 60 * 1000,
   });
 }

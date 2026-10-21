@@ -7,6 +7,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { SCHEMA_SQL } from '../supabase/schema';
 import type { NoticeItem } from '../src/features/notices/noticeService';
+import type { CalendarEventRow, DateSlotRow } from './calendarJob';
 
 let client: SupabaseClient | null = null;
 
@@ -81,6 +82,60 @@ export async function upsertNotices(notices: NoticeItem[]): Promise<number> {
       }
     } catch (err) {
       console.warn('Worker: notices upsert threw:', err);
+    }
+  }
+  return written;
+}
+
+/**
+ * Stores the academic calendar events read from the university's own
+ * documents. The key makes a repeated run update the row instead of
+ * duplicating it.
+ */
+export async function upsertCalendarEvents(
+  events: CalendarEventRow[],
+): Promise<number> {
+  const sb = getWorkerSupabase();
+  if (!sb || events.length === 0) return 0;
+  const BATCH = 100;
+  let written = 0;
+  for (let i = 0; i < events.length; i += BATCH) {
+    const batch = events.slice(i, i + BATCH);
+    try {
+      const { error } = await sb
+        .from('calendar_events')
+        .upsert(batch, { onConflict: 'event_key' });
+      if (error) {
+        console.warn('Worker: calendar_events upsert failed:', error.message);
+      } else {
+        written += batch.length;
+      }
+    } catch (err) {
+      console.warn('Worker: calendar_events upsert threw:', err);
+    }
+  }
+  return written;
+}
+
+/** Stores the date-sheet slots read from the per-school PDFs. */
+export async function upsertExamDateSlots(slots: DateSlotRow[]): Promise<number> {
+  const sb = getWorkerSupabase();
+  if (!sb || slots.length === 0) return 0;
+  const BATCH = 100;
+  let written = 0;
+  for (let i = 0; i < slots.length; i += BATCH) {
+    const batch = slots.slice(i, i + BATCH);
+    try {
+      const { error } = await sb
+        .from('exam_date_slots')
+        .upsert(batch, { onConflict: 'slot_key' });
+      if (error) {
+        console.warn('Worker: exam_date_slots upsert failed:', error.message);
+      } else {
+        written += batch.length;
+      }
+    } catch (err) {
+      console.warn('Worker: exam_date_slots upsert threw:', err);
     }
   }
   return written;
@@ -308,29 +363,69 @@ export interface StoredTimetableSnapshot {
   payload: unknown;
 }
 
+export interface TimetableSnapshotRead {
+  /**
+   * False when the snapshots could not be read. An empty table is a valid
+   * cold start (`ok` is then true with an empty map) - only a failed read
+   * sets `ok` to false.
+   */
+  ok: boolean;
+  snapshots: Map<string, StoredTimetableSnapshot>;
+  error: string | null;
+}
+
+/**
+ * Reads the last known timetable snapshot per class and reports whether
+ * the read worked.
+ *
+ * The two cases must not be mixed up: "the table is empty" means the
+ * worker starts from a clean baseline, "the read failed" means the worker
+ * knows nothing about the previous state and must not overwrite it.
+ */
+export async function readTimetableSnapshots(
+  limit = 2000,
+): Promise<TimetableSnapshotRead> {
+  const sb = getWorkerSupabase();
+  const snapshots = new Map<string, StoredTimetableSnapshot>();
+  if (!sb) return { ok: true, snapshots, error: null };
+  try {
+    const { data, error } = await sb
+      .from('timetable_snapshots')
+      .select('class_key,hash,payload')
+      .limit(limit);
+    if (error) {
+      return { ok: false, snapshots, error: error.message };
+    }
+    for (const r of (data ?? []) as Array<{ class_key: string; hash: string; payload: unknown }>) {
+      if (!r?.class_key) continue;
+      snapshots.set(r.class_key, { classKey: r.class_key, hash: r.hash ?? '', payload: r.payload });
+    }
+    return { ok: true, snapshots, error: null };
+  } catch (err) {
+    return {
+      ok: false,
+      snapshots,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 /**
  * Loads the last known timetable snapshot per class so the worker can diff
  * against the previous run (the worker itself is stateless between runs).
+ *
+ * Throws when the read failed. A failed read must not be mistaken for a
+ * cold start: the caller would then diff against nothing and overwrite
+ * the stored snapshot with the new data, losing the change for good.
  */
 export async function fetchTimetableSnapshots(
   limit = 2000,
 ): Promise<Map<string, StoredTimetableSnapshot>> {
-  const sb = getWorkerSupabase();
-  const out = new Map<string, StoredTimetableSnapshot>();
-  if (!sb) return out;
-  try {
-    const { data } = await sb
-      .from('timetable_snapshots')
-      .select('class_key,hash,payload')
-      .limit(limit);
-    for (const r of (data ?? []) as Array<{ class_key: string; hash: string; payload: unknown }>) {
-      if (!r?.class_key) continue;
-      out.set(r.class_key, { classKey: r.class_key, hash: r.hash ?? '', payload: r.payload });
-    }
-  } catch {
-    // ignore — treated as a cold start (baseline only, no diffs)
+  const read = await readTimetableSnapshots(limit);
+  if (!read.ok) {
+    throw new Error(`Timetable snapshot read failed: ${read.error ?? 'unknown error'}`);
   }
-  return out;
+  return read.snapshots;
 }
 
 /** Upserts the latest snapshot per class (one row per class_key). */

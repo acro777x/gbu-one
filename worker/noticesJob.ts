@@ -292,6 +292,82 @@ export function parseSubdomainHtml(
 }
 
 /**
+ * The hour (UTC) a published date is anchored to.
+ *
+ * GBU publishes a day, not a moment. 06:00 UTC is 11:30 in IST, so a
+ * notice published this morning is still "published today" when the
+ * importance is scored.
+ */
+const NOTICE_POST_HOUR_UTC = 6;
+
+const GBU_MONTH_INDEX: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+/**
+ * Builds an ISO timestamp for a day/month/year, or null when the values do
+ * not describe a real date.
+ */
+function toNoticeIso(year: number, monthIndex: number, day: number): string | null {
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) return null;
+  if (year < 1990 || year > 2100) return null;
+  if (monthIndex < 0 || monthIndex > 11) return null;
+  if (day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, monthIndex, day, NOTICE_POST_HOUR_UTC, 0, 0, 0));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== monthIndex ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date.toISOString();
+}
+
+/**
+ * Parses the date shapes GBU publishes.
+ *
+ * - the main notices page uses `DD Mon YYYY` ("21 Oct 2026"), the month in
+ *   upper or lower case;
+ * - the exams portal uses `DD-MM-YYYY` ("Posted on: 01-7-2026") and does
+ *   not pad the month;
+ * - the worker itself writes `YYYY-MM-DD`.
+ *
+ * Returns null when the text holds no date at all, so the caller can tell
+ * "no date" from "a date we understood".
+ */
+export function parseGbUNoticeDate(value: string): string | null {
+  const text = (value || '').trim();
+  if (!text) return null;
+
+  // "DD Mon YYYY" - the shape of the main notices table.
+  const named = /(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})/.exec(text);
+  if (named) {
+    const month = GBU_MONTH_INDEX[named[2].toLowerCase().slice(0, 3)];
+    if (month !== undefined) {
+      return toNoticeIso(Number(named[3]), month, Number(named[1]));
+    }
+  }
+
+  // "YYYY-MM-DD" - the shape the worker writes itself.
+  const iso = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(text);
+  if (iso) {
+    return toNoticeIso(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  }
+
+  // "DD-MM-YYYY" / "DD/MM/YYYY" - the exams portal shape. The month is not
+  // padded there ("01-7-2026"), and the date may carry a label in front
+  // of it ("Posted on: 01-7-2026").
+  const numeric = /(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/.exec(text);
+  if (numeric) {
+    return toNoticeIso(Number(numeric[3]), Number(numeric[2]) - 1, Number(numeric[1]));
+  }
+
+  return null;
+}
+
+/**
  * Enriches raw scraped notices with categorization, audience tags, deadlines, and importance scores
  */
 export function enrichScrapedNotice(raw: ScrapedRawNotice): NoticeItem {
@@ -300,30 +376,9 @@ export function enrichScrapedNotice(raw: ScrapedRawNotice): NoticeItem {
   const audience = detectNoticeAudience(raw.rawTitle);
   const deadlineAt = extractNoticeDeadline(raw.rawTitle);
 
-  // Normalise posted date
-  let postedAt = new Date().toISOString();
-  if (raw.dateStr) {
-    const parts = raw.dateStr.split(/[/.-]/);
-    if (parts.length === 3) {
-      let day: number, month: number, year: number;
-      if (parts[0].length === 4) {
-        // YYYY-MM-DD
-        year = parseInt(parts[0], 10);
-        month = parseInt(parts[1], 10) - 1;
-        day = parseInt(parts[2], 10);
-      } else {
-        // DD-MM-YYYY or DD/MM/YYYY
-        day = parseInt(parts[0], 10);
-        month = parseInt(parts[1], 10) - 1;
-        year = parseInt(parts[2], 10);
-      }
-      try {
-        postedAt = new Date(Date.UTC(year, month, day, 6, 0, 0)).toISOString();
-      } catch {
-        postedAt = new Date().toISOString();
-      }
-    }
-  }
+  // Normalise posted date. A date we cannot read is treated as "posted
+  // now" - the notice is real, only its date is unknown.
+  const postedAt = parseGbUNoticeDate(raw.dateStr) ?? new Date().toISOString();
 
   const importance = calculateNoticeImportance({
     title: raw.rawTitle,

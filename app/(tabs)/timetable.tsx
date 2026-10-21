@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Platform,
   Dimensions,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -24,7 +25,7 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
-import { GlassCard, Skeleton, EmptyState, Chip, SheetOverlay } from '../../src/components/ui';
+import { GlassCard, Skeleton, EmptyState, Chip, SheetOverlay, PillButton } from '../../src/components/ui';
 import {
   Timetable,
   Slot,
@@ -38,7 +39,12 @@ import {
   slotDurationMinutes,
   slotStartToday,
 } from '../../src/features/timetable/schedule';
-import { TIMETABLE_CHANNEL_ID } from '../../src/lib/pushNotifications';
+import {
+  CLASS_REMINDER_CHANNEL_ID,
+  cancelClassAlarmsForSlot,
+  ensureClassReminderChannel,
+  scheduleClassAlarm,
+} from '../../src/features/notifications/classAlarm';
 import {
   canScheduleReminder,
   fireAtFor,
@@ -82,24 +88,6 @@ const DEFAULT_LEAD_MINUTES = 30;
 
 /** The class detail sheet covers most of the screen. */
 const MODAL_SHEET_MAX_HEIGHT = Math.round(Dimensions.get('window').height * 0.9);
-
-async function cancelScheduledForSlot(slotId: string): Promise<void> {
-  try {
-    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-    const targets = scheduled.filter((notification) => {
-      const data = notification.content.data;
-      const stored = data && typeof data === 'object' ? data.slotId : undefined;
-      return typeof stored === 'string' && stored === slotId;
-    });
-    await Promise.all(
-      targets.map((notification) =>
-        Notifications.cancelScheduledNotificationAsync(notification.identifier),
-      ),
-    );
-  } catch {
-    // The OS may not report scheduled notifications; the stored list still stands.
-  }
-}
 
 const FACULTY_COLORS = [
   '#C2410C',
@@ -147,6 +135,8 @@ export default function TimetableScreen() {
 
   // Slot Detail Modal
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  // A long press opens the class in place; the back button closes it again.
+  const [expandedSlotId, setExpandedSlotId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [leadMinutes, setLeadMinutes] = useState(DEFAULT_LEAD_MINUTES);
 
@@ -247,6 +237,23 @@ export default function TimetableScreen() {
     setSelectedSlot(slot);
   };
 
+  /**
+   * A long press on a class card opens its detail in place, and the Android
+   * back button closes it again, so the student stays on the schedule.
+   */
+  const handleToggleExpanded = (slot: Slot) => {
+    setExpandedSlotId((current) => (current === slot.id ? null : slot.id));
+  };
+
+  useEffect(() => {
+    if (!expandedSlotId) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setExpandedSlotId(null);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [expandedSlotId]);
+
   const handleScheduleReminder = async () => {
     const slot = selectedSlot;
     if (!slot) return;
@@ -292,32 +299,24 @@ export default function TimetableScreen() {
       }
 
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync(TIMETABLE_CHANNEL_ID, {
-          name: 'Timetable changes',
-          importance: Notifications.AndroidImportance.HIGH,
-        });
+        await ensureClassReminderChannel();
       }
 
-      await cancelScheduledForSlot(slot.id);
+      await cancelClassAlarmsForSlot(slot.id);
 
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: reminderTitle(slot.subject, leadMinutes),
-          body: reminderBody(slot.start, slot.room, leadMinutes),
-          data: {
-            type: 'class-reminder',
-            slotId: slot.id,
-            subject: slot.subject,
-            start: slot.start,
-            leadMinutes: String(leadMinutes),
-          },
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: fireAt,
-          channelId: TIMETABLE_CHANNEL_ID,
+      const identifier = await scheduleClassAlarm({
+        title: reminderTitle(slot.subject, leadMinutes),
+        body: reminderBody(slot.start, slot.room, leadMinutes),
+        fireAt,
+        data: {
+          type: 'class-reminder',
+          slotId: slot.id,
+          subject: slot.subject,
+          start: slot.start,
+          leadMinutes: String(leadMinutes),
         },
       });
+      void identifier;
 
       await addReminder({
         leadMinutes,
@@ -325,7 +324,7 @@ export default function TimetableScreen() {
         subject: slot.subject,
         start: slot.start,
         fireAt: fireAt.toISOString(),
-        channelId: TIMETABLE_CHANNEL_ID,
+        channelId: CLASS_REMINDER_CHANNEL_ID,
       });
 
       showToast(
@@ -339,9 +338,17 @@ export default function TimetableScreen() {
   };
 
   const handleCancelReminder = async (slotId: string) => {
-    await cancelScheduledForSlot(slotId);
+    await cancelClassAlarmsForSlot(slotId);
     await removeReminder(slotId);
     showToast('Reminder cancelled');
+  };
+
+  const handleClearDayAlarms = async (slotIds: string[]) => {
+    for (const slotId of slotIds) {
+      await cancelClassAlarmsForSlot(slotId);
+      await removeReminder(slotId);
+    }
+    showToast('Alarms cleared for this day');
   };
 
   return (
@@ -485,7 +492,7 @@ export default function TimetableScreen() {
 
             {dayReminders.length === 0 ? (
               <Text style={[styles.alarmsEmpty, { color: colors.textSecondary }]}>
-                No alarm set for this day. Open a class to add one.
+                No alarm set for this day. Tap the bell on a class to add one.
               </Text>
             ) : (
               dayReminders.map((reminder) => (
@@ -518,6 +525,22 @@ export default function TimetableScreen() {
                 </View>
               ))
             )}
+
+            {dayReminders.length > 1 ? (
+              <TouchableOpacity
+                style={styles.alarmsClearAll}
+                onPress={() => {
+                  void handleClearDayAlarms(dayReminders.map((reminder) => reminder.slotId));
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Clear every alarm for this day"
+                hitSlop={8}
+              >
+                <Text style={[styles.alarmsClearAllText, { color: colors.danger }]}>
+                  Clear all {dayReminders.length} alarms
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </GlassCard>
         )}
 
@@ -655,6 +678,8 @@ export default function TimetableScreen() {
                       ]}
                       accentBorder={status.isLive}
                       onPress={() => handleOpenSlot(slot)}
+                      onLongPress={() => handleToggleExpanded(slot)}
+                      delayLongPress={350}
                     >
                       {/* Status and Code Header */}
                       <View style={styles.cardHeader}>
@@ -683,11 +708,42 @@ export default function TimetableScreen() {
                           )}
                         </View>
 
-                        {slot.subjectCode ? (
-                          <View style={[styles.codeTag, { backgroundColor: colors.surfaceAlt }]}>
-                            <Text style={[styles.subjectCode, { color: colors.textSecondary }]}>{slot.subjectCode}</Text>
-                          </View>
-                        ) : null}
+                        <View style={styles.cardHeaderRight}>
+                          {slot.subjectCode ? (
+                            <View style={[styles.codeTag, { backgroundColor: colors.surfaceAlt }]}>
+                              <Text style={[styles.subjectCode, { color: colors.textSecondary }]}>{slot.subjectCode}</Text>
+                            </View>
+                          ) : null}
+
+                          {/* The alarm can be set straight from the schedule,
+                              without opening the class first. */}
+                          <TouchableOpacity
+                            style={[
+                              styles.cardAlarmButton,
+                              {
+                                backgroundColor: remindersForSlot(slot.id)
+                                  ? colors.accentSoft
+                                  : colors.surfaceAlt,
+                                borderColor: remindersForSlot(slot.id)
+                                  ? colors.accent
+                                  : colors.borderGlass,
+                              },
+                            ]}
+                            onPress={() => handleOpenSlot(slot)}
+                            accessibilityRole="button"
+                            accessibilityLabel={
+                              remindersForSlot(slot.id)
+                                ? `Alarm set for ${slot.subject}. Open to change it.`
+                                : `Set an alarm for ${slot.subject}`
+                            }
+                            hitSlop={8}
+                          >
+                            <Bell
+                              size={14}
+                              color={remindersForSlot(slot.id) ? colors.accent : colors.textSecondary}
+                            />
+                          </TouchableOpacity>
+                        </View>
                       </View>
 
                       {/* Subject Title */}
@@ -725,6 +781,85 @@ export default function TimetableScreen() {
                           </View>
                         )}
                       </View>
+
+                      {/* A long press opens the class in place. */}
+                      {expandedSlotId === slot.id ? (
+                        <View
+                          style={[
+                            styles.expandedBox,
+                            { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass },
+                          ]}
+                        >
+                          <View style={styles.expandedRow}>
+                            <Clock size={14} color={colors.textSecondary} />
+                            <Text style={[styles.expandedText, { color: colors.textPrimary }]}>
+                              {slot.start} - {slot.end}
+                            </Text>
+                            {slot.type ? (
+                              <Text style={[styles.expandedMeta, { color: colors.textTertiary }]}>
+                                {slot.type}
+                              </Text>
+                            ) : null}
+                          </View>
+
+                          <View style={styles.expandedRow}>
+                            <MapPin size={14} color={colors.textSecondary} />
+                            <Text style={[styles.expandedText, { color: colors.textPrimary }]}>
+                              {slot.room || 'Room to be announced'}
+                            </Text>
+                          </View>
+
+                          <View style={styles.expandedRow}>
+                            <User size={14} color={colors.textSecondary} />
+                            <Text style={[styles.expandedText, { color: colors.textPrimary }]}>
+                              {slot.faculty || 'Department Faculty'}
+                            </Text>
+                          </View>
+
+                          <View style={styles.expandedActions}>
+                            <PillButton
+                              label="Mark present"
+                              variant="white"
+                              size="sm"
+                              onPress={() => {
+                                markAttended(slot.id);
+                                showToast('Marked present');
+                              }}
+                              style={styles.expandedButton}
+                            />
+                            <PillButton
+                              label="Mark absent"
+                              variant="white"
+                              size="sm"
+                              onPress={() => {
+                                markMissed(slot.id);
+                                showToast('Marked absent');
+                              }}
+                              style={styles.expandedButton}
+                            />
+                            <PillButton
+                              label={remindersForSlot(slot.id) ? 'Alarm on' : 'Set alarm'}
+                              variant={remindersForSlot(slot.id) ? 'primary' : 'white'}
+                              size="sm"
+                              icon={<Bell size={13} color={colors.onAccent} style={{ marginRight: 5 }} />}
+                              onPress={() => handleOpenSlot(slot)}
+                              style={styles.expandedButton}
+                            />
+                          </View>
+
+                          <TouchableOpacity
+                            style={styles.expandedClose}
+                            onPress={() => setExpandedSlotId(null)}
+                            accessibilityRole="button"
+                            accessibilityLabel="Close the class detail"
+                            hitSlop={8}
+                          >
+                            <Text style={[styles.expandedCloseText, { color: colors.textSecondary }]}>
+                              Close
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
                     </GlassCard>
                   </View>
                 </View>
@@ -883,7 +1018,7 @@ export default function TimetableScreen() {
                       <Text style={[styles.scheduledText, { color: colors.success }]}>
                         {slotReminder.leadMinutes === leadMinutes
                           ? `Alarm set ${formatLeadTime(slotReminder.leadMinutes)}`
-                          : `Alarm set ${formatLeadTime(slotReminder.leadMinutes)} - tap below to change it`}
+                          : `Alarm set ${formatLeadTime(slotReminder.leadMinutes)}`}
                       </Text>
                       <TouchableOpacity
                         style={styles.scheduledCancel}
@@ -901,19 +1036,40 @@ export default function TimetableScreen() {
                     </View>
                   ) : null}
 
+                  {/* The action reads as one clear primary button, and says
+                      what it will do before it is pressed. */}
                   <TouchableOpacity
-                    style={[styles.reminderBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}
+                    style={[
+                      styles.reminderBtn,
+                      {
+                        backgroundColor:
+                          slotReminder && slotReminder.leadMinutes === leadMinutes
+                            ? colors.success
+                            : colors.accentFill,
+                        borderColor: colors.borderGlass,
+                      },
+                    ]}
                     onPress={() => {
                       void handleScheduleReminder();
                     }}
                     accessibilityRole="button"
                     accessibilityLabel={`Set class reminder notification ${formatLeadTime(leadMinutes)}`}
                   >
-                    <Bell size={16} color={colors.textPrimary} />
-                    <Text style={[styles.reminderBtnText, { color: colors.textPrimary }]}>
-                      Set Class Reminder Notification - {formatLeadTime(leadMinutes)}
+                    <Bell size={17} color={colors.onAccent} />
+                    <Text style={[styles.reminderBtnText, { color: colors.onAccent }]}>
+                      {slotReminder
+                        ? slotReminder.leadMinutes === leadMinutes
+                          ? 'Alarm is on'
+                          : `Change alarm to ${formatLeadTime(leadMinutes)}`
+                        : `Set alarm ${formatLeadTime(leadMinutes)}`}
                     </Text>
                   </TouchableOpacity>
+
+                  <Text style={[styles.reminderFootNote, { color: colors.textTertiary }]}>
+                    {slotReminder
+                      ? 'The alarm rings on this phone, even when the app is closed.'
+                      : 'A chime rings on this phone, even when the app is closed.'}
+                  </Text>
                 </View>
               </ScrollView>
             </View>
@@ -1087,6 +1243,59 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  cardAlarmButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  expandedBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: theme.radius.card,
+    borderWidth: 1,
+  },
+  expandedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  expandedText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 13,
+    flexShrink: 1,
+  },
+  expandedMeta: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    marginLeft: 'auto',
+  },
+  expandedActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  expandedButton: {
+    flexGrow: 1,
+  },
+  expandedClose: {
+    alignSelf: 'center',
+    marginTop: 10,
+    paddingVertical: 6,
+  },
+  expandedCloseText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
   },
   tagGroup: {
     flexDirection: 'row',
@@ -1384,12 +1593,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderRadius: theme.radius.pill,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    minHeight: 52,
     gap: 8,
   },
   reminderBtnText: {
     fontFamily: 'Inter-SemiBold',
-    fontSize: 13,
+    fontSize: 14,
+  },
+  reminderFootNote: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    marginTop: 8,
+    textAlign: 'center',
   },
   reminderSection: {
     marginTop: 4,
@@ -1451,6 +1667,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 12,
     lineHeight: 17,
+  },
+  alarmsClearAll: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingVertical: 6,
+  },
+  alarmsClearAllText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
   },
   alarmRow: {
     flexDirection: 'row',

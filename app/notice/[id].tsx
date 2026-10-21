@@ -7,25 +7,34 @@ import {
   Pressable,
   Linking,
   Share,
-  Alert,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { radius, spacing } from '../../src/lib/theme';
+import { PillButton, Toast } from '../../src/components/ui';
+import {
+  isSafePdfUrl,
+  looksLikeImageUrl,
+  looksLikePdfUrl,
+} from '../../src/components/pdf/pdfHelpers';
 import { MOCK_NOTICES, NoticeItem } from '../../src/features/notices/noticeService';
 import { useNoticesQuery } from '../../src/features/notices/useNoticesQuery';
 
 const EXCERPT_LENGTH = 700;
 
+/** What the notice attachment actually is, from the point of view of the actions. */
+type NoticeFileKind = 'none' | 'pdf' | 'image' | 'link';
+
 export default function NoticeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const [downloading, setDownloading] = useState(false);
-  const [downloadSuccess, setDownloadSuccess] = useState(false);
   const [showFullText, setShowFullText] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
 
   // Live notices first (they carry the extracted document text), then the
   // bundled seed used on first launch before the worker has synced anything.
@@ -36,6 +45,22 @@ export default function NoticeDetailScreen() {
   );
   const extractedText = notice?.rawText?.trim() ?? '';
   const hasExtractedText = extractedText.length > 0;
+
+  // The action pair depends on what the attachment really is: a PDF is shown
+  // in the app, an image is previewed inline, and anything else is only worth
+  // handing to the browser.
+  const fileKind: NoticeFileKind = useMemo(() => {
+    const fileUrl = notice?.fileUrl ?? '';
+    if (!isSafePdfUrl(fileUrl)) return 'none';
+    if (notice?.fileType === 'image' || looksLikeImageUrl(fileUrl)) return 'image';
+    if (notice?.fileType === 'pdf' || looksLikePdfUrl(fileUrl)) return 'pdf';
+    return 'link';
+  }, [notice]);
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setToastVisible(true);
+  };
 
   if (!notice) {
     return (
@@ -83,25 +108,31 @@ export default function NoticeDetailScreen() {
     }
   };
 
-  const handleOpenDoc = async () => {
-    const url = notice.fileUrl || 'https://exam.gbu.ac.in';
-    try {
-      await Linking.openURL(url);
-    } catch {
-      Linking.openURL('https://gbu.ac.in/notices').catch(() => {
-        Alert.alert('Official Portal', `Visit ${url} for the complete document.`);
-      });
-    }
+  /**
+   * Opens the document inside the app. The viewer downloads the file first
+   * and only then renders it, so the university's broken download endpoint
+   * produces a readable message instead of a blank screen.
+   */
+  const handleViewPdf = () => {
+    if (!notice) return;
+    router.push({
+      pathname: '/pdf',
+      params: { url: notice.fileUrl, title: notice.cleanTitle },
+    });
   };
 
-  const handleDownload = () => {
-    setDownloading(true);
-    setTimeout(() => {
-      setDownloading(false);
-      setDownloadSuccess(true);
-      setTimeout(() => setDownloadSuccess(false), 3000);
-      handleOpenDoc();
-    }, 900);
+  /**
+   * Hands the original link to the operating system, which opens whichever
+   * browser or document app the student has.
+   */
+  const handleOpenExternally = async () => {
+    const fileUrl = notice?.fileUrl ?? '';
+    if (!fileUrl) return;
+    try {
+      await Linking.openURL(fileUrl);
+    } catch {
+      showToast('No app on this device could open that link. Try the university website instead.');
+    }
   };
 
   const getCategoryTheme = () => {
@@ -345,49 +376,68 @@ export default function NoticeDetailScreen() {
           </View>
         </View>
 
-        {/* Primary CTA Buttons */}
-        <View style={styles.ctaRow}>
-          <Pressable
-            onPress={handleOpenDoc}
-            style={({ pressed }) => [
-              styles.ctaButton,
-              styles.primaryCta,
-              { backgroundColor: colors.accentFill, opacity: pressed ? 0.85 : 1 },
+        {/* Image attachments are previewed here; a PDF needs the viewer. */}
+        {fileKind === 'image' && (
+          <View
+            style={[
+              styles.imagePreview,
+              { backgroundColor: colors.surface, borderColor: colors.borderGlass },
             ]}
           >
-            <Ionicons name="eye-outline" size={18} color={colors.onAccent} style={{ marginRight: 6 }} />
-            <Text style={[styles.primaryCtaText, { color: colors.onAccent }]}>View Document</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={handleDownload}
-            style={({ pressed }) => [
-              styles.ctaButton,
-              styles.secondaryCta,
-              {
-                backgroundColor: downloadSuccess ? colors.successSoft : colors.surface,
-                borderColor: downloadSuccess ? colors.success : colors.borderGlass,
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            <Ionicons
-              name={downloadSuccess ? 'checkmark-circle' : 'cloud-download-outline'}
-              size={18}
-              color={downloadSuccess ? colors.success : colors.textPrimary}
-              style={{ marginRight: 6 }}
+            <Image
+              source={{ uri: notice.fileUrl }}
+              style={styles.imagePreviewImage}
+              resizeMode="contain"
+              accessibilityLabel={`Preview of ${notice.cleanTitle}`}
             />
-            <Text
-              style={[
-                styles.secondaryCtaText,
-                { color: downloadSuccess ? colors.success : colors.textPrimary },
-              ]}
-            >
-              {downloading ? 'Downloading...' : downloadSuccess ? 'Downloaded!' : 'Download PDF'}
-            </Text>
-          </Pressable>
-        </View>
+          </View>
+        )}
+
+        {/* Document actions */}
+        {fileKind !== 'none' ? (
+          <View style={styles.ctaRow}>
+            {fileKind === 'pdf' ? (
+              <PillButton
+                label="View PDF"
+                onPress={handleViewPdf}
+                variant="primary"
+                size="md"
+                style={styles.ctaButton}
+                icon={
+                  <Ionicons
+                    name="eye-outline"
+                    size={18}
+                    color={colors.onAccent}
+                    style={{ marginRight: 6 }}
+                  />
+                }
+              />
+            ) : null}
+
+            <PillButton
+              label="Open in another app"
+              onPress={() => void handleOpenExternally()}
+              variant={fileKind === 'pdf' ? 'outline' : 'primary'}
+              size="md"
+              style={styles.ctaButton}
+              icon={
+                <Ionicons
+                  name="open-outline"
+                  size={18}
+                  color={fileKind === 'pdf' ? colors.accent : colors.onAccent}
+                  style={{ marginRight: 6 }}
+                />
+              }
+            />
+          </View>
+        ) : null}
       </ScrollView>
+
+      <Toast
+        message={toastMessage}
+        visible={toastVisible}
+        onDismiss={() => setToastVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -571,23 +621,17 @@ const styles = StyleSheet.create({
   },
   ctaButton: {
     flex: 1,
-    height: 48,
-    borderRadius: radius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
   },
-  primaryCta: {},
-  primaryCtaText: {
-    fontFamily: 'Inter-SemiBold',
-    fontSize: 15,
-  },
-  secondaryCta: {
+  imagePreview: {
+    borderRadius: radius.card,
     borderWidth: 1,
+    padding: spacing.sm,
+    marginBottom: spacing.lg,
   },
-  secondaryCtaText: {
-    fontFamily: 'Inter-SemiBold',
-    fontSize: 15,
+  imagePreviewImage: {
+    width: '100%',
+    height: 260,
+    borderRadius: radius.md,
   },
   notFoundCenter: {
     flex: 1,

@@ -54,10 +54,14 @@
         {
           "icon": "./assets/brand/notification-icon.png",
           "defaultChannel": "timetable_changes",
-          "color": "#4F46E5"
+          "color": "#4F46E5",
+          "sounds": [
+            "./assets/sounds/class_alarm.wav"
+          ]
         }
       ],
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      "react-native-blob-util"
     ],
     "scheme": "gbuone"
   }
