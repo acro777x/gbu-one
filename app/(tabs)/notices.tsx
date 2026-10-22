@@ -20,6 +20,7 @@ import { NoticeCard, Chip, BottomSheet, PillButton, EmptyState } from '../../src
 import { NoticeItem, filterNotices } from '../../src/features/notices/noticeService';
 import { useNoticesQuery } from '../../src/features/notices/useNoticesQuery';
 import { allNoticesAreSample } from '../../src/features/notices/liveNoticeMapping';
+import { useNoticesStatusStore } from '../../src/features/notices/noticesStatus';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
@@ -45,6 +46,7 @@ export default function NoticesScreen() {
   // could not be reached, and the app says so rather than passing it off as
   // the real thing.
   const isSampleData = useMemo(() => allNoticesAreSample(notices), [notices]);
+  const noticeStatus = useNoticesStatusStore((state) => state);
 
   const availableSchools = useMemo(() => {
     const schools = new Set<string>();
@@ -112,6 +114,7 @@ export default function NoticesScreen() {
           <Text style={[styles.sampleBannerText, { color: colors.textPrimary }]}>
             These are example notices, not real university notices. Pull to refresh once you are
             online.
+            {noticeStatus.reason ? ` (${noticeStatus.reason})` : ''}
           </Text>
         </View>
       ) : null}

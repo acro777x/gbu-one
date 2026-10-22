@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { MOCK_NOTICES, NoticeItem } from './noticeService';
 import { fetchLiveNotices } from './liveNotices';
 import { toNoticeItems } from './liveNoticeMapping';
+import { useNoticesStatusStore } from './noticesStatus';
 import { readCachedNotices, writeCachedNotices } from '../../lib/db';
 import { NOTICE_QUERY_KEY } from '../../lib/queryClient';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
@@ -62,31 +63,63 @@ async function fetchNoticesLive(): Promise<NoticeItem[] | null> {
  * of HTML) off the first frames after the app opens, so the startup stays
  * smooth and the screen paints with what is already cached.
  */
-export async function fetchNoticesFromUniversity(): Promise<NoticeItem[]> {
+export async function fetchNoticesFromUniversity(): Promise<{
+  notices: NoticeItem[];
+  sources: string[];
+  errors: string[];
+}> {
   await new Promise((resolve) => setTimeout(resolve, 900));
-  const result = await fetchLiveNotices({ timeoutMs: 15000 });
-  return toNoticeItems(result.notices);
+  const result = await fetchLiveNotices({ timeoutMs: 30000 });
+  if (result.errors.length > 0) {
+    // The app shows the sample instead, so say why in the log.
+    console.warn(`GBU One: the university pages did not answer - ${result.errors.join('; ')}`);
+  }
+  if (result.notices.length > 0) {
+    console.log(`GBU One: ${result.notices.length} live notices from ${result.sources.join(', ')}`);
+  }
+  return {
+    notices: toNoticeItems(result.notices),
+    sources: result.sources,
+    errors: result.errors,
+  };
 }
 
 export function useNoticesQuery() {
+  const setStatus = useNoticesStatusStore((state) => state.set);
+
   return useQuery<NoticeItem[]>({
     queryKey: NOTICE_QUERY_KEY,
     queryFn: async () => {
       const live = await fetchNoticesLive();
       if (live && live.length > 0) {
         writeCachedNotices(live);
+        setStatus({ source: 'live', liveCount: live.length });
         return live;
       }
 
       // No backend yet, so read the university's own pages.
       const fromUniversity = await fetchNoticesFromUniversity();
-      if (fromUniversity.length > 0) {
-        writeCachedNotices(fromUniversity);
-        return fromUniversity;
+      if (fromUniversity.notices.length > 0) {
+        writeCachedNotices(fromUniversity.notices);
+        setStatus({
+          source: 'live',
+          liveCount: fromUniversity.notices.length,
+          sources: fromUniversity.sources,
+        });
+        return fromUniversity.notices;
       }
 
       const cached = readCachedNotices();
-      if (cached.length > 0) return cached;
+      if (cached.length > 0) {
+        setStatus({
+          source: 'cache',
+          liveCount: cached.length,
+          reason: fromUniversity.errors.join('; '),
+        });
+        return cached;
+      }
+
+      setStatus({ source: 'sample', reason: fromUniversity.errors.join('; ') });
       return MOCK_NOTICES;
     },
     // Instant paint: seed the cache synchronously at query creation.
