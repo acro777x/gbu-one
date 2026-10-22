@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { AlertCircle, ArrowLeft, Bell, Calendar, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, Eye, FileText, GitBranch, Globe, ImageIcon, ScanText, School, Share2, Sparkles } from 'lucide-react-native';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { radius, spacing } from '../../src/lib/theme';
 import { registerDocument } from '../../src/components/pdf/pdfRegistry';
@@ -75,14 +75,14 @@ export default function NoticeDetailScreen() {
               { backgroundColor: colors.surfaceAlt, opacity: pressed ? 0.7 : 1 },
             ]}
           >
-            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+            <ArrowLeft size={20} color={colors.textPrimary} />
           </Pressable>
           <Text style={[styles.navTitle, { color: colors.textPrimary }]}>Notice Details</Text>
           <View style={{ width: 40 }} />
         </View>
 
         <View style={styles.notFoundCenter}>
-          <Ionicons name="alert-circle-outline" size={56} color={colors.textTertiary} />
+          <AlertCircle size={56} color={colors.textTertiary} />
           <Text style={[styles.notFoundTitle, { color: colors.textPrimary }]}>Notice Not Found</Text>
           <Text style={[styles.notFoundDesc, { color: colors.textSecondary }]}>
             The notice you requested may have expired, been removed, or the link is invalid.
@@ -186,7 +186,7 @@ export default function NoticeDetailScreen() {
             { backgroundColor: colors.surfaceAlt, opacity: pressed ? 0.7 : 1 },
           ]}
         >
-          <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+          <ArrowLeft size={20} color={colors.textPrimary} />
         </Pressable>
 
         <View style={styles.navTitleContainer}>
@@ -202,7 +202,7 @@ export default function NoticeDetailScreen() {
             { backgroundColor: colors.surfaceAlt, opacity: pressed ? 0.7 : 1 },
           ]}
         >
-          <Ionicons name="share-outline" size={20} color={colors.textPrimary} />
+          <Share2 size={20} color={colors.textPrimary} />
         </Pressable>
       </View>
 
@@ -221,7 +221,7 @@ export default function NoticeDetailScreen() {
           </View>
 
           <View style={[styles.sourceBadge, { backgroundColor: colors.surfaceAlt }]}>
-            <Ionicons name="globe-outline" size={13} color={colors.textSecondary} style={{ marginRight: 4 }} />
+            <Globe size={13} color={colors.textSecondary} style={{ marginRight: 4 }} />
             <Text style={[styles.sourceBadgeText, { color: colors.textSecondary }]}>
               {notice.source === 'exams'
                 ? 'exams.gbu.ac.in'
@@ -244,14 +244,14 @@ export default function NoticeDetailScreen() {
         {/* Date & Deadline Info */}
         <View style={[styles.metaCard, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
           <View style={styles.metaRow}>
-            <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+            <Calendar size={16} color={colors.textSecondary} />
             <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>Published On:</Text>
             <Text style={[styles.metaValue, { color: colors.textPrimary }]}>{formattedDate}</Text>
           </View>
 
           {deadlineFormatted && (
             <View style={[styles.metaRow, { marginTop: spacing.sm }]}>
-              <Ionicons name="alarm-outline" size={16} color={colors.danger} />
+              <Bell size={16} color={colors.danger} />
               <Text style={[styles.metaLabel, { color: colors.danger }]}>Last Date / Deadline:</Text>
               <Text style={[styles.metaValue, { color: colors.danger, fontWeight: '700' }]}>
                 {deadlineFormatted}
@@ -261,7 +261,7 @@ export default function NoticeDetailScreen() {
 
           {notice.threadUpdateCount ? (
             <View style={[styles.metaRow, { marginTop: spacing.sm }]}>
-              <Ionicons name="git-branch-outline" size={16} color={colors.warning} />
+              <GitBranch size={16} color={colors.warning} />
               <Text style={[styles.metaLabel, { color: colors.warning }]}>Timeline Revision:</Text>
               <Text style={[styles.metaValue, { color: colors.textPrimary }]}>
                 Updated {notice.threadUpdateCount} times
@@ -275,7 +275,7 @@ export default function NoticeDetailScreen() {
           <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
             <View style={styles.summaryHeaderRow}>
               <View style={[styles.sparkleIcon, { backgroundColor: colors.accentSoft }]}>
-                <Ionicons name="scan-outline" size={16} color={colors.accent} />
+                <ScanText size={16} color={colors.accent} />
               </View>
               <Text style={[styles.summaryHeading, { color: colors.textPrimary }]}>Document Text</Text>
             </View>
@@ -302,11 +302,11 @@ export default function NoticeDetailScreen() {
                 <Text style={[styles.readMoreText, { color: colors.accent }]}>
                   {showFullText ? 'Show less' : 'Read full text'}
                 </Text>
-                <Ionicons
-                  name={showFullText ? 'chevron-up' : 'chevron-down'}
-                  size={14}
-                  color={colors.accent}
-                />
+                {showFullText ? (
+                  <ChevronUp size={14} color={colors.accent} />
+                ) : (
+                  <ChevronDown size={14} color={colors.accent} />
+                )}
               </Pressable>
             )}
           </View>
@@ -318,7 +318,7 @@ export default function NoticeDetailScreen() {
         <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
           <View style={styles.summaryHeaderRow}>
             <View style={[styles.sparkleIcon, { backgroundColor: colors.accentSoft }]}>
-              <Ionicons name="sparkles" size={16} color={colors.accent} />
+              <Sparkles size={16} color={colors.accent} />
             </View>
             <Text style={[styles.summaryHeading, { color: colors.textPrimary }]}>Summary & Key Takeaways</Text>
           </View>
@@ -331,7 +331,7 @@ export default function NoticeDetailScreen() {
 
           <View style={styles.highlightList}>
             <View style={styles.highlightItem}>
-              <Ionicons name="checkmark-circle" size={16} color={colors.accent} style={{ marginRight: 8, marginTop: 2 }} />
+              <CheckCircle2 size={16} color={colors.accent} style={{ marginRight: 8, marginTop: 2 }} />
               <Text style={[styles.highlightText, { color: colors.textPrimary }]}>
                 Original Reference: "{notice.title}"
               </Text>
@@ -339,7 +339,7 @@ export default function NoticeDetailScreen() {
 
             {notice.audience.schools && notice.audience.schools.length > 0 && (
               <View style={styles.highlightItem}>
-                <Ionicons name="school-outline" size={16} color={colors.accent} style={{ marginRight: 8, marginTop: 2 }} />
+                <School size={16} color={colors.accent} style={{ marginRight: 8, marginTop: 2 }} />
                 <Text style={[styles.highlightText, { color: colors.textPrimary }]}>
                   Eligible Schools: {notice.audience.schools.join(', ')}
                 </Text>
@@ -347,7 +347,7 @@ export default function NoticeDetailScreen() {
             )}
 
             <View style={styles.highlightItem}>
-              <Ionicons name="document-text-outline" size={16} color={colors.accent} style={{ marginRight: 8, marginTop: 2 }} />
+              <FileText size={16} color={colors.accent} style={{ marginRight: 8, marginTop: 2 }} />
               <Text style={[styles.highlightText, { color: colors.textPrimary }]}>
                 Published by the university on {notice.source === 'exams' ? 'the examination portal' : 'the university website'}
               </Text>
@@ -366,11 +366,11 @@ export default function NoticeDetailScreen() {
           ]}
         >
           <View style={styles.docIconContainer}>
-            <Ionicons
-              name={notice.fileType === 'pdf' ? 'document-text' : 'image'}
-              size={32}
-              color={colors.accent}
-            />
+            {notice.fileType === 'pdf' ? (
+              <FileText size={32} color={colors.accent} />
+            ) : (
+              <ImageIcon size={32} color={colors.accent} />
+            )}
           </View>
 
           <View style={styles.docInfo}>
@@ -411,8 +411,7 @@ export default function NoticeDetailScreen() {
                 size="md"
                 style={styles.ctaButton}
                 icon={
-                  <Ionicons
-                    name="eye-outline"
+                  <Eye
                     size={18}
                     color={colors.onAccent}
                     style={{ marginRight: 6 }}
@@ -428,8 +427,7 @@ export default function NoticeDetailScreen() {
               size="md"
               style={styles.ctaButton}
               icon={
-                <Ionicons
-                  name="open-outline"
+                <ExternalLink
                   size={18}
                   color={fileKind === 'pdf' ? colors.accent : colors.onAccent}
                   style={{ marginRight: 6 }}

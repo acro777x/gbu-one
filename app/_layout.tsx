@@ -6,7 +6,6 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
-import { Ionicons } from '@expo/vector-icons';
 import { SplashScreenView } from '../src/components/brand/SplashScreenView';
 import { ThemeProvider, useAppTheme } from '../src/lib/ThemeContext';
 import { queryClient } from '../src/lib/queryClient';
@@ -24,9 +23,6 @@ function AppShell() {
   const classSection = useAuthStore((state) => state.classSelection?.section ?? null);
 
   const [fontsLoaded, fontError] = useFonts({
-    // The icon font is loaded with the rest, so an icon is never a blank
-    // box: the app waits for the fonts before it draws anything.
-    ...Ionicons.font,
     'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
     'Inter-Regular': require('../assets/fonts/Inter-Regular.ttf'),
     'Inter-Medium': require('../assets/fonts/Inter-Medium.ttf'),

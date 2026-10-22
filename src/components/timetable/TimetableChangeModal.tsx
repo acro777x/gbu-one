@@ -4,7 +4,7 @@ import Animated, {
   SlideInUp,
   SlideOutDown,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import { ArrowRight, Briefcase, CirclePlus, CircleX, Clock } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAppTheme } from '../../lib/ThemeContext';
 import { SheetOverlay } from '../ui/SheetOverlay';
@@ -45,28 +45,28 @@ export const TimetableChangeModal: React.FC<TimetableChangeModalProps> = ({
       case 'room_changed':
         return {
           title: 'ROOM RESCHEDULED',
-          icon: 'business-outline' as const,
+          icon: Briefcase,
           color: colors.warning,
           bg: colors.warningSoft,
         };
       case 'added':
         return {
           title: 'NEW CLASS ADDED',
-          icon: 'add-circle-outline' as const,
+          icon: CirclePlus,
           color: colors.success,
           bg: colors.successSoft,
         };
       case 'removed':
         return {
           title: 'CLASS CANCELLED',
-          icon: 'close-circle-outline' as const,
+          icon: CircleX,
           color: colors.danger,
           bg: colors.dangerSoft,
         };
       default:
         return {
           title: 'TIMETABLE RESCHEDULED',
-          icon: 'time-outline' as const,
+          icon: Clock,
           color: colors.accent,
           bg: colors.accentSoft,
         };
@@ -91,7 +91,7 @@ export const TimetableChangeModal: React.FC<TimetableChangeModalProps> = ({
           {/* Top Badge */}
           <View style={styles.headerRow}>
             <View style={[styles.badgeContainer, { backgroundColor: badge.bg }]}>
-              <Ionicons name={badge.icon} size={14} color={badge.color} style={styles.badgeIcon} />
+              <badge.icon size={14} color={badge.color} style={styles.badgeIcon} />
               <Text style={[styles.badgeText, { color: badge.color }]}>{badge.title}</Text>
             </View>
             <View style={[styles.classChip, { backgroundColor: colors.surfaceAlt }]}>
@@ -121,7 +121,7 @@ export const TimetableChangeModal: React.FC<TimetableChangeModalProps> = ({
               style={[styles.button, styles.primaryButton, { backgroundColor: colors.accentFill }]}
             >
               <Text style={[styles.primaryButtonText, { color: colors.onAccent }]}>View Schedule</Text>
-              <Ionicons name="arrow-forward" size={16} color={colors.onAccent} style={{ marginLeft: 4 }} />
+              <ArrowRight size={16} color={colors.onAccent} style={{ marginLeft: 4 }} />
             </Pressable>
           </View>
         </Animated.View>

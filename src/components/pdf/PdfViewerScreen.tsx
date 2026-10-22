@@ -2,7 +2,7 @@ import React, { useCallback, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { AlertCircle, ArrowLeft } from 'lucide-react-native';
 import { useAppTheme } from '../../lib/ThemeContext';
 import { radius, spacing } from '../../lib/theme';
 import { PdfViewer } from './PdfViewer';
@@ -53,14 +53,14 @@ export const PdfViewerScreen: React.FC = () => {
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+            <ArrowLeft size={20} color={colors.textPrimary} />
           </Pressable>
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Document</Text>
           <View style={styles.iconButton} />
         </View>
 
         <View style={styles.center}>
-          <Ionicons name="alert-circle-outline" size={48} color={colors.warning} />
+          <AlertCircle size={48} color={colors.warning} />
           <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>
             This link cannot be opened
           </Text>
@@ -86,7 +86,7 @@ export const PdfViewerScreen: React.FC = () => {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+          <ArrowLeft size={20} color={colors.textPrimary} />
         </Pressable>
 
         <View style={styles.headerText}>

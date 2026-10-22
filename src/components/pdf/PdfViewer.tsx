@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react-native';
 import Pdf from 'react-native-pdf';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { useAppTheme } from '../../lib/ThemeContext';
@@ -264,7 +264,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
           accessibilityRole="button"
           accessibilityLabel="Close the document"
         >
-          <Ionicons name="close" size={20} color={colors.textPrimary} />
+          <X size={20} color={colors.textPrimary} />
         </Pressable>
 
         <View style={styles.toolbarText}>
@@ -304,7 +304,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
 
         {phase.status === 'error' && (
           <View style={styles.center}>
-            <Ionicons name="alert-circle-outline" size={44} color={colors.warning} />
+            <AlertCircle size={44} color={colors.warning} />
             <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
               This document could not be opened
             </Text>
@@ -373,7 +373,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
             accessibilityLabel="Previous page"
             accessibilityState={{ disabled: !canGoBack }}
           >
-            <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
+            <ChevronLeft size={18} color={colors.textPrimary} />
           </Pressable>
 
           <Text style={[styles.pageIndicator, { color: colors.textSecondary }]}>
@@ -395,7 +395,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
             accessibilityLabel="Next page"
             accessibilityState={{ disabled: !canGoForward }}
           >
-            <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
+            <ChevronRight size={18} color={colors.textPrimary} />
           </Pressable>
         </View>
       ) : null}
