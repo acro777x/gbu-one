@@ -39,6 +39,7 @@ module.exports = {
     'checklist_extracted/**', 'docs/**',
     'research/**',      // one-off scraping research, not app code
     'scripts/**',       // one-off maintenance/analysis utilities
+    '_*.js',            // root-level one-off probes (kept out of git by .gitignore)
     'ref/**',
   ],
 };

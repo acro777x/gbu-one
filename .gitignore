@@ -30,3 +30,13 @@ targets_ui.xml
 
 # scratch output of the on-device QA scripts; the curated set lives in docs/qa/release
 docs/qa/emulator/
+
+# one-off probe scripts and their dumps (never ship)
+/_*.js
+/_*.sql
+_*.json
+install_pg.log
+
+# local backups of .env (they carry real keys)
+.env*.bak
+.env.local
