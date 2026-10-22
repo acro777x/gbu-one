@@ -127,6 +127,14 @@ def main() -> None:
     # android/gradle.properties, so a prebuild that is skipped would leave the
     # release build on the debug key.
     android = os.path.join(BUILD, 'android')
+    # The notification sounds are copied into res/raw by the config plugin.
+    # A sound that is no longer listed would still be there from the last
+    # build, and two files with the same name are a duplicate-resource error.
+    raw = os.path.join(android, 'app', 'src', 'main', 'res', 'raw')
+    if os.path.isdir(raw):
+        for name in os.listdir(raw):
+            os.remove(os.path.join(raw, name))
+        print(f'cleaned the notification sounds in {raw}')
     run(['npx', 'expo', 'prebuild', '--platform', 'android', '--no-install'], BUILD)
 
     task = 'assembleRelease' if release else 'assembleDebug'

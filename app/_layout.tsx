@@ -15,6 +15,8 @@ import {
   isTimetablePushEnabled,
   registerDeviceForPush,
 } from '../src/lib/pushNotifications';
+import { useClassAlarmLifecycle } from '../src/features/notifications/useClassAlarmLifecycle';
+import { AlarmRungPrompt } from '../src/components/notifications/AlarmRungPrompt';
 
 
 function AppShell() {
@@ -53,6 +55,10 @@ function AppShell() {
   useEffect(() => {
     configureNotificationHandler();
   }, []);
+
+  // The class alarms: stop a stale one from ringing when the app opens, and
+  // offer the snooze when one has just rung.
+  const alarmLifecycle = useClassAlarmLifecycle();
 
   // Register this device for class-targeted timetable pushes
   useEffect(() => {
@@ -121,6 +127,19 @@ function AppShell() {
           </Stack>
         </Animated.View>
       )}
+
+      {/* The prompt that appears when a class alarm rang. */}
+      {splashFinished && alarmLifecycle.ringedAlarm ? (
+        <AlarmRungPrompt
+          alarm={alarmLifecycle.ringedAlarm}
+          onSnooze={() => {
+            void alarmLifecycle.snooze();
+          }}
+          onDismiss={() => {
+            void alarmLifecycle.dismiss();
+          }}
+        />
+      ) : null}
     </SafeAreaProvider>
   );
 }

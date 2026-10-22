@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect } from 'react';
-import { StyleSheet, View, Text, Pressable, Dimensions, BackHandler } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  Text,
+  Pressable,
+  Dimensions,
+  BackHandler,
+  ScrollView,
+} from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -123,7 +131,10 @@ export const SheetOverlay: React.FC<SheetOverlayProps> = ({
             backgroundColor: variant === 'sheet' ? colors.surface : 'transparent',
             borderColor: colors.borderGlass,
             height,
-            maxHeight: variant === 'sheet' ? SCREEN_HEIGHT * 0.9 : SCREEN_HEIGHT * 0.9,
+            maxHeight: SCREEN_HEIGHT * 0.9,
+            // The sheet reaches under the navigation bar, so its content is
+            // padded clear of it.
+            paddingBottom: variant === 'sheet' ? insets.bottom + theme.spacing.lg : 0,
           },
           sheetStyle,
         ]}
@@ -136,7 +147,16 @@ export const SheetOverlay: React.FC<SheetOverlayProps> = ({
           </View>
         )}
 
-        <View style={styles.content}>{children}</View>
+        {/* The content scrolls, so a long form is never cut off. */}
+        <ScrollView
+          style={height ? styles.scrollFixed : styles.scrollAuto}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {children}
+        </ScrollView>
       </Animated.View>
     </View>
   );
@@ -157,13 +177,20 @@ const styles = StyleSheet.create({
     borderTopRightRadius: theme.radius.sheet,
     borderWidth: 1,
     paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.xxl,
     paddingHorizontal: theme.spacing.xl,
     shadowColor: theme.colors.borderStrong,
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.18,
     shadowRadius: 18,
     elevation: 24,
+  },
+  /** A sheet with a fixed height: the content fills it and scrolls. */
+  scrollFixed: {
+    flex: 1,
+  },
+  /** A sheet that grows with its content, up to the maximum height. */
+  scrollAuto: {
+    flexShrink: 1,
   },
   card: {
     width: SCREEN_WIDTH - theme.spacing.xl * 2,
@@ -200,8 +227,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   content: {
-    flex: 1,
     paddingTop: theme.spacing.xs,
+    paddingBottom: theme.spacing.md,
   },
 });
 

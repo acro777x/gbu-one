@@ -56,7 +56,7 @@
           "defaultChannel": "timetable_changes",
           "color": "#4F46E5",
           "sounds": [
-            "./assets/sounds/class_alarm.wav"
+            "./assets/sounds/class_alarm.mp3"
           ]
         }
       ],

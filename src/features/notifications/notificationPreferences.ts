@@ -18,6 +18,10 @@ export interface ClassReminder {
   start: string;
   fireAt: string;
   channelId: string;
+  /** The notification's own title, so a snooze can rebuild it. */
+  title?: string;
+  /** The notification's own body, so a snooze can rebuild it. */
+  body?: string;
 }
 
 /** One lead time the student can pick. */
