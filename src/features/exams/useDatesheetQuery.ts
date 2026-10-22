@@ -73,6 +73,8 @@ export function useDatesheetQuery(programmeCode: string, semester: string) {
       return entries.length > 0 ? entries : MOCK_DATESHEET;
     },
     initialData: MOCK_DATESHEET,
+    // The seed must not count as fresh, or the query never fetches.
+    initialDataUpdatedAt: 0,
     staleTime: 30 * 60 * 1000,
   });
 }

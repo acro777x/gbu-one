@@ -127,6 +127,10 @@ export function useNoticesQuery() {
       const cached = readCachedNotices();
       return cached.length > 0 ? cached : MOCK_NOTICES;
     },
+    // The seeded data is treated as stale from the start, so the query really
+    // does fetch. Without this the seed counts as fresh for the whole
+    // staleTime and the app would never ask the university for anything.
+    initialDataUpdatedAt: 0,
     staleTime: 5 * 60 * 1000,
   });
 }

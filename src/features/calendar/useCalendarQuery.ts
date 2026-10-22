@@ -68,6 +68,8 @@ export function useCalendarQuery() {
       return events.length > 0 ? events : OFFICIAL_ACADEMIC_EVENTS;
     },
     initialData: OFFICIAL_ACADEMIC_EVENTS,
+    // The seed must not count as fresh, or the query never fetches.
+    initialDataUpdatedAt: 0,
     staleTime: 30 * 60 * 1000,
   });
 }

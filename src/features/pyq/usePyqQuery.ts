@@ -37,6 +37,8 @@ export function usePyqQuery() {
     },
     // The seed paints instantly; the network refresh follows.
     initialData: MOCK_PAPERS,
+    // The seed must not count as fresh, or the query never fetches.
+    initialDataUpdatedAt: 0,
     staleTime: 5 * 60 * 1000,
   });
 }
