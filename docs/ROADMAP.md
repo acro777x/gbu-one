@@ -38,6 +38,8 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] The result finder points at the real thing — the per-school result sheets the examination portal publishes and the student's own portal (`gbuexam.in`, which asks for the roll number and the mobile number, so the app links out and never stores them)
 - [x] The PYQ upload is never a dead end — a paper handed in without an account or without the cloud is kept on the phone (`src/features/pyq/localUploadQueue.ts`) and goes up when the library is connected
 - [x] A long press opens a class in place — the class card expands with its time, room, faculty, attendance buttons and the alarm control, and the back button puts it back the way it was
+- [x] The app really fetches — every query seeded itself with `initialData` and a `staleTime`, which made TanStack Query treat the seed as fresh, so the query function never ran and the app only ever showed its bundled sample. The seed is now marked stale from the start (`initialDataUpdatedAt: 0`), so the screen still paints instantly and the real data arrives right after
+- [x] The icons draw again — the notice detail, the document viewer and the timetable change card used an icon font that never loaded in a release build, so every one of them was an empty box. They now draw with SVG, like the rest of the app
 
 ## Phase 3 — Notices
 - [x] Worker: fetch + parse main notices and exams portal, idempotent inserts (Supabase upsert keyed on `source_id`, `.github/workflows/worker-cron.yml` on a 15-minute schedule, soft-404 guard, GBU TLS tolerance, `worker/run.ts` entrypoint)
