@@ -14,6 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { radius, spacing } from '../../src/lib/theme';
+import { registerDocument } from '../../src/components/pdf/pdfRegistry';
 import { PillButton, Toast } from '../../src/components/ui';
 import {
   isSafePdfUrl,
@@ -117,7 +118,10 @@ export default function NoticeDetailScreen() {
     if (!notice) return;
     router.push({
       pathname: '/pdf',
-      params: { url: notice.fileUrl, title: notice.cleanTitle },
+      params: {
+        id: registerDocument(notice.fileUrl, notice.cleanTitle),
+        title: notice.cleanTitle,
+      },
     });
   };
 
@@ -308,7 +312,9 @@ export default function NoticeDetailScreen() {
           </View>
         )}
 
-        {/* Key Highlights / Summary Card */}
+        {/* Where the notice came from. The app does not invent a summary for
+            a notice it has not read: the text arrives with the worker's
+            extraction, and until then the official file is the source. */}
         <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
           <View style={styles.summaryHeaderRow}>
             <View style={[styles.sparkleIcon, { backgroundColor: colors.accentSoft }]}>
@@ -318,8 +324,9 @@ export default function NoticeDetailScreen() {
           </View>
 
           <Text style={[styles.summaryBody, { color: colors.textSecondary }]}>
-            Official document released by the Gautam Buddha University {catTheme.label} division.
-            Applicable to enrolled students across participating schools.
+            {hasExtractedText
+              ? 'The text below was taken from the official file, so you can read it without leaving the app.'
+              : 'The app has not read this file yet, so there is no summary to show. Open the official file below to read the whole notice.'}
           </Text>
 
           <View style={styles.highlightList}>
@@ -342,7 +349,7 @@ export default function NoticeDetailScreen() {
             <View style={styles.highlightItem}>
               <Ionicons name="document-text-outline" size={16} color={colors.accent} style={{ marginRight: 8, marginTop: 2 }} />
               <Text style={[styles.highlightText, { color: colors.textPrimary }]}>
-                Format: Verified official {notice.fileType.toUpperCase()} circular with digital seal
+                Published by the university on {notice.source === 'exams' ? 'the examination portal' : 'the university website'}
               </Text>
             </View>
           </View>

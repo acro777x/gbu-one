@@ -7,6 +7,7 @@ import { useAppTheme } from '../../lib/ThemeContext';
 import { radius, spacing } from '../../lib/theme';
 import { PdfViewer } from './PdfViewer';
 import { hostOfUrl, isSafePdfUrl } from './pdfHelpers';
+import { getDocument } from './pdfRegistry';
 
 /**
  * GBU One — Full-screen route that hosts the document viewer.
@@ -17,10 +18,16 @@ import { hostOfUrl, isSafePdfUrl } from './pdfHelpers';
  */
 export const PdfViewerScreen: React.FC = () => {
   const { colors } = useAppTheme();
-  const params = useLocalSearchParams<{ url?: string; title?: string }>();
+  const params = useLocalSearchParams<{ id?: string; url?: string; title?: string }>();
 
-  const url = typeof params.url === 'string' ? params.url : '';
-  const title = typeof params.title === 'string' ? params.title : '';
+  // The document is looked up in the registry, because the university's own
+  // file links carry a query string that does not survive a round trip
+  // through route parameters. A plain `url` parameter is still accepted, so
+  // a link into the viewer still works.
+  const registered = getDocument(typeof params.id === 'string' ? params.id : undefined);
+  const url = registered?.url ?? (typeof params.url === 'string' ? params.url : '');
+  const title =
+    registered?.title ?? (typeof params.title === 'string' ? params.title : '');
 
   const isSafe = useMemo(() => isSafePdfUrl(url), [url]);
 

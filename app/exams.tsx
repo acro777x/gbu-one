@@ -39,6 +39,7 @@ import {
 } from '../src/features/exams/resultPortals';
 import { useDatesheetQuery } from '../src/features/exams/useDatesheetQuery';
 import { useAuthStore } from '../src/store/useAuthStore';
+import { registerDocument } from '../src/components/pdf/pdfRegistry';
 import { theme } from '../src/lib/theme';
 import { useAppTheme } from '../src/lib/ThemeContext';
 
@@ -70,7 +71,7 @@ export default function ExamsScreen() {
     router.push({
       pathname: '/pdf',
       params: {
-        url: target.url,
+        id: registerDocument(target.url, `${target.school} result sheet`),
         title: `${target.school} result sheet`,
       },
     });

@@ -34,6 +34,7 @@ import {
   ACADEMIC_CALENDAR_PDF_URL,
   HOLIDAY_LIST_PDF_URL,
 } from '../src/features/calendar/officialAcademicCalendar';
+import { registerDocument } from '../src/components/pdf/pdfRegistry';
 import { theme } from '../src/lib/theme';
 
 import { useAppTheme } from '../src/lib/ThemeContext';
@@ -80,7 +81,7 @@ export default function CalendarScreen() {
     router.push({
       pathname: '/pdf',
       params: {
-        url: ACADEMIC_CALENDAR_PDF_URL,
+        id: registerDocument(ACADEMIC_CALENDAR_PDF_URL, 'Academic Calendar 2026-27'),
         title: 'Academic Calendar 2026-27',
       },
     });
@@ -90,7 +91,7 @@ export default function CalendarScreen() {
     router.push({
       pathname: '/pdf',
       params: {
-        url: HOLIDAY_LIST_PDF_URL,
+        id: registerDocument(HOLIDAY_LIST_PDF_URL, 'List of Holidays 2026'),
         title: 'List of Holidays 2026',
       },
     });
