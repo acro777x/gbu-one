@@ -5,7 +5,18 @@ They are the build artefacts handed to the owner.
 
 | File | What it is |
 | --- | --- |
-| `gbu-one-latest-release.apk` | The current **signed release** build. Signed with the keystore from `GBU_ANDROID_KEYSTORE_PATH` / `GBU_ANDROID_KEY_ALIAS` (see `docs/RELEASE.md`). Never signed with the debug key — `tools/build_android_apk.py` fails the build if it is. |
+| `gbu-one-latest-release.apk` | The current **signed release** build (about 123 MB). Signed with the keystore from `GBU_ANDROID_KEYSTORE_PATH` / `GBU_ANDROID_KEY_ALIAS` (see `docs/RELEASE.md`). Never signed with the debug key — `tools/build_android_apk.py` fails the build if it is. |
+
+## Installing on a phone over USB
+
+```powershell
+adb devices                 # the phone must show as "device"
+adb install -r apk\gbu-one-latest-release.apk
+```
+
+If the phone was installed with a different key, `adb install -r` refuses
+(`INSTALL_FAILED_UPDATE_INCOMPATIBLE`); remove it first with
+`adb uninstall in.gbu.one`.
 
 ## Rebuilding
 
@@ -21,9 +32,10 @@ python tools\build_android_apk.py --release
 ```
 
 The script always re-runs `expo prebuild` (the signing plugin writes the
-`GBU_ANDROID_*` values into `android/gradle.properties`), retries Gradle once
-and prints the certificate DN of the finished APK. A full build takes about
-20 minutes.
+`GBU_ANDROID_*` values into `android/gradle.properties`), installs the
+dependencies in the build copy when `package.json` has changed, retries
+Gradle once and prints the certificate DN of the finished APK. A full build
+takes about 20 minutes.
 
 ## Before you publish
 
