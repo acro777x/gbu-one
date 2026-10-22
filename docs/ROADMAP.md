@@ -54,6 +54,8 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Virtualized 2-column FlatList Grid UI with multi-select and honest cloud sync status
 - [x] Upload flow + student moderation disclaimers
 - [x] Report button, copyright/takedown note, Trending row
+- [x] The Telegram PYQ archive is read, resolved and imported — the git-ignored tooling in `scripts/pyq-import/` turns the student library (45 folders, 162 files) into 39 `pending` rows in `pyq_papers` plus their objects in `pyq-pending`, deriving every field from a catalogue code, a file name or a curated override and recording that provenance on each paper's moderation trail; the plan refuses to guess the 122 files it cannot file, 26 self-tests guard the parsing rules, and a re-run is idempotent. `--apply` has no code path that publishes: a moderator still approves every paper in the app. What it surfaced is listed in `docs/PYQ_IMPORT.md` and `docs/OPEN_QUESTIONS.md` #20
+- [ ] The archive's remaining questions answered — 51 files wait on the programme code for a subject the timetable offers to several programmes, 52 on a subject for the 18 folders the catalogue cannot name, 34 on a year or an exam type, and two name matches (`Engineering_Mechanics` → PH111, `Research_Optimization_for_Data_Science` → MDS101) want a second look. Owner action: fill `scripts/pyq-import/import-answers.csv` (per file) or `overrides.json` (per folder) and re-run the importer; tracked as `docs/OPEN_QUESTIONS.md` #20
 
 ## Phase 5 — Exams, results, deadlines, calendar
 - [x] Exam hub: date sheet for my programme, revision alerts, countdown, admit card reminder
