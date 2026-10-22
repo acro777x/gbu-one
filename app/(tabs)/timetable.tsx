@@ -19,6 +19,7 @@ import {
   Clock,
   Sparkles,
   Bell,
+  Check,
   CheckCircle,
   XCircle,
   X,
@@ -26,6 +27,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import { GlassCard, Skeleton, EmptyState, Chip, SheetOverlay, PillButton } from '../../src/components/ui';
+import { AlarmStateRow } from '../../src/components/notifications/AlarmStateRow';
 import {
   Timetable,
   Slot,
@@ -1008,32 +1010,12 @@ export default function TimetableScreen() {
                   </View>
 
                   {slotReminder ? (
-                    <View
-                      style={[
-                        styles.scheduledRow,
-                        { backgroundColor: colors.successSoft, borderColor: colors.success },
-                      ]}
-                    >
-                      <CheckCircle size={16} color={colors.success} />
-                      <Text style={[styles.scheduledText, { color: colors.success }]}>
-                        {slotReminder.leadMinutes === leadMinutes
-                          ? `Alarm set ${formatLeadTime(slotReminder.leadMinutes)}`
-                          : `Alarm set ${formatLeadTime(slotReminder.leadMinutes)}`}
-                      </Text>
-                      <TouchableOpacity
-                        style={styles.scheduledCancel}
-                        onPress={() => {
-                          void handleCancelReminder(slotReminder.slotId);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Cancel the alarm for ${slotReminder.subject}`}
-                        hitSlop={8}
-                      >
-                        <Text style={[styles.scheduledCancelText, { color: colors.danger }]}>
-                          Cancel
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
+                    <AlarmStateRow
+                      label={`Alarm set ${formatLeadTime(slotReminder.leadMinutes)}`}
+                      onCancel={() => {
+                        void handleCancelReminder(slotReminder.slotId);
+                      }}
+                    />
                   ) : null}
 
                   {/* The action reads as one clear primary button, and says
@@ -1042,10 +1024,7 @@ export default function TimetableScreen() {
                     style={[
                       styles.reminderBtn,
                       {
-                        backgroundColor:
-                          slotReminder && slotReminder.leadMinutes === leadMinutes
-                            ? colors.success
-                            : colors.accentFill,
+                        backgroundColor: colors.accentFill,
                         borderColor: colors.borderGlass,
                       },
                     ]}
@@ -1055,7 +1034,11 @@ export default function TimetableScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Set class reminder notification ${formatLeadTime(leadMinutes)}`}
                   >
-                    <Bell size={17} color={colors.onAccent} />
+                    {slotReminder && slotReminder.leadMinutes === leadMinutes ? (
+                      <Check size={17} color={colors.onAccent} />
+                    ) : (
+                      <Bell size={17} color={colors.onAccent} />
+                    )}
                     <Text style={[styles.reminderBtnText, { color: colors.onAccent }]}>
                       {slotReminder
                         ? slotReminder.leadMinutes === leadMinutes
