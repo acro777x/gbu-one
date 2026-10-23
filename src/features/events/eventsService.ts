@@ -189,13 +189,58 @@ export async function listCampusEvents(limit = 300): Promise<CampusEvent[]> {
       .select('*')
       .order('start_date', { ascending: true })
       .limit(limit);
-    if (error || !data || data.length === 0) {
-      return MOCK_EVENTS.map((e) => ({ ...e, source: 'seed' }));
+    if (!error && data && data.length > 0) {
+      return (data as Record<string, unknown>[]).map((row) => rowToEvent(row));
     }
-    return (data as Record<string, unknown>[]).map((row) => rowToEvent(row));
   } catch {
-    return MOCK_EVENTS.map((e) => ({ ...e, source: 'seed' }));
+    // continue to calendar_events fallback
   }
+
+  try {
+    const { data: calData, error: calError } = await supabase
+      .from('calendar_events')
+      .select('*')
+      .order('date_from', { ascending: true })
+      .limit(limit);
+    if (!calError && calData && calData.length > 0) {
+      const liveEvents = (calData as Record<string, unknown>[]).map((row) => calendarRowToCampusEvent(row));
+      return [...liveEvents, ...MOCK_EVENTS.map((e) => ({ ...e, source: 'seed' }))];
+    }
+  } catch {
+    // continue to seed fallback
+  }
+
+  return MOCK_EVENTS.map((e) => ({ ...e, source: 'seed' }));
+}
+
+function calendarRowToCampusEvent(row: Record<string, unknown>): CampusEvent {
+  const dFrom = String(row.date_from ?? '');
+  const dTo = String(row.date_to ?? dFrom);
+  const startIso = dFrom.includes('T') ? dFrom : (dFrom + 'T09:00:00.000Z');
+  const endIso = dTo.includes('T') ? dTo : (dTo + 'T18:00:00.000Z');
+  const catRaw = String(row.type ?? 'academic').toLowerCase();
+  let category: EventCategory = 'other';
+  if (catRaw.includes('workshop')) category = 'workshop';
+  else if (catRaw.includes('fest')) category = 'fest';
+  else if (catRaw.includes('sport')) category = 'sports';
+  else if (catRaw.includes('cultural')) category = 'cultural';
+  else if (catRaw.includes('placement')) category = 'placement';
+  else if (catRaw.includes('lecture')) category = 'guest-lecture';
+
+  return {
+    id: String(row.id ?? ''),
+    title: String(row.title ?? ''),
+    description: 'Official University Schedule: ' + String(row.title ?? '') + '. Verified from university portal.',
+    category,
+    startDate: startIso,
+    endDate: endIso,
+    venue: 'Gautam Buddha University Campus',
+    isFree: true,
+    registrationRequired: false,
+    audience: ['all'],
+    source: 'supabase',
+    isSample: false,
+  };
 }
 
 function rowToEvent(row: Record<string, unknown>): CampusEvent {

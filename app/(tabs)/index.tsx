@@ -227,7 +227,7 @@ export default function HomeScreen() {
               url={user?.avatarUrl}
               name={user?.name}
               isGuest={isGuest}
-              size={34}
+              size={44}
             />
           </TouchableOpacity>
         </View>
@@ -306,7 +306,11 @@ export default function HomeScreen() {
           {/* Next Class Card */}
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Up Next</Text>
-            <TouchableOpacity onPress={() => router.push('/timetable' as never)}>
+            <TouchableOpacity
+              onPress={() => router.push('/timetable' as never)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ paddingVertical: 8 }}
+            >
               <Text style={[styles.seeAllText, { color: colors.accent }]}>Full Schedule</Text>
             </TouchableOpacity>
           </View>
@@ -355,7 +359,11 @@ export default function HomeScreen() {
                     </View>
                   )}
                 </View>
-                <TouchableOpacity onPress={() => router.push('/mail' as never)}>
+                <TouchableOpacity
+                  onPress={() => router.push('/mail' as never)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ paddingVertical: 8 }}
+                >
                   <Text style={[styles.seeAllText, { color: colors.accent }]}>Open Webmail</Text>
                 </TouchableOpacity>
               </View>
@@ -583,9 +591,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   mailButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -609,9 +617,9 @@ const styles = StyleSheet.create({
     fontSize: 9,
   },
   bellButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -642,6 +650,8 @@ const styles = StyleSheet.create({
   quickHubItem: {
     alignItems: 'center',
     width: 72,
+    minHeight: 44,
+    paddingVertical: 6,
   },
   quickHubIcon: {
     width: 50,

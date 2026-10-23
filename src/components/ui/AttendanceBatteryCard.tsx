@@ -455,8 +455,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statusIconCircle: {
-    width: 38,
-    height: 38,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
@@ -497,7 +497,8 @@ const styles = StyleSheet.create({
   },
   modeBtn: {
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 10,
+    minHeight: 44,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',

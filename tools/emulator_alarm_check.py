@@ -117,7 +117,7 @@ def main():
     shot('alarm_sheet')
 
     print('press the set button')
-    pos = find(dump(), 'Set Class Reminder Notification')
+    pos = find(dump(), 'Set alarm')
     if not pos:
         print('  ! the set button is not on screen')
         return

@@ -13,9 +13,12 @@ checklist_extracted/
 Glossy Orange GBU One App Icon.png
 
 # research scratch (one-off probes; never ship)
+__pycache__/
+*.pyc
 research/
 scripts/
 worker_out.txt
+expo_run_out.txt
 gbu_live.html
 gbu_home.html
 mygbu39.json
