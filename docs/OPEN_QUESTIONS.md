@@ -1,3 +1,14 @@
+# Open Questions / Blocked Items (updated 2026-10-23)
+
+## 23. Native APK build & emulator visual test not possible in this environment
+- **Context:** The owner asked to compile an APK, run it in the emulator, and visually verify screens (events, exams, PYQ, alarms, notifications, etc.).
+- **Blocker:** No Android SDK (`ANDROID_HOME` unset), no `expo`/`eas` CLI, no `gradle` on PATH. Only `java` and `adb` are available. Building a native Expo APK requires the Android SDK, build-tools, and `expo prebuild` + gradle, which are not installed.
+- **What IS verified:** `npm run typecheck` (clean), `npm run lint` (clean), `npm test` (29 suites / 420 tests, all pass). The events screen logic is covered by the events service + query unit tests.
+- **Owner action:** install Android Studio + SDK + `npm i -g eas-cli`, then `eas build --platform android --profile preview` (see `docs/RELEASE.md`). Visual QA on the emulator can then be run against the resulting APK.
+- **Fallback:** All screens are verified against `docs/UI_SPEC.md` / `docs/FULL_UI_AUDIT.md` in code review; the unit suite guards logic; the owner's signed release APK (already built per `docs/RELEASE.md`) is the reference binary.
+
+---
+
 # Open Questions (agent: append here; owner: answer inline)
 
 1. Timetable API: [RESOLVED] Base URL `https://mygbu.in/schd/api.php` verified with `schd=39` (current semester, 4,278 records) and `schd=40` (next semester). Reverse engineering of `base.apk` confirmed endpoints and period times (1-hour slots from 08:30 to 18:30). Publicly accessible per section without credentials.
