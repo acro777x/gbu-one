@@ -199,11 +199,18 @@ export default function LoginScreen() {
                 }}
                 placeholder="e.g. 22/BCS/048"
                 placeholderTextColor={colors.textTertiary}
-                autoCapitalize="characters"
+                autoCapitalize="none"
                 autoCorrect={false}
+                keyboardType="email-address"
                 style={[styles.textInput, { color: colors.textPrimary }]}
+                accessibilityLabel="Roll number or email address"
+                accessibilityHint="Students enter their roll number. The owner and moderators enter the email address of their GBU One account."
               />
             </View>
+            <Text style={[styles.fieldHint, { color: colors.textTertiary }]}>
+              Students: your roll number. Moderators and the owner: the email address on your GBU
+              One account.
+            </Text>
           </View>
 
           {/* Password Field */}
@@ -513,6 +520,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     fontSize: 13,
     marginBottom: 8,
+  },
+  fieldHint: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 6,
   },
   inputContainer: {
     flexDirection: 'row',

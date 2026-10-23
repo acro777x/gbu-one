@@ -30,6 +30,8 @@ Buttons: **Log in** (primary pill), **Create account**, **Continue as guest** (s
 ### University credential features (future, owner will decide)
 If a feature later needs a university login, it must authenticate directly against the university endpoint from the device, keep the token only in secure storage (expo-secure-store), never send it to Supabase or the worker, and be clearly consented. Document in `OPEN_QUESTIONS.md` before building.
 
+**Resolved for the exam portal (2026-10-23, OPEN_QUESTIONS #22):** `gbuexam.in/result/login.php` asks for the roll number, a password **and a captcha**. An automated sign-in would mean defeating that anti-automation control, so the app refuses the whole idea — no portal credential is collected, stored or forwarded, and the host stays a link-out (`docs/DATA_SOURCES.md`). The student's *need* is met from the public side instead: `src/features/exams/resultsWatch.ts` watches the school's published result sheet for a changed `Last-Modified`/size and raises a local notification, entirely on the device.
+
 ## 4. Class setup (required for personalisation, also for guests)
 Step sheet (N99-style bottom sheet with chips):
 1. School (SoICT, SoE, SoM, SoBT, SoHSS, SoVSAS, SoLJG, SoBSC)

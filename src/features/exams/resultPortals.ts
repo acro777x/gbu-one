@@ -7,9 +7,12 @@
  *     scans, one file per school. They are public, so the app can open them
  *     and let the student read their own row.
  *  2. The personal result and the admit card are behind the student portal
- *     (`gbuexam.in`), which asks for the roll number and the mobile number.
- *     That is a login, so the app links out to it and never stores the
- *     student's credentials.
+ *     (`gbuexam.in/result/login.php`), which asks for the roll number, a
+ *     password and a captcha. That is a login with an anti-automation control,
+ *     so the app links out to it and never stores the student's credentials.
+ *     What the app *can* watch is the public sheet above: see
+ *     `resultsWatch.ts`, which alerts the student when a school's sheet is
+ *     re-published. (docs/DATA_SOURCES.md, docs/OPEN_QUESTIONS.md #22.)
  */
 import { Linking } from 'react-native';
 

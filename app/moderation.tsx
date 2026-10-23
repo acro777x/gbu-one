@@ -18,12 +18,14 @@ import {
   FileText,
   Inbox,
 } from 'lucide-react-native';
-import { GlassCard, PillButton, Toast, EmptyState } from '../src/components/ui';
+import { GlassCard, PillButton, Toast, EmptyState, BottomSheet } from '../src/components/ui';
 import { useAuthStore } from '../src/store/useAuthStore';
 import {
   applyModeration,
-  isModerator,
+  approveAllPending,
   listPendingPapers,
+  moderatorStatus,
+  type ModeratorStatus,
   type PyqPaperRecord,
 } from '../src/features/pyq/pyqRepository';
 import { moderationActionLabel, type ModerationAction } from '../src/features/pyq/pyqStorage';
@@ -37,8 +39,10 @@ export default function ModerationQueueScreen() {
 
   const [papers, setPapers] = useState<PyqPaperRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [allowed, setAllowed] = useState(false);
+  const [access, setAccess] = useState<ModeratorStatus>({ state: 'signed-out', reason: '' });
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkSheetVisible, setBulkSheetVisible] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
 
@@ -49,11 +53,9 @@ export default function ModerationQueueScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [mod, pending] = await Promise.all([
-      isModerator(user?.email),
-      listPendingPapers(),
-    ]);
-    setAllowed(mod);
+    const status = await moderatorStatus(user?.email);
+    const pending = status.state === 'moderator' ? await listPendingPapers() : [];
+    setAccess(status);
     setPapers(pending);
     setLoading(false);
   }, [user?.email]);
@@ -78,6 +80,19 @@ export default function ModerationQueueScreen() {
           : 'Changes requested from the uploader.',
     );
     setPapers((prev) => prev.filter((p) => p.id !== paper.id));
+  };
+
+  const handleApproveAll = async () => {
+    setBulkSheetVisible(false);
+    setBulkBusy(true);
+    const { approved, failed } = await approveAllPending(user?.email ?? null);
+    setBulkBusy(false);
+    showToast(
+      failed === 0
+        ? `${approved} paper${approved === 1 ? '' : 's'} approved and published.`
+        : `${approved} approved, ${failed} could not be published. The first error is above the list.`,
+    );
+    void load();
   };
 
   return (
@@ -115,11 +130,17 @@ export default function ModerationQueueScreen() {
           />
         }
       >
-        {!allowed ? (
+        {access.state !== 'moderator' ? (
           <View style={styles.noticeCard}>
             <EmptyState
-              title="Moderator access required"
-              description="Only the owner and the trusted students listed in the moderators table can review uploads. Add your email in the Supabase dashboard to join the team."
+              title={
+                access.state === 'backend-refused'
+                  ? 'The server blocked the queue'
+                  : access.state === 'signed-out'
+                    ? 'Sign in to review'
+                    : 'Moderator access required'
+              }
+              description={access.reason}
               icon={<ShieldCheck size={28} color={colors.accent} />}
             />
           </View>
@@ -132,7 +153,28 @@ export default function ModerationQueueScreen() {
             />
           </View>
         ) : (
-          papers.map((paper) => (
+          <>
+            {/* The owner clears the imported archive in one pass; every paper
+                still goes through its own moderation call and log entry. */}
+            <GlassCard style={styles.bulkCard}>
+              <Text style={[styles.bulkTitle, { color: colors.textPrimary }]}>
+                {papers.length} paper{papers.length === 1 ? '' : 's'} waiting
+              </Text>
+              <Text style={[styles.bulkBody, { color: colors.textSecondary }]}>
+                Approving publishes the file to every student and records your email in the
+                moderation log. Check the metadata before you publish a batch.
+              </Text>
+              <PillButton
+                label={bulkBusy ? 'Publishing...' : `Approve all ${papers.length}`}
+                onPress={() => setBulkSheetVisible(true)}
+                loading={bulkBusy}
+                variant="outline"
+                size="sm"
+                style={{ marginTop: spacing.sm }}
+              />
+            </GlassCard>
+
+            {papers.map((paper) => (
             <GlassCard key={paper.id} style={styles.card}>
               <View style={styles.cardHeader}>
                 <View
@@ -183,9 +225,36 @@ export default function ModerationQueueScreen() {
                 />
               </View>
             </GlassCard>
-          ))
+            ))}
+          </>
         )}
       </ScrollView>
+
+      {/* Publishing is irreversible for students, so it asks once. */}
+      <BottomSheet
+        visible={bulkSheetVisible}
+        onClose={() => setBulkSheetVisible(false)}
+        title="Publish every waiting paper?"
+      >
+        <Text style={[styles.sheetBody, { color: colors.textSecondary }]}>
+          All {papers.length} waiting papers move to the public PYQ shelf and become downloadable by
+          every student. Each one is recorded in the moderation log against your account.
+        </Text>
+        <PillButton
+          label={`Yes, publish ${papers.length}`}
+          onPress={() => void handleApproveAll()}
+          variant="primary"
+          size="md"
+          style={{ marginTop: spacing.md }}
+        />
+        <PillButton
+          label="Cancel"
+          onPress={() => setBulkSheetVisible(false)}
+          variant="outline"
+          size="md"
+          style={{ marginTop: spacing.sm }}
+        />
+      </BottomSheet>
 
       <Toast
         message={toastMessage}
@@ -231,6 +300,25 @@ const styles = StyleSheet.create({
   },
   noticeCard: {
     marginTop: spacing.lg,
+  },
+  bulkCard: {
+    padding: spacing.md,
+    borderRadius: 18,
+  },
+  bulkTitle: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 15,
+    marginBottom: 4,
+  },
+  bulkBody: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  sheetBody: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 13,
+    lineHeight: 19,
   },
   card: {
     padding: spacing.md,

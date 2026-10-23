@@ -287,24 +287,11 @@ create policy "pyq approved read" on storage.objects
   for select to public
   using (bucket_id = 'pyq');
 
--- Moderators move files between the buckets.
-drop policy if exists "pyq moderator move" on storage.objects;
-create policy "pyq moderator move" on storage.objects
-  for all to authenticated
-  using (
-    bucket_id in ('pyq-pending','pyq')
-    and exists (
-      select 1 from public.moderators m
-      where m.email = auth.jwt() ->> 'email'
-    )
-  )
-  with check (
-    bucket_id in ('pyq-pending','pyq')
-    and exists (
-      select 1 from public.moderators m
-      where m.email = auth.jwt() ->> 'email'
-    )
-  );
+-- Moderators move files between the buckets. The policy itself is created with
+-- the rest of the row level security block at the end of this file, because it
+-- calls public.is_moderator(), which has to exist first. A policy that spelled
+-- the check out as a subquery on public.moderators could never match: the
+-- subquery is filtered by that table's own row level security.
 
 -- Download counter for an approved paper.
 create or replace function public.increment_paper_downloads(paper_id uuid)
@@ -319,4 +306,181 @@ begin
    where id = paper_id and status = 'approved';
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Row level security (see docs/ADMIN_MODERATION.md)
+--
+-- The project is deny-by-default: with row level security switched on and no
+-- policy for a table, every read and write from the app is refused. The
+-- offline-first screens hide that well - they quietly fall back to their
+-- bundled data - so the failure used to look like "nothing to show" instead of
+-- an error. These are the policies the shipped screens actually need, plus the
+-- ones the worker's writes already relied on the service role for.
+--
+-- public.is_moderator() is SECURITY DEFINER on purpose. A policy that spells
+-- out "exists (select 1 from public.moderators ...)" is itself filtered by the
+-- moderator table's own row level security, so the check came back false and
+-- the storage move was refused even for the owner. The helper reads the
+-- allowlist directly, so it is the first thing to create.
+-- ---------------------------------------------------------------------------
+create or replace function public.is_moderator()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.moderators m
+    where lower(m.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  );
+$$;
+grant execute on function public.is_moderator() to anon, authenticated;
+
+-- The allowlist itself: a signed-in user may read their own row (that is what
+-- isModerator() asks for), a moderator may read the whole list.
+alter table public.moderators enable row level security;
+drop policy if exists "moderators read own" on public.moderators;
+create policy "moderators read own" on public.moderators
+  for select to authenticated
+  using (lower(email) = lower(coalesce(auth.jwt() ->> 'email', '')) or public.is_moderator());
+
+-- Published university data: readable by everybody, written by the worker only.
+alter table public.notices enable row level security;
+drop policy if exists "notices read" on public.notices;
+create policy "notices read" on public.notices
+  for select to anon, authenticated using (true);
+
+alter table public.notice_attachments enable row level security;
+drop policy if exists "notice attachments read" on public.notice_attachments;
+create policy "notice attachments read" on public.notice_attachments
+  for select to anon, authenticated using (true);
+
+alter table public.notice_threads enable row level security;
+drop policy if exists "notice threads read" on public.notice_threads;
+create policy "notice threads read" on public.notice_threads
+  for select to anon, authenticated using (true);
+
+alter table public.calendar_events enable row level security;
+drop policy if exists "calendar events read" on public.calendar_events;
+create policy "calendar events read" on public.calendar_events
+  for select to anon, authenticated using (true);
+
+alter table public.exam_datesheets enable row level security;
+drop policy if exists "exam datesheets read" on public.exam_datesheets;
+create policy "exam datesheets read" on public.exam_datesheets
+  for select to anon, authenticated using (true);
+
+alter table public.exam_date_slots enable row level security;
+drop policy if exists "exam date slots read" on public.exam_date_slots;
+create policy "exam date slots read" on public.exam_date_slots
+  for select to anon, authenticated using (true);
+
+alter table public.results enable row level security;
+drop policy if exists "results read" on public.results;
+create policy "results read" on public.results
+  for select to anon, authenticated using (true);
+
+alter table public.timetable_changes enable row level security;
+drop policy if exists "timetable changes read" on public.timetable_changes;
+create policy "timetable changes read" on public.timetable_changes
+  for select to anon, authenticated using (true);
+
+-- PYQ papers: the queue is private, the published shelf is public.
+alter table public.pyq_papers enable row level security;
+
+drop policy if exists "pyq papers approved read" on public.pyq_papers;
+create policy "pyq papers approved read" on public.pyq_papers
+  for select to anon, authenticated
+  using (status = 'approved');
+
+drop policy if exists "pyq papers moderator read" on public.pyq_papers;
+create policy "pyq papers moderator read" on public.pyq_papers
+  for select to authenticated
+  using (public.is_moderator());
+
+-- A signed-in student queues their own upload; it can only ever be pending.
+drop policy if exists "pyq papers insert pending" on public.pyq_papers;
+create policy "pyq papers insert pending" on public.pyq_papers
+  for insert to authenticated
+  with check (
+    status = 'pending'
+    and (uploader_id is null or uploader_id = auth.uid())
+  );
+
+-- Only a moderator changes a status (approve / reject / request changes).
+drop policy if exists "pyq papers moderator update" on public.pyq_papers;
+create policy "pyq papers moderator update" on public.pyq_papers
+  for update to authenticated
+  using (public.is_moderator())
+  with check (public.is_moderator());
+
+-- The moderation trail is written and read by moderators.
+alter table public.pyq_moderation_log enable row level security;
+drop policy if exists "pyq log moderator read" on public.pyq_moderation_log;
+create policy "pyq log moderator read" on public.pyq_moderation_log
+  for select to authenticated using (public.is_moderator());
+drop policy if exists "pyq log moderator insert" on public.pyq_moderation_log;
+create policy "pyq log moderator insert" on public.pyq_moderation_log
+  for insert to authenticated with check (public.is_moderator());
+
+-- Push tokens: a device owns its own rows. Guests have no user id, so the
+-- anonymous token they register is allowed through with a null owner.
+alter table public.device_tokens enable row level security;
+drop policy if exists "device tokens own" on public.device_tokens;
+create policy "device tokens own" on public.device_tokens
+  for all to authenticated
+  using (user_id is null or user_id = auth.uid())
+  with check (user_id is null or user_id = auth.uid());
+
+-- Reporting a paper: anyone signed in may report, only moderators may read.
+alter table public.reports enable row level security;
+drop policy if exists "reports insert" on public.reports;
+create policy "reports insert" on public.reports
+  for insert to authenticated
+  with check (reporter_id is null or reporter_id = auth.uid());
+drop policy if exists "reports moderator read" on public.reports;
+create policy "reports moderator read" on public.reports
+  for select to authenticated using (public.is_moderator());
+
+-- A student's own saved rows.
+alter table public.profiles enable row level security;
+drop policy if exists "profiles own" on public.profiles;
+create policy "profiles own" on public.profiles
+  for all to authenticated
+  using (id = auth.uid())
+  with check (id = auth.uid());
+
+alter table public.notification_prefs enable row level security;
+drop policy if exists "notification prefs own" on public.notification_prefs;
+create policy "notification prefs own" on public.notification_prefs
+  for all to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+alter table public.saved_notices enable row level security;
+drop policy if exists "saved notices own" on public.saved_notices;
+create policy "saved notices own" on public.saved_notices
+  for all to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+-- Storage, re-stated here because the policies above are defined *before*
+-- public.is_moderator() exists in this script. The original "pyq moderator
+-- move" policy spelled the moderator check out as a subquery on
+-- public.moderators; that subquery is itself filtered by the allowlist's row
+-- level security, so it never matched and the file move was refused for
+-- everybody. These replacements call the helper instead.
+drop policy if exists "pyq moderator move" on storage.objects;
+create policy "pyq moderator move" on storage.objects
+  for all to authenticated
+  using (bucket_id in ('pyq-pending','pyq') and public.is_moderator())
+  with check (bucket_id in ('pyq-pending','pyq') and public.is_moderator());
+
+-- The uploader may drop their own pending file when the queue row could not be
+-- written (uploadPendingPaper() cleans up after a failed insert).
+drop policy if exists "pyq pending delete own" on storage.objects;
+create policy "pyq pending delete own" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'pyq-pending' and owner_id = auth.uid()::text);
 `;

@@ -6,6 +6,7 @@
  */
 import type { NoticeItem } from '../features/notices/noticeService';
 import type { Timetable } from '../features/timetable/timetableProvider';
+import type { CampusEvent } from '../features/events/eventsService';
 
 let SQLite: typeof import('expo-sqlite') | null = null;
 try {
@@ -40,6 +41,15 @@ function getDb(): Db | null {
         class_key TEXT NOT NULL, session_id TEXT NOT NULL,
         payload TEXT NOT NULL, updated_at INTEGER NOT NULL,
         PRIMARY KEY (class_key, session_id));`);
+      db.runSync(`CREATE TABLE IF NOT EXISTS campus_events_cache (
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'other', start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL, venue TEXT NOT NULL DEFAULT '',
+        is_free INTEGER NOT NULL DEFAULT 1, registration_required INTEGER NOT NULL DEFAULT 0,
+        registration_url TEXT, image_url TEXT, audience TEXT NOT NULL DEFAULT '[]',
+        source TEXT NOT NULL DEFAULT 'seed', is_sample INTEGER NOT NULL DEFAULT 1,
+        payload TEXT NOT NULL, updated_at INTEGER NOT NULL);`);
+
       db.runSync(`CREATE TABLE IF NOT EXISTS kv_meta (
         key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);`);
     } catch {
@@ -162,5 +172,52 @@ export function writeMeta(key: string, value: string): void {
       [key, value, Date.now()]);
   } catch {
     // ignore
+  }
+}
+
+export function readCachedEvents(limit = 300): CampusEvent[] {
+  const d = getDb();
+  if (!d) return [];
+  try {
+    const rows = d.getAllSync<{ payload: string }>(
+      'SELECT payload FROM campus_events_cache ORDER BY start_date ASC LIMIT ?;',
+      [limit]);
+    return rows
+      .map((r) => safeJsonParse<CampusEvent | null>(r.payload, null))
+      .filter((e): e is CampusEvent => !!e && typeof e.id === 'string');
+  } catch {
+    return [];
+  }
+}
+
+export function writeCachedEvents(events: CampusEvent[]): void {
+  const d = getDb();
+  if (!d || events.length === 0) return;
+  try {
+    const now = Date.now();
+    for (const e of events) {
+      d.runSync(
+        `INSERT INTO campus_events_cache
+           (id, title, description, category, start_date, end_date, venue,
+            is_free, registration_required, registration_url, image_url,
+            audience, source, is_sample, payload, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           title=excluded.title, description=excluded.description,
+           category=excluded.category, start_date=excluded.start_date,
+           end_date=excluded.end_date, venue=excluded.venue,
+           is_free=excluded.is_free, registration_required=excluded.registration_required,
+           registration_url=excluded.registration_url, image_url=excluded.image_url,
+           audience=excluded.audience, source=excluded.source,
+           is_sample=excluded.is_sample, payload=excluded.payload,
+           updated_at=excluded.updated_at;`,
+        [e.id, e.title, e.description, e.category, e.startDate, e.endDate,
+         e.venue, e.isFree ? 1 : 0, e.registrationRequired ? 1 : 0,
+         e.registrationUrl ?? null, e.imageUrl ?? null,
+         JSON.stringify(e.audience), e.source, e.isSample ? 1 : 0,
+         JSON.stringify(e), now]);
+    }
+  } catch {
+    // cache writes must never crash the UI
   }
 }

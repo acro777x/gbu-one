@@ -61,8 +61,20 @@ interface AuthErrorLike {
   status?: number | null;
 }
 
-const toStudentEmail = (rollNo: string): string =>
-  `${rollNo.toLowerCase().replace(/[^a-z0-9]/g, '')}@gbu.ac.in`;
+/**
+ * The Supabase account email for whatever was typed in the login box.
+ *
+ * A roll number maps onto the student domain, and anything that is already an
+ * email is used as it is — that is how the owner's admin account (and any
+ * future staff account) signs in from the same screen. The account is ours,
+ * never a university one: no university password is ever collected
+ * (docs/SCREENS_AUTH.md, docs/ADMIN_MODERATION.md).
+ */
+export function toLoginEmail(identifier: string): string {
+  const value = identifier.trim().toLowerCase();
+  if (value.includes('@')) return value;
+  return `${value.replace(/[^a-z0-9]/g, '')}@gbu.ac.in`;
+}
 
 const describeAuthError = (
   error: AuthErrorLike,
@@ -182,8 +194,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   login: async (rollNo: string, password: string) => {
-    const trimmedRoll = rollNo.trim().toUpperCase();
-    if (!trimmedRoll || !password) {
+    const typed = rollNo.trim();
+    // A roll number is upper-cased for display; an email address (the owner's
+    // admin account) is kept lower-case.
+    const identifier = typed.includes('@') ? typed.toLowerCase() : typed.toUpperCase();
+    if (!identifier || !password) {
       return { success: false, error: 'Please enter both roll number and password.' };
     }
 
@@ -195,11 +210,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     if (isSupabaseConfigured) {
-      const studentEmail = toStudentEmail(trimmedRoll);
+      const accountEmail = toLoginEmail(identifier);
 
       try {
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: studentEmail,
+          email: accountEmail,
           password,
         });
 
@@ -215,9 +230,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const metadataName = signedInUser.user_metadata?.name;
         const userProfile: UserProfile = {
           id: signedInUser.id,
-          rollNo: trimmedRoll,
+          rollNo: identifier,
           name: typeof metadataName === 'string' ? metadataName : 'Student',
-          email: signedInUser.email || studentEmail,
+          email: signedInUser.email || accountEmail,
           classSelection: get().classSelection,
           isOfflineSession: false,
         };
@@ -238,9 +253,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Supabase is not configured: local-only session for the offline build.
     const localUser: UserProfile = {
       id: `usr_${Date.now()}`,
-      rollNo: trimmedRoll,
-      name: trimmedRoll.startsWith('22') ? 'Aarav Sharma' : 'Student',
-      email: toStudentEmail(trimmedRoll),
+      rollNo: identifier,
+      name: identifier.startsWith('22') ? 'Aarav Sharma' : 'Student',
+      email: toLoginEmail(identifier),
       classSelection: get().classSelection,
       isOfflineSession: true,
     };

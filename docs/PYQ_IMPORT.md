@@ -99,6 +99,15 @@ Then re-run the plan (`node scripts/pyq-import/importPyq.js`) and, when
 `owner-review.md` looks right, `--apply --tier=all`. Already-imported rows are
 skipped, so the command is safe to repeat.
 
+## Getting the 39 pending rows published
+
+The import deliberately stops at `pending`: a moderator publishes each paper.
+That step needs the row level security block in `supabase/schema.ts` to be
+applied to the live project first — without it the queue cannot even read the
+allowlist, and the storage move is refused. Runbook (one dashboard paste, then
+sign in as the admin and tap **Approve all**): `docs/ADMIN_MODERATION.md`,
+`docs/OPEN_QUESTIONS.md` #21.
+
 ## Notes
 
 - The archive's own codes (`CD201`, `CD203`, `CD205`, `CD207`, `CD209`, `CD302`,

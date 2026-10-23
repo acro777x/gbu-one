@@ -26,5 +26,6 @@ export const queryClient = new QueryClient({
 
 export const NOTICE_QUERY_KEY = ['notices'] as const;
 export const TIMETABLE_QUERY_KEY = ['timetable'] as const;
+export const EVENTS_QUERY_KEY = ['campus-events'] as const;
 
 export default queryClient;

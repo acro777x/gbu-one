@@ -38,6 +38,7 @@ import {
   type ResultSheet,
 } from '../src/features/exams/resultPortals';
 import { useDatesheetQuery } from '../src/features/exams/useDatesheetQuery';
+import { checkSchoolResults } from '../src/features/exams/resultAlerts';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { registerDocument } from '../src/components/pdf/pdfRegistry';
 import { theme } from '../src/lib/theme';
@@ -49,6 +50,8 @@ export default function ExamsScreen() {
   const [activeTab, setActiveTab] = useState<'datesheet' | 'results'>('datesheet');
   const [rollQuery, setRollQuery] = useState(user?.rollNo || '22/ICS/042');
   const [admitCardReminder, setAdmitCardReminder] = useState(true);
+  const [resultsWatch, setResultsWatch] = useState(false);
+  const [watching, setWatching] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
 
@@ -88,6 +91,54 @@ export default function ExamsScreen() {
   const handleToggleReminder = (val: boolean) => {
     setAdmitCardReminder(val);
     setToastMessage(val ? 'Admit card reminder set for 48h before exams' : 'Reminder turned off');
+    setToastVisible(true);
+  };
+
+  const school = classSelection?.school ?? user?.classSelection?.school ?? '';
+
+  /**
+   * Watches the published sheet for the student's school. The first look only
+   * records a baseline; a later look alerts when the sheet's revision moves,
+   * which is how a newly published or re-checked result shows up. Nothing is
+   * sent to GBU One, and no portal password is involved.
+   */
+  const handleToggleResultsWatch = async (val: boolean) => {
+    setResultsWatch(val);
+    if (!val) {
+      setToastMessage('Result alerts turned off');
+      setToastVisible(true);
+      return;
+    }
+    if (!school) {
+      setResultsWatch(false);
+      setToastMessage('Choose your school in class setup, then result alerts can watch it.');
+      setToastVisible(true);
+      return;
+    }
+    await runResultsCheck(true);
+  };
+
+  const runResultsCheck = async (fromToggle: boolean) => {
+    setWatching(true);
+    const outcome = await checkSchoolResults(school, { notify: true });
+    setWatching(false);
+    if (outcome.checked === 0) {
+      setResultsWatch(false);
+      setToastMessage(`The examination portal has no published sheet for ${school} yet.`);
+      setToastVisible(true);
+      return;
+    }
+    if (outcome.changes.length > 0) {
+      setToastMessage(
+        outcome.notified
+          ? `New ${school} result sheet found - you have been notified.`
+          : `New ${school} result sheet found. Allow notifications to be alerted next time.`,
+      );
+    } else if (fromToggle) {
+      setToastMessage(`Watching the ${school} result sheet. You will be told when it changes.`);
+    } else {
+      setToastMessage(`Checked the ${school} sheet - nothing new since last time.`);
+    }
     setToastVisible(true);
   };
 
@@ -277,9 +328,47 @@ export default function ExamsScreen() {
               />
 
               <Text style={[styles.resultsHint, { color: colors.textTertiary }]}>
-                The portal asks for your roll number and your mobile number. GBU One never sees or
-                stores them.
+                Your own result and admit card are behind the portal's login, which asks for your
+                roll number, your password and a captcha. GBU One never asks for or stores those -
+                open the portal here and sign in there.
               </Text>
+            </GlassCard>
+
+            {/* A new sheet, noticed without touching the portal's login. */}
+            <GlassCard style={styles.resultWatchCard}>
+              <View style={styles.resultWatchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.resultWatchTitle, { color: colors.textPrimary }]}>
+                    Tell me when results are out
+                  </Text>
+                  <Text style={[styles.resultWatchSub, { color: colors.textSecondary }]}>
+                    {school
+                      ? `Watches the public ${school} result sheet and alerts you when it changes.`
+                      : 'Choose your school in class setup to switch this on.'}
+                  </Text>
+                </View>
+                <Switch
+                  value={resultsWatch}
+                  onValueChange={(val) => void handleToggleResultsWatch(val)}
+                  disabled={watching}
+                />
+              </View>
+              <TouchableOpacity
+                onPress={() => void runResultsCheck(false)}
+                disabled={watching || !school}
+                style={styles.resultWatchCheck}
+                accessibilityRole="button"
+                accessibilityLabel="Check the published result sheet now"
+              >
+                <Text
+                  style={[
+                    styles.resultWatchCheckText,
+                    { color: school ? colors.accent : colors.textTertiary },
+                  ]}
+                >
+                  {watching ? 'Checking the portal...' : 'Check the portal now'}
+                </Text>
+              </TouchableOpacity>
             </GlassCard>
 
             {/* The published result sheets, one per school. */}
@@ -539,6 +628,34 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 10,
     textAlign: 'center',
+  },
+  resultWatchCard: {
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.md,
+  },
+  resultWatchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  resultWatchTitle: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  resultWatchSub: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  resultWatchCheck: {
+    marginTop: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  resultWatchCheckText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
   },
   resultSheetsHeader: {
     marginTop: theme.spacing.lg,

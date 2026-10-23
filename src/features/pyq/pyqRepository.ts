@@ -125,20 +125,95 @@ export async function listPendingPapers(limit = 100): Promise<PyqPaperRecord[]> 
   }
 }
 
-/** True when the signed-in email is on the moderator allowlist. */
-export async function isModerator(email?: string | null): Promise<boolean> {
-  if (!isSupabaseConfigured || !email) return false;
+/** How the moderation screen should treat the signed-in account. */
+export type ModeratorState = 'moderator' | 'not-moderator' | 'backend-refused' | 'signed-out';
+
+export interface ModeratorStatus {
+  state: ModeratorState;
+  /** What the screen should tell the owner to do next. Empty for moderators. */
+  reason: string;
+}
+
+/**
+ * Whether the signed-in account may moderate, and - when it may not - why.
+ *
+ * This used to be a plain boolean that collapsed every failure into `false`,
+ * so a project whose row level security has no policy on `moderators` looked
+ * exactly like "this account is not a moderator". The owner saw "Moderator
+ * access required" even though their allowlist row existed. The reason is
+ * carried out here so the screen can point at the fix
+ * (docs/ADMIN_MODERATION.md) instead of leaving the queue a dead end.
+ */
+export async function moderatorStatus(email?: string | null): Promise<ModeratorStatus> {
+  if (!email?.trim()) {
+    return {
+      state: 'signed-out',
+      reason: 'Sign in with the account on the moderator list to review uploads.',
+    };
+  }
+
+  if (!isSupabaseConfigured) {
+    return {
+      state: 'backend-refused',
+      reason: 'The GBU One cloud is not configured in this build, so the queue cannot load.',
+    };
+  }
+
   try {
     const { data, error } = await supabase
       .from('moderators')
       .select('role')
       .eq('email', email.trim().toLowerCase())
       .maybeSingle();
-    if (error || !data) return false;
-    return true;
-  } catch {
-    return false;
+
+    if (error) {
+      return {
+        state: 'backend-refused',
+        reason: `The server refused to read the moderator list (${error.message}).`,
+      };
+    }
+
+    if (!data) {
+      return {
+        state: 'not-moderator',
+        reason:
+          `No moderator row is readable for ${email}. Either the address is not on the list, ` +
+          'or the project is missing the policies in supabase/schema.ts — see docs/ADMIN_MODERATION.md.',
+      };
+    }
+
+    return { state: 'moderator', reason: '' };
+  } catch (err) {
+    return {
+      state: 'backend-refused',
+      reason: err instanceof Error ? err.message : 'Could not reach the moderator list.',
+    };
   }
+}
+
+/** True when the signed-in email is on the moderator allowlist. */
+export async function isModerator(email?: string | null): Promise<boolean> {
+  return (await moderatorStatus(email)).state === 'moderator';
+}
+
+/**
+ * Approves every pending paper in one pass. The owner asked to clear the
+ * imported archive without tapping 39 times; each paper still goes through
+ * applyModeration(), so a failure on one paper never blocks or publishes
+ * another, and the moderation log keeps one entry per decision.
+ */
+export async function approveAllPending(
+  moderatorEmail?: string | null,
+): Promise<{ approved: number; failed: number }> {
+  const pending = await listPendingPapers();
+  let approved = 0;
+  let failed = 0;
+  for (const paper of pending) {
+    const result = await applyModeration(paper.id, 'approve', moderatorEmail ?? null);
+    if (result.ok) approved += 1;
+    else failed += 1;
+  }
+  return { approved, failed };
 }
 
 /**

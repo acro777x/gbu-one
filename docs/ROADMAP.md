@@ -56,13 +56,18 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Report button, copyright/takedown note, Trending row
 - [x] The Telegram PYQ archive is read, resolved and imported — the git-ignored tooling in `scripts/pyq-import/` turns the student library (45 folders, 162 files) into 39 `pending` rows in `pyq_papers` plus their objects in `pyq-pending`, deriving every field from a catalogue code, a file name or a curated override and recording that provenance on each paper's moderation trail; the plan refuses to guess the 122 files it cannot file, 26 self-tests guard the parsing rules, and a re-run is idempotent. `--apply` has no code path that publishes: a moderator still approves every paper in the app. What it surfaced is listed in `docs/PYQ_IMPORT.md` and `docs/OPEN_QUESTIONS.md` #20
 - [ ] The archive's remaining questions answered — 51 files wait on the programme code for a subject the timetable offers to several programmes, 52 on a subject for the 18 folders the catalogue cannot name, 34 on a year or an exam type, and two name matches (`Engineering_Mechanics` → PH111, `Research_Optimization_for_Data_Science` → MDS101) want a second look. Owner action: fill `scripts/pyq-import/import-answers.csv` (per file) or `overrides.json` (per folder) and re-run the importer; tracked as `docs/OPEN_QUESTIONS.md` #20
+- [x] Row level security for the whole app surface — the live project had **no policies at all**: `isModerator()` was false for the owner, the queue was always empty, uploads, approvals, push registration and reporting were refused, and an approved paper was invisible even to `anon`. `supabase/schema.ts` now creates `public.is_moderator()` (security definer, so a policy can ask "is this the owner?" without being filtered by the allowlist's own row level security) plus every policy the shipped screens need; `tools/emit-sql.mjs` generates the paste-ready `supabase/schema.sql` and `tests/schema_sql_sync.test.ts` keeps the two in step (`docs/ADMIN_MODERATION.md`, `docs/OPEN_QUESTIONS.md` #21)
+- [x] An admin that can actually approve — a real Supabase Auth account with `role = 'owner'` in `public.moderators`, seeded by `scripts/_seed-admin.js`; the login field takes an email address as well as a roll number (`toLoginEmail()`), and the Moderation Queue says *why* it refuses instead of always answering "Moderator access required"
+- [x] Approve-all for the owner — a confirmed "Approve all N" clears the imported archive in one pass, while `approveAllPending()` still writes one `pyq_moderation_log` entry per paper
+- [x] Results that announce themselves — `src/features/exams/resultsWatch.ts` and `resultAlerts.ts` compare the public per-school result sheet's `Last-Modified`/size on the device (one HEAD per sheet, nothing sent to GBU One) and raise a local `results` notification when it moves; the Exams → Results tab carries the switch and a "Check the portal now" action. The portal's own login stays a link-out, because it is captcha-gated (`docs/OPEN_QUESTIONS.md` #22)
 
-## Phase 5 — Exams, results, deadlines, calendar
+## Phase 5 — Exams, results, deadlines, calendar, events
 - [x] Exam hub: date sheet for my programme, revision alerts, countdown, admit card reminder
 - [x] Result finder (on-device PDF text search for roll number)
 - [x] Deadline tracker with local reminders
 - [x] Academic calendar + holidays parsed into virtualized FlatList view with official PDF link
 - [x] Manual attendance tracker (local battery card)
+- [x] Campus events hub — `app/events.tsx` and `src/features/events/eventsService.ts` for cultural fests, workshops, hackathons, sports, and club meetups with category filtering, search, and SQLite caching
 
 ## Phase 6 — Polish and release
 - [x] Performance pass (cold start, 60Hz Android GPU optimization, elevation cleanup on GlassCard & FloatingTabBar)
