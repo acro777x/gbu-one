@@ -4,11 +4,10 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { SplashScreenView } from '../src/components/brand/SplashScreenView';
 import { ThemeProvider, useAppTheme } from '../src/lib/ThemeContext';
-import { queryClient } from '../src/lib/queryClient';
+import { queryClient, QueryClientProvider } from '../src/lib/queryClient';
 import { useAuthStore } from '../src/store/useAuthStore';
 import {
   configureNotificationHandler,

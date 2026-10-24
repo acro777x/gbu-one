@@ -457,8 +457,8 @@ const styles = StyleSheet.create({
   },
   detailSamplePill: {
     backgroundColor: theme.colors.warningSoft,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 5,
     borderRadius: theme.radius.pill,
     alignSelf: 'flex-start',
   },
@@ -553,9 +553,9 @@ const styles = StyleSheet.create({
     gap: theme.spacing.xs,
   },
   categoryBadge: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
   categoryBadgeText: {
     fontFamily: 'Inter-Medium',
@@ -564,8 +564,8 @@ const styles = StyleSheet.create({
   },
   samplePill: {
     backgroundColor: theme.colors.warningSoft,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 5,
     borderRadius: theme.radius.pill,
     alignSelf: 'flex-start',
   },

@@ -4,7 +4,25 @@
  * / persisted snapshots) while a background refetch refreshes. Retries are
  * capped so a dead campus network fails fast and the cache stays visible.
  */
-import { QueryClient } from '@tanstack/react-query';
+import React, { useEffect, type ReactNode } from 'react';
+import { QueryClient, QueryClientContext } from '@tanstack/react-query';
+
+export function QueryClientProvider({
+  client,
+  children,
+}: {
+  client: QueryClient;
+  children: ReactNode;
+}): React.JSX.Element {
+  useEffect(() => {
+    client.mount();
+    return () => {
+      client.unmount();
+    };
+  }, [client]);
+
+  return React.createElement(QueryClientContext.Provider, { value: client }, children);
+}
 
 export const queryClient = new QueryClient({
   defaultOptions: {
