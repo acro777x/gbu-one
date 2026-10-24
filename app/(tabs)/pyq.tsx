@@ -63,6 +63,8 @@ export default function PYQScreen() {
   const [guestGateVisible, setGuestGateVisible] = useState(false);
   const [reportingPaper, setReportingPaper] = useState<PYQItem | null>(null);
   const [reportSheetVisible, setReportSheetVisible] = useState(false);
+  const [detailPaper, setDetailPaper] = useState<PYQItem | null>(null);
+  const [detailSheetVisible, setDetailSheetVisible] = useState(false);
 
   // Upload form state
   const [uploadSubjectCode, setUploadSubjectCode] = useState('');
@@ -244,7 +246,10 @@ export default function PYQScreen() {
         key={paper.id}
         style={[styles.card, isSelected && { backgroundColor: colors.accentSoft }]}
         accentBorder={isSelected}
-        onPress={() => toggleSelect(paper.id)}
+        onPress={() => {
+          setDetailPaper(paper);
+          setDetailSheetVisible(true);
+        }}
       >
         <View style={styles.cardHeader}>
           <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
@@ -263,9 +268,18 @@ export default function PYQScreen() {
             >
               <Flag size={13} color={colors.textTertiary} />
             </TouchableOpacity>
-            {isSelected && (
-              <CheckCircle2 size={16} color={colors.accent} />
-            )}
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                toggleSelect(paper.id);
+              }}
+              hitSlop={8}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isSelected }}
+              accessibilityLabel={`Select ${paper.subjectCode}`}
+            >
+              <CheckCircle2 size={16} color={isSelected ? colors.accent : colors.textTertiary} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -654,6 +668,66 @@ export default function PYQScreen() {
         </View>
       </BottomSheet>
 
+      {/* Paper Details & Download Bottom Sheet */}
+      <BottomSheet
+        visible={detailSheetVisible}
+        onClose={() => setDetailSheetVisible(false)}
+        title={detailPaper ? `${detailPaper.subjectCode} • ${detailPaper.examType}` : 'Question Paper'}
+      >
+        {detailPaper && (
+          <View style={styles.sheetContent}>
+            <Text style={[styles.detailSheetTitle, { color: colors.textPrimary }]}>
+              {detailPaper.subjectName}
+            </Text>
+
+            <View style={styles.detailBadgeRow}>
+              <View style={[styles.detailBadge, { backgroundColor: colors.accentSoft }]}>
+                <Text style={[styles.detailBadgeText, { color: colors.accent }]}>{detailPaper.school}</Text>
+              </View>
+              <View style={[styles.detailBadge, { backgroundColor: colors.surfaceMuted }]}>
+                <Text style={[styles.detailBadgeText, { color: colors.textSecondary }]}>{detailPaper.programme}</Text>
+              </View>
+              <View style={[styles.detailBadge, { backgroundColor: colors.surfaceMuted }]}>
+                <Text style={[styles.detailBadgeText, { color: colors.textSecondary }]}>{detailPaper.semester}</Text>
+              </View>
+              <View style={[styles.detailBadge, { backgroundColor: colors.warningSoft }]}>
+                <Text style={[styles.detailBadgeText, { color: colors.warning }]}>{detailPaper.year}</Text>
+              </View>
+            </View>
+
+            <View style={styles.detailStatsRow}>
+              <Download size={14} color={colors.textSecondary} />
+              <Text style={[styles.detailStatsText, { color: colors.textSecondary }]}>
+                {detailPaper.downloads} verified downloads by students
+              </Text>
+            </View>
+
+            <View style={{ marginTop: 16, gap: 10 }}>
+              <PillButton
+                label={selectedIds.includes(detailPaper.id) ? "Deselect for Batch Download" : "Select for Batch Download"}
+                variant={selectedIds.includes(detailPaper.id) ? "outline" : "primary"}
+                size="md"
+                onPress={() => {
+                  toggleSelect(detailPaper.id);
+                  setDetailSheetVisible(false);
+                  showToast(selectedIds.includes(detailPaper.id) ? "Removed from download queue" : "Added to download queue");
+                }}
+              />
+
+              <PillButton
+                label="Report Incorrect Paper"
+                variant="outline"
+                size="md"
+                onPress={() => {
+                  setDetailSheetVisible(false);
+                  handleOpenReport(detailPaper);
+                }}
+              />
+            </View>
+          </View>
+        )}
+      </BottomSheet>
+
       {/* Reporting Bottom Sheet */}
       <BottomSheet
         visible={reportSheetVisible}
@@ -956,6 +1030,36 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 11,
     marginTop: 2,
+  },
+  detailSheetTitle: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  detailBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  detailBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: theme.radius.pill,
+  },
+  detailBadgeText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 11,
+  },
+  detailStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  detailStatsText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
   },
   sheetContent: {
     paddingVertical: 8,

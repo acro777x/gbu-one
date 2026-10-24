@@ -30,6 +30,12 @@ export const SNOOZE_MINUTES = 10;
 /** The action that simply opens the app. */
 export const OPEN_ACTION_ID = 'gbu.class.open';
 
+/** The action the student taps to dismiss the alarm from notification shade. */
+export const DISMISS_ACTION_ID = 'gbu.class.dismiss';
+
+/** The category identifier that binds interactive snooze/dismiss action buttons to the alarm notification. */
+export const CLASS_ALARM_CATEGORY = 'gbu.class.alarm.category';
+
 let channelReady: Promise<void> | null = null;
 
 /**
@@ -51,21 +57,49 @@ function longVibration(): number[] {
 export function ensureClassReminderChannel(): Promise<void> {
   if (Platform.OS !== 'android') return Promise.resolve();
   if (!channelReady) {
-    channelReady = Notifications.setNotificationChannelAsync(
-      CLASS_REMINDER_CHANNEL_ID,
-      {
-        name: CLASS_REMINDER_CHANNEL_NAME,
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: longVibration(),
-        lightColor: '#C2410C',
-        sound: CLASS_ALARM_SOUND,
-      },
-    )
-      .then(() => undefined)
-      .catch(() => {
-        // A device that refuses the custom sound still gets the channel, so
-        // the alarm is delivered with the system sound rather than not at all.
-        channelReady = Notifications.setNotificationChannelAsync(
+    channelReady = (async () => {
+      try {
+        await Notifications.setNotificationCategoryAsync(CLASS_ALARM_CATEGORY, [
+          {
+            identifier: SNOOZE_ACTION_ID,
+            buttonTitle: 'Snooze (+10m)',
+            options: {
+              opensAppToForeground: false,
+            },
+          },
+          {
+            identifier: DISMISS_ACTION_ID,
+            buttonTitle: 'Dismiss',
+            options: {
+              isDestructive: true,
+              opensAppToForeground: false,
+            },
+          },
+          {
+            identifier: OPEN_ACTION_ID,
+            buttonTitle: 'Open Class',
+            options: {
+              opensAppToForeground: true,
+            },
+          },
+        ]);
+      } catch {
+        // Platform or emulator without category support continues cleanly
+      }
+
+      try {
+        await Notifications.setNotificationChannelAsync(
+          CLASS_REMINDER_CHANNEL_ID,
+          {
+            name: CLASS_REMINDER_CHANNEL_NAME,
+            importance: Notifications.AndroidImportance.HIGH,
+            vibrationPattern: longVibration(),
+            lightColor: '#C2410C',
+            sound: CLASS_ALARM_SOUND,
+          },
+        );
+      } catch {
+        await Notifications.setNotificationChannelAsync(
           CLASS_REMINDER_CHANNEL_ID,
           {
             name: CLASS_REMINDER_CHANNEL_NAME,
@@ -73,10 +107,9 @@ export function ensureClassReminderChannel(): Promise<void> {
             vibrationPattern: longVibration(),
             lightColor: '#C2410C',
           },
-        )
-          .then(() => undefined)
-          .catch(() => undefined);
-      });
+        ).catch(() => undefined);
+      }
+    })();
   }
   return channelReady;
 }
@@ -105,6 +138,7 @@ export async function scheduleClassAlarm(
       body: request.body,
       data: request.data ?? {},
       sound: CLASS_ALARM_SOUND,
+      categoryIdentifier: CLASS_ALARM_CATEGORY,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,

@@ -378,6 +378,22 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingRow}
+            onPress={() => router.push('/events')}
+          >
+            <View style={styles.settingIconCol}>
+              <Sparkles size={20} color={colors.accent} />
+            </View>
+            <View style={styles.settingTextCol}>
+              <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>Campus Events & Fests</Text>
+              <Text style={[styles.settingValue, { color: colors.textSecondary }]}>Abhivyanjana, Shauryautsav, hackathons & club activities</Text>
+            </View>
+            <ChevronRight size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <View style={[styles.settingDivider, { backgroundColor: colors.divider }]} />
+
+          <TouchableOpacity
+            style={styles.settingRow}
             onPress={() => router.push('/moderation')}
           >
             <View style={styles.settingIconCol}>

@@ -298,6 +298,24 @@ export default function HomeScreen() {
               </View>
               <Text style={[styles.quickHubLabel, { color: colors.textPrimary }]}>Calendar</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickHubItem}
+              onPress={() => router.push('/events' as never)}
+            >
+              <View
+                style={[
+                  styles.quickHubIcon,
+                  {
+                    backgroundColor: colors.accentSoft,
+                    borderColor: colors.borderGlass,
+                  },
+                ]}
+              >
+                <Sparkles size={18} color={colors.accent} />
+              </View>
+              <Text style={[styles.quickHubLabel, { color: colors.textPrimary }]}>Events</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Academic Attendance Battery Meter */}
@@ -649,7 +667,7 @@ const styles = StyleSheet.create({
   },
   quickHubItem: {
     alignItems: 'center',
-    width: 72,
+    width: 62,
     minHeight: 44,
     paddingVertical: 6,
   },

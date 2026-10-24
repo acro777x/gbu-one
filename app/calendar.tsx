@@ -23,6 +23,7 @@ import {
   Palmtree,
   BookOpen,
   GraduationCap,
+  ChevronRight,
 } from 'lucide-react-native';
 import { GlassCard, Chip, PillButton } from '../src/components/ui';
 import {
@@ -119,6 +120,27 @@ export default function CalendarScreen() {
           <Text style={[styles.pdfBtnText, { color: colors.accent }]}>PDF</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Campus Events & Fests Navigation Banner */}
+      <TouchableOpacity
+        style={[styles.eventsBanner, { backgroundColor: colors.accentSoft, borderColor: colors.borderGlass }]}
+        onPress={() => router.push('/events')}
+        accessibilityRole="button"
+        accessibilityLabel="View Campus Events and Fests"
+      >
+        <View style={styles.eventsBannerLeft}>
+          <Sparkles size={18} color={colors.accent} />
+          <View style={{ marginLeft: 10, flex: 1 }}>
+            <Text style={[styles.eventsBannerTitle, { color: colors.textPrimary }]}>
+              Campus Events & Fests
+            </Text>
+            <Text style={[styles.eventsBannerSub, { color: colors.textSecondary }]}>
+              Abhivyanjana, Shauryautsav, club activities & workshops
+            </Text>
+          </View>
+        </View>
+        <ChevronRight size={18} color={colors.accent} />
+      </TouchableOpacity>
 
       {/* Category Filter Chips */}
       <View style={styles.filterSection}>
@@ -265,6 +287,32 @@ const styles = StyleSheet.create({
   pdfBtnText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 11,
+  },
+  eventsBanner: {
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 12,
+    borderRadius: theme.radius.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+  },
+  eventsBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  eventsBannerTitle: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
+  },
+  eventsBannerSub: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    marginTop: 2,
   },
   filterSection: {
     paddingVertical: theme.spacing.sm,

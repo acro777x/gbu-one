@@ -78,6 +78,54 @@ export const MOCK_DATESHEET: DatesheetEntry[] = [
   },
 ];
 
+/** Official End Semester Examination Datesheet (Autumn 2026: 14 Dec - 24 Dec 2026). */
+export const MOCK_END_SEM_DATESHEET: DatesheetEntry[] = [
+  {
+    id: 'ds_end_1',
+    programmeCode: 'BCS',
+    semester: 'II',
+    subjectCode: 'CSE205',
+    subjectName: 'Data Structures & Algorithms (Theory)',
+    examDate: '2026-12-14T04:00:00.000Z',
+    examTime: '09:30 AM - 12:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Block B (Main Hall)',
+  },
+  {
+    id: 'ds_end_2',
+    programmeCode: 'BCS',
+    semester: 'II',
+    subjectCode: 'CSE209',
+    subjectName: 'Operating Systems (Theory)',
+    examDate: '2026-12-17T04:00:00.000Z',
+    examTime: '09:30 AM - 12:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Block B (Main Hall)',
+  },
+  {
+    id: 'ds_end_3',
+    programmeCode: 'BCS',
+    semester: 'II',
+    subjectCode: 'BAS201',
+    subjectName: 'Discrete Mathematics',
+    examDate: '2026-12-21T04:00:00.000Z',
+    examTime: '09:30 AM - 12:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Block A',
+  },
+  {
+    id: 'ds_end_4',
+    programmeCode: 'BCS',
+    semester: 'II',
+    subjectCode: 'CSE211',
+    subjectName: 'Database Management Systems (Theory)',
+    examDate: '2026-12-24T04:00:00.000Z',
+    examTime: '09:30 AM - 12:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Block B (Main Hall)',
+  },
+];
+
 export const MOCK_STUDENT_RESULTS: StudentResultRecord[] = [
   {
     rollNo: '22/ICS/042',

@@ -30,6 +30,7 @@ import { GlassCard, PillButton, Toast } from '../src/components/ui';
 import { CountUp } from '../src/components/motion/CountUp';
 import {
   calculateExamCountdown,
+  MOCK_END_SEM_DATESHEET,
 } from '../src/features/exams/examService';
 import {
   PUBLIC_RESULT_SHEETS,
@@ -48,6 +49,7 @@ export default function ExamsScreen() {
   const { user, classSelection } = useAuthStore();
   const { colors, isDark } = useAppTheme();
   const [activeTab, setActiveTab] = useState<'datesheet' | 'results'>('datesheet');
+  const [examPhase, setExamPhase] = useState<'end' | 'mid'>('end');
   const [rollQuery, setRollQuery] = useState(user?.rollNo || '22/ICS/042');
   const [admitCardReminder, setAdmitCardReminder] = useState(true);
   const [resultsWatch, setResultsWatch] = useState(false);
@@ -55,12 +57,15 @@ export default function ExamsScreen() {
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
 
-  const countdownDays = calculateExamCountdown('2026-11-03T04:00:00.000Z');
+  const countdownDays = examPhase === 'end'
+    ? calculateExamCountdown('2026-12-14T04:00:00.000Z')
+    : calculateExamCountdown('2026-11-03T04:00:00.000Z');
 
   // The date sheet comes from the backend; the bundled seed is the fallback.
   const programmeCode = classSelection?.programmeCode || 'BCS';
   const semester = classSelection?.semester || 'II';
   const { data: datesheet } = useDatesheetQuery(programmeCode, semester);
+  const activeDatesheet = examPhase === 'end' ? MOCK_END_SEM_DATESHEET : datesheet;
 
   const handleOpenResultSheet = (sheet?: ResultSheet) => {
     const target =
@@ -188,13 +193,57 @@ export default function ExamsScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {activeTab === 'datesheet' ? (
           <>
+            {/* Exam Phase Toggle (End Sem vs Mid Sem) */}
+            <View style={styles.phaseToggleRow}>
+              <TouchableOpacity
+                style={[
+                  styles.phaseToggleBtn,
+                  examPhase === 'end' && { backgroundColor: colors.accentFill },
+                ]}
+                onPress={() => setExamPhase('end')}
+              >
+                <Text
+                  style={[
+                    styles.phaseToggleText,
+                    { color: colors.textSecondary },
+                    examPhase === 'end' && { color: colors.onAccent, fontFamily: 'Inter-Bold' },
+                  ]}
+                >
+                  End Sem (14-24 Dec)
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.phaseToggleBtn,
+                  examPhase === 'mid' && { backgroundColor: colors.accentFill },
+                ]}
+                onPress={() => setExamPhase('mid')}
+              >
+                <Text
+                  style={[
+                    styles.phaseToggleText,
+                    { color: colors.textSecondary },
+                    examPhase === 'mid' && { color: colors.onAccent, fontFamily: 'Inter-Bold' },
+                  ]}
+                >
+                  Mid Sem (3 Nov)
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             {/* Exam Countdown Card */}
             <GlassCard style={[styles.countdownCard, { backgroundColor: colors.accentSoft }]} accentBorder>
               <View style={styles.countdownRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.countdownBadge, { color: colors.accent }]}>AUTUMN SEMESTER 2026</Text>
-                  <Text style={[styles.countdownTitle, { color: colors.textPrimary }]}>Mid Semester Exams</Text>
-                  <Text style={[styles.countdownSub, { color: colors.textSecondary }]}>Starts Monday, 3 Nov 2026</Text>
+                  <Text style={[styles.countdownTitle, { color: colors.textPrimary }]}>
+                    {examPhase === 'end' ? 'End Semester Exams' : 'Mid Semester Exams'}
+                  </Text>
+                  <Text style={[styles.countdownSub, { color: colors.textSecondary }]}>
+                    {examPhase === 'end'
+                      ? 'Starts Monday, 14 Dec 2026 • GBU Academic Calendar'
+                      : 'Starts Monday, 3 Nov 2026'}
+                  </Text>
                 </View>
                 <View
                   style={[
@@ -234,12 +283,24 @@ export default function ExamsScreen() {
 
             {/* Datesheet Section */}
             <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Examination Schedule</Text>
-              <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>4 subjects scheduled</Text>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                {examPhase === 'end' ? 'End Semester Examination Schedule' : 'Mid Semester Examination Schedule'}
+              </Text>
+              <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>
+                {activeDatesheet.length} subjects • {examPhase === 'end' ? '14 Dec - 24 Dec' : '3 Nov - 10 Nov'}
+              </Text>
             </View>
 
+            {examPhase === 'end' && (
+              <View style={[styles.practicalAlertBanner, { backgroundColor: colors.warningSoft }]}>
+                <Text style={[styles.practicalAlertText, { color: colors.warning }]}>
+                  Notice: Lab / Practical Exams: 30 Nov – 04 Dec • Back Paper: 07 Dec – 12 Dec
+                </Text>
+              </View>
+            )}
+
             <View style={styles.datesheetList}>
-              {datesheet.map((entry, _idx) => (
+              {activeDatesheet.map((entry, _idx) => (
                 <GlassCard key={entry.id} style={styles.examEntryCard}>
                   <View style={styles.examEntryTop}>
                     <View style={[styles.examEntryCodeBadge, { backgroundColor: subtleBg }]}>
@@ -469,6 +530,33 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: theme.spacing.lg,
     paddingBottom: 110,
+  },
+  phaseToggleRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
+  phaseToggleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(128,128,128,0.1)',
+  },
+  phaseToggleText: {
+    fontSize: 13,
+    fontFamily: 'Inter-Medium',
+  },
+  practicalAlertBanner: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 8,
+    borderRadius: theme.radius.sm,
+    marginBottom: theme.spacing.md,
+  },
+  practicalAlertText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
   },
   countdownCard: {
     marginBottom: theme.spacing.md,

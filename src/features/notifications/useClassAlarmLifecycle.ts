@@ -24,6 +24,7 @@ import {
   scheduleClassAlarm,
   snoozeClassAlarm,
   SNOOZE_ACTION_ID,
+  DISMISS_ACTION_ID,
   type ClassAlarmData,
 } from './classAlarm';
 import type { ClassReminder } from './notificationPreferences';
@@ -85,14 +86,18 @@ export function useClassAlarmLifecycle(): ClassAlarmLifecycle {
     };
   }, [reminders, removeReminder, reload, ringedAlarm]);
 
-  // The snooze button on the notification, for the versions that show it.
+  // Action buttons on the notification (Snooze and Dismiss)
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        if (response.actionIdentifier !== SNOOZE_ACTION_ID) return;
-        const data = (response.notification.request.content.data ?? {}) as ClassAlarmData;
-        void snoozeClassAlarm(data);
-        setRingedAlarm(null);
+        const action = response.actionIdentifier;
+        if (action === SNOOZE_ACTION_ID) {
+          const data = (response.notification.request.content.data ?? {}) as ClassAlarmData;
+          void snoozeClassAlarm(data);
+          setRingedAlarm(null);
+        } else if (action === DISMISS_ACTION_ID) {
+          setRingedAlarm(null);
+        }
       },
     );
     return () => subscription.remove();
