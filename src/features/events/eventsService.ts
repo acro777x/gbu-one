@@ -35,6 +35,7 @@ export interface CampusEvent {
   registrationRequired: boolean;
   registrationUrl?: string;
   imageUrl?: string;
+  photos?: string[];
   audience: string[]; // e.g. ['all', 'btech', 'mtech', 'phd']
   source: string; // 'seed' | 'supabase' | 'cache'
   isSample: boolean;
@@ -86,6 +87,13 @@ export const MOCK_EVENTS: CampusEvent[] = [
     venue: 'Main Auditorium & Open Grounds',
     isFree: true,
     registrationRequired: false,
+    imageUrl: 'https://images.unsplash.com/photo-1511578314322-379afb476865?w=800&q=80',
+    photos: [
+      'https://images.unsplash.com/photo-1511578314322-379afb476865?w=800&q=80',
+      'https://images.unsplash.com/photo-1515187029135-18ee286d815b?w=800&q=80',
+      'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&q=80',
+      'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800&q=80',
+    ],
     audience: ['all'],
     source: 'seed',
     isSample: true,
@@ -101,6 +109,12 @@ export const MOCK_EVENTS: CampusEvent[] = [
     isFree: true,
     registrationRequired: true,
     registrationUrl: 'https://gbu.ac.in/events/rn-workshop',
+    imageUrl: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=800&q=80',
+    photos: [
+      'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=800&q=80',
+      'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800&q=80',
+      'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800&q=80',
+    ],
     audience: ['btech', 'mtech'],
     source: 'seed',
     isSample: true,
@@ -143,6 +157,13 @@ export const MOCK_EVENTS: CampusEvent[] = [
     venue: 'Central Lawn',
     isFree: true,
     registrationRequired: false,
+    imageUrl: 'https://images.unsplash.com/photo-1606293926075-69a00dbfde81?w=800&q=80',
+    photos: [
+      'https://images.unsplash.com/photo-1606293926075-69a00dbfde81?w=800&q=80',
+      'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&q=80',
+      'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&q=80',
+      'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&q=80',
+    ],
     audience: ['all'],
     source: 'seed',
     isSample: true,
@@ -182,7 +203,8 @@ export const MOCK_EVENTS: CampusEvent[] = [
  * Reads campus events from Supabase, falling back to the bundled seed.
  */
 export async function listCampusEvents(limit = 300): Promise<CampusEvent[]> {
-  if (!isSupabaseConfigured) return MOCK_EVENTS.map((e) => ({ ...e, source: 'seed' }));
+  const customLocal = await getLocalCustomEvents();
+  if (!isSupabaseConfigured) return [...customLocal, ...MOCK_EVENTS.map((e) => ({ ...e, source: 'seed' }))];
   try {
     const { data, error } = await supabase
       .from('campus_events')
@@ -244,6 +266,7 @@ function calendarRowToCampusEvent(row: Record<string, unknown>): CampusEvent {
 }
 
 function rowToEvent(row: Record<string, unknown>): CampusEvent {
+  const photos = Array.isArray(row.photos) ? (row.photos as string[]) : [];
   return {
     id: String(row.id ?? ''),
     title: String(row.title ?? ''),
@@ -255,7 +278,8 @@ function rowToEvent(row: Record<string, unknown>): CampusEvent {
     isFree: Boolean(row.is_free),
     registrationRequired: Boolean(row.registration_required),
     registrationUrl: (row.registration_url as string | undefined) ?? undefined,
-    imageUrl: (row.image_url as string | undefined) ?? undefined,
+    imageUrl: (row.image_url as string | undefined) ?? (photos[0] ?? undefined),
+    photos,
     audience: Array.isArray(row.audience) ? (row.audience as string[]) : ['all'],
     source: 'supabase',
     isSample: false,
@@ -297,4 +321,81 @@ export function sortEventsByDate(events: CampusEvent[]): CampusEvent[] {
  */
 export function upcomingEvents(events: CampusEvent[], today = new Date().toISOString().slice(0, 10)): CampusEvent[] {
   return events.filter((e) => e.endDate >= today);
+}
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const CUSTOM_EVENTS_KEY = '@gbu_one_custom_events';
+
+export async function getLocalCustomEvents(): Promise<CampusEvent[]> {
+  try {
+    const raw = await AsyncStorage.getItem(CUSTOM_EVENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function createCampusEvent(
+  eventData: Omit<CampusEvent, 'id' | 'source' | 'isSample'>
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const newId = 'evt_' + Date.now();
+  const newEvent: CampusEvent = {
+    ...eventData,
+    id: newId,
+    source: isSupabaseConfigured ? 'supabase' : 'cache',
+    isSample: false,
+  };
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase.from('campus_events').insert({
+        title: newEvent.title,
+        description: newEvent.description,
+        category: newEvent.category,
+        start_date: newEvent.startDate,
+        end_date: newEvent.endDate,
+        venue: newEvent.venue,
+        is_free: newEvent.isFree,
+        registration_required: newEvent.registrationRequired,
+        registration_url: newEvent.registrationUrl ?? null,
+        image_url: newEvent.imageUrl ?? null,
+        photos: newEvent.photos ?? [],
+        audience: newEvent.audience ?? ['all'],
+      }).select('id').single();
+
+      if (!error && data?.id) {
+        newEvent.id = data.id;
+      }
+    } catch {
+      // Keep going to save locally
+    }
+  }
+
+  try {
+    const existing = await getLocalCustomEvents();
+    const updated = [newEvent, ...existing];
+    await AsyncStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(updated));
+    return { ok: true, id: newEvent.id };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+export async function deleteCampusEvent(id: string): Promise<{ ok: boolean; error?: string }> {
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from('campus_events').delete().eq('id', id);
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    const existing = await getLocalCustomEvents();
+    const filtered = existing.filter((e) => e.id !== id);
+    await AsyncStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(filtered));
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
 }

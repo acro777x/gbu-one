@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import {
   Search,
@@ -41,7 +42,7 @@ import {
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
-const SCHOOL_FILTERS = ['All', 'SOICT', 'SOM', 'SOBT', 'SOE', 'SOL'];
+const SCHOOL_FILTERS = ['All', 'SOICT', 'SOE', 'SOBT', 'SOM', 'SOL', 'SOVSAS', 'SOHSS'];
 const SEMESTER_FILTERS = ['All', 'Sem I', 'Sem II', 'Sem III', 'Sem IV', 'Sem V', 'Sem VI', 'Sem VII', 'Sem VIII'];
 const EXAM_TYPE_TABS = ['All', 'Mid Sem', 'End Sem', 'Back Paper'] as const;
 type ExamTab = (typeof EXAM_TYPE_TABS)[number];
@@ -109,6 +110,16 @@ export default function PYQScreen() {
       }
       return [...prev, id];
     });
+  };
+
+  const handleSingleDownload = (paper: PYQItem) => {
+    setDetailSheetVisible(false);
+    const targetUrl = paper.fileUrl || 'https://www.gbu.ac.in';
+    router.push({
+      pathname: '/pdf',
+      params: { id: targetUrl, title: `${paper.subjectCode} - ${paper.subjectName}` },
+    });
+    showToast(`Opening ${paper.subjectCode} (${paper.examType}). Download logged.`);
   };
 
   const handleBulkDownload = () => {
@@ -296,10 +307,19 @@ export default function PYQScreen() {
           </Text>
         </View>
 
-        <View style={styles.downloadRow}>
-          <Download size={12} color={colors.textSecondary} />
-          <Text style={[styles.downloadCount, { color: colors.textSecondary }]}>{paper.downloads} downloads</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.downloadRow}
+          onPress={(e) => {
+            e.stopPropagation();
+            handleSingleDownload(paper);
+          }}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Download ${paper.subjectCode}`}
+        >
+          <Download size={13} color={colors.accent} />
+          <Text style={[styles.downloadCount, { color: colors.accent, fontWeight: '600' }]}>Download ({paper.downloads})</Text>
+        </TouchableOpacity>
       </GlassCard>
     );
   };
@@ -703,6 +723,14 @@ export default function PYQScreen() {
             </View>
 
             <View style={{ marginTop: 16, gap: 10 }}>
+              <PillButton
+                label="Download & View Paper"
+                variant="primary"
+                size="md"
+                icon={<Download size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
+                onPress={() => handleSingleDownload(detailPaper)}
+              />
+
               <PillButton
                 label={selectedIds.includes(detailPaper.id) ? "Deselect for Batch Download" : "Select for Batch Download"}
                 variant={selectedIds.includes(detailPaper.id) ? "outline" : "primary"}

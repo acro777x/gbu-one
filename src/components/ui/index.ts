@@ -12,3 +12,4 @@ export * from './HeroCarousel';
 export * from './NextClassCard';
 export * from './NoticeCard';
 export * from './AttendanceBatteryCard';
+export * from './MandatoryUpdateModal';

@@ -16,6 +16,7 @@ import {
 } from '../src/lib/pushNotifications';
 import { useClassAlarmLifecycle } from '../src/features/notifications/useClassAlarmLifecycle';
 import { AlarmRungPrompt } from '../src/components/notifications/AlarmRungPrompt';
+import { MandatoryUpdateModal } from '../src/components/ui/MandatoryUpdateModal';
 
 
 function AppShell() {
@@ -120,12 +121,17 @@ function AppShell() {
             <Stack.Screen name="login" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="class-setup" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="moderation" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin/index" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="events" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="notice/[id]" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="pdf" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="dev/motion" />
           </Stack>
         </Animated.View>
       )}
+
+      {/* Mandatory / Compulsory App Version Update Guard */}
+      {splashFinished ? <MandatoryUpdateModal /> : null}
 
       {/* The prompt that appears when a class alarm rang. */}
       {splashFinished && alarmLifecycle.ringedAlarm ? (

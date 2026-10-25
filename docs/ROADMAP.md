@@ -73,11 +73,16 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Manual attendance tracker (local battery card)
 - [x] Campus events hub — `app/events.tsx` and `src/features/events/eventsService.ts` for cultural fests, workshops, hackathons, sports, and club meetups with category filtering, search, and SQLite caching
 
-## Phase 6 — Polish and release
+## Phase 6 — Polish, Admin Build, and Release
 - [x] Performance pass (cold start, 60Hz Android GPU optimization, elevation cleanup on GlassCard & FloatingTabBar)
 - [x] List virtualisation (Notices, PYQ, Mail, Calendar)
 - [x] Streamlined 1.7s splash with UI-thread TypeWriter & 512px native splash mark
 - [x] Supabase client config (`src/lib/supabase.ts`) + Create Account bottom sheet in login
+- [x] Dedicated Admin APK build (`gbu-one-admin.apk`, package `in.gbu.one.admin`) — independent APK installable side-by-side with student app, auto-booting to GBU Admin Console with live events publisher, photo gallery manager, PYQ queue, and version update manager
+- [x] Central Compulsory Auto-Update Engine (`MandatoryUpdateModal.tsx` & `versionChecker.ts`) — remote version check with non-dismissible hardware-back-trapped modal overlay for critical releases
+- [x] Campus Events Photo Gallery (`app/events.tsx`) — horizontal thumbnail scroller, full-screen image viewer overlay, and live admin publishing
+- [x] Open PYQ Access for All 8 Schools — SOICT, SOE, SOBT, SOM, SOL, SOVSAS, SOHSS open download with direct single-tap reader launch
+- [x] Supabase Schema & RLS Enhancement — added `campus_events` and `app_versions` with security definer `is_moderator()` policies, synchronized with `supabase/schema.sql` (515 lines)
 - [x] Error reporting without PII, privacy policy page, About/disclaimer
 - [x] Android release build (EAS / production keystore) — release signing is wired through `plugins/withReleaseSigning.js` (owner keystore from `GBU_ANDROID_*` env vars, debug-key fallback for a fresh clone) and `eas.json` carries the `development` / `preview` / `production` profiles. A signed release APK was built and verified on the emulator (`apksigner` shows the owner DN, not the debug key). Full steps in `docs/RELEASE.md`. Remaining owner work: the upload keystore, the EAS project id (#11) and the FCM/APNs credentials (#12); the 16 KB page-size gap from React Native 0.76 prebuilts is recorded as #13
 - [ ] Student survey results reviewed; update priorities — the instrument is ready (`docs/SURVEY.md`: ten concrete questions, each mapped to a decision) but there are no responses yet, so there is nothing to review. Owner action: share it with the class representatives and drop the answers into `docs/qa/survey-responses.csv`. Tracked as `docs/OPEN_QUESTIONS.md` #14

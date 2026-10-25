@@ -28,6 +28,7 @@ import {
   Smartphone,
   Compass,
   ShieldCheck,
+  Sliders,
 } from 'lucide-react-native';
 import { Avatar, GlassCard, PillButton } from '../../src/components/ui';
 import { CountUp } from '../../src/components/motion/CountUp';
@@ -402,6 +403,22 @@ export default function ProfileScreen() {
             <View style={styles.settingTextCol}>
               <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>PYQ Moderation Queue</Text>
               <Text style={[styles.settingValue, { color: colors.textSecondary }]}>Review uploaded question papers before they are listed</Text>
+            </View>
+            <ChevronRight size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <View style={[styles.settingDivider, { backgroundColor: colors.divider }]} />
+
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => router.push('/admin')}
+          >
+            <View style={styles.settingIconCol}>
+              <Sliders size={20} color={colors.accent} />
+            </View>
+            <View style={styles.settingTextCol}>
+              <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>GBU Admin Console</Text>
+              <Text style={[styles.settingValue, { color: colors.textSecondary }]}>Publish events & photos, moderate PYQ & release updates</Text>
             </View>
             <ChevronRight size={18} color={colors.textSecondary} />
           </TouchableOpacity>

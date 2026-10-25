@@ -212,14 +212,37 @@ create table if not exists public.reports (
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.calendar_events (
+-- Campus events & fests ("What's On") with photo gallery support.
+create table if not exists public.campus_events (
   id uuid primary key default gen_random_uuid(),
   title text not null,
-  date_from date not null,
-  date_to date,
-  type text not null default 'academic',
-  source_url text,
+  description text not null default '',
+  category text not null default 'other',
+  start_date timestamptz not null,
+  end_date timestamptz not null,
+  venue text not null,
+  is_free boolean not null default true,
+  registration_required boolean not null default false,
+  registration_url text,
+  image_url text,
+  photos jsonb not null default '[]'::jsonb,
+  audience jsonb not null default '["all"]'::jsonb,
   created_at timestamptz not null default now()
+);
+create index if not exists campus_events_date_idx on public.campus_events (start_date asc);
+create index if not exists campus_events_category_idx on public.campus_events (category);
+
+-- App version management and mandatory auto-update manifests.
+create table if not exists public.app_versions (
+  id uuid primary key default gen_random_uuid(),
+  platform text not null default 'android',
+  latest_version text not null,
+  min_supported_version text not null,
+  is_mandatory boolean not null default false,
+  apk_url text not null,
+  release_notes jsonb not null default '[]'::jsonb,
+  released_at timestamptz not null default now(),
+  unique (platform)
 );
 
 create table if not exists public.worker_runs (
@@ -352,6 +375,28 @@ alter table public.calendar_events enable row level security;
 drop policy if exists "calendar events read" on public.calendar_events;
 create policy "calendar events read" on public.calendar_events
   for select to anon, authenticated using (true);
+
+alter table public.campus_events enable row level security;
+drop policy if exists "campus events read" on public.campus_events;
+create policy "campus events read" on public.campus_events
+  for select to anon, authenticated using (true);
+
+drop policy if exists "campus events moderator write" on public.campus_events;
+create policy "campus events moderator write" on public.campus_events
+  for all to authenticated
+  using (public.is_moderator())
+  with check (public.is_moderator());
+
+alter table public.app_versions enable row level security;
+drop policy if exists "app versions read" on public.app_versions;
+create policy "app versions read" on public.app_versions
+  for select to anon, authenticated using (true);
+
+drop policy if exists "app versions moderator write" on public.app_versions;
+create policy "app versions moderator write" on public.app_versions
+  for all to authenticated
+  using (public.is_moderator())
+  with check (public.is_moderator());
 
 alter table public.exam_datesheets enable row level security;
 drop policy if exists "exam datesheets read" on public.exam_datesheets;

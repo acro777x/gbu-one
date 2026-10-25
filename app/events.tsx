@@ -14,10 +14,13 @@ import {
   FlatList,
   Platform,
   TextInput,
+  Image,
+  Pressable,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Search, Calendar, Ticket } from 'lucide-react-native';
+import { Search, Calendar, Ticket, Image as ImageIcon, X, Sparkles } from 'lucide-react-native';
 import { GlassCard, Chip, EmptyState, PillButton } from '../src/components/ui';
 import {
   filterEvents,
@@ -47,6 +50,7 @@ export default function EventsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [freeOnly, setFreeOnly] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
+  const [activePhoto, setActivePhoto] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const filteredByFilter = filterEvents(allEvents, {
@@ -87,6 +91,13 @@ export default function EventsScreen() {
         variant={event.isSample ? 'subtle' : 'default'}
         style={styles.eventCard}
       >
+        {event.imageUrl ? (
+          <Image
+            source={{ uri: event.imageUrl }}
+            style={styles.cardBannerImage}
+            resizeMode="cover"
+          />
+        ) : null}
         <View style={styles.cardTop}>
           <View style={styles.categoryBadgeContainer}>
             <View
@@ -288,8 +299,43 @@ export default function EventsScreen() {
                     </View>
                   </View>
                 </View>
+                {selectedEvent.imageUrl ? (
+                  <Image
+                    source={{ uri: selectedEvent.imageUrl }}
+                    style={styles.detailHeroImage}
+                    resizeMode="cover"
+                  />
+                ) : null}
+
                 <Text style={styles.detailSectionTitle}>About</Text>
                 <Text style={styles.detailDescription}>{selectedEvent.description}</Text>
+
+                {selectedEvent.photos && selectedEvent.photos.length > 0 ? (
+                  <View style={styles.photosSection}>
+                    <View style={styles.photosHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <ImageIcon size={16} color={theme.colors.accent} />
+                        <Text style={styles.detailSectionTitle}>Event Photos & Highlights</Text>
+                      </View>
+                      <View style={styles.photosCountBadge}>
+                        <Text style={styles.photosCountText}>{selectedEvent.photos.length} photos</Text>
+                      </View>
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.galleryScroll}>
+                      {selectedEvent.photos.map((photoUrl, idx) => (
+                        <TouchableOpacity
+                          key={photoUrl + idx}
+                          activeOpacity={0.85}
+                          onPress={() => setActivePhoto(photoUrl)}
+                          style={styles.photoThumbWrapper}
+                          accessibilityLabel={`View photo ${idx + 1}`}
+                        >
+                          <Image source={{ uri: photoUrl }} style={styles.photoThumb} resizeMode="cover" />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : null}
                 {selectedEvent.registrationRequired && selectedEvent.registrationUrl && (
                   <View style={styles.registrationSection}>
                     <PillButton
@@ -320,6 +366,32 @@ export default function EventsScreen() {
           <Text style={styles.refreshText}>Updating events…</Text>
         </View>
       )}
+
+      {/* Full-Screen Photo Viewer Overlay (Pure View overlay, no native Modal) */}
+      {activePhoto ? (
+        <View style={[StyleSheet.absoluteFill, styles.photoViewerBackdrop, { zIndex: 9999 }]}>
+          <SafeAreaView style={styles.photoViewerSafeArea}>
+            <View style={styles.photoViewerHeader}>
+              <TouchableOpacity
+                onPress={() => setActivePhoto(null)}
+                style={styles.photoCloseBtn}
+                accessibilityLabel="Close photo viewer"
+              >
+                <X size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+              <Text style={styles.photoViewerTitle}>Campus Event Memory</Text>
+              <View style={{ width: 40 }} />
+            </View>
+            <View style={styles.photoViewerBody}>
+              <Image
+                source={{ uri: activePhoto }}
+                style={styles.fullScreenPhoto}
+                resizeMode="contain"
+              />
+            </View>
+          </SafeAreaView>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 };
@@ -618,5 +690,92 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     fontSize: 13,
     color: theme.colors.accentFill,
+  },
+
+  cardBannerImage: {
+    width: '100%',
+    height: 130,
+    borderRadius: theme.radius.md,
+    marginBottom: theme.spacing.sm,
+  },
+  detailHeroImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: theme.radius.md,
+    marginBottom: theme.spacing.md,
+  },
+  photosSection: {
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+  },
+  photosHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.sm,
+  },
+  photosCountBadge: {
+    backgroundColor: theme.colors.surfaceMuted,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  photosCountText: {
+    fontSize: 11,
+    fontFamily: theme.typography.captionMedium.fontFamily,
+    color: theme.colors.textSecondary,
+  },
+  galleryScroll: {
+    gap: 10,
+    paddingVertical: 4,
+  },
+  photoThumbWrapper: {
+    width: 120,
+    height: 90,
+    borderRadius: theme.radius.sm,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.colors.borderGlass,
+  },
+  photoThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  photoViewerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.94)',
+  },
+  photoViewerSafeArea: {
+    flex: 1,
+  },
+  photoViewerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+  },
+  photoCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoViewerTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontFamily: theme.typography.sectionHeader.fontFamily,
+  },
+  photoViewerBody: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: theme.spacing.md,
+  },
+  fullScreenPhoto: {
+    width: '100%',
+    height: '100%',
   },
 });
