@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Search, Calendar, Ticket, Image as ImageIcon, X, Sparkles } from 'lucide-react-native';
+import { Search, Calendar, Ticket, Image as ImageIcon, X, Sparkles, ArrowLeft } from 'lucide-react-native';
 import { GlassCard, Chip, EmptyState, PillButton } from '../src/components/ui';
 import {
   filterEvents,
@@ -149,11 +149,11 @@ export default function EventsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
           style={styles.backBtn}
           accessibilityLabel="Back"
         >
-          <View style={styles.backIcon} />
+          <ArrowLeft size={22} color={theme.colors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>What's On</Text>

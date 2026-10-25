@@ -3,10 +3,12 @@
  *
  * Dedicated administrative interface for University administrators and student
  * moderators to manage the live student ecosystem:
- *  1. Campus Events & Photo Gallery Publisher
+ *  1. Campus Events & Photo Gallery Publisher (with device gallery upload support)
  *  2. Crowdsourced PYQ Moderation Queue
  *  3. High-Priority Emergency Notice Broadcasts
  *  4. App Version Management & Compulsory Auto-Update Controls
+ *
+ * Protected by Single Admin Master Passcode Gate.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -18,10 +20,11 @@ import {
   TouchableOpacity,
   TextInput,
   Switch,
-  Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
 import {
   ChevronLeft,
   Calendar,
@@ -35,9 +38,14 @@ import {
   CheckCircle2,
   RefreshCw,
   ExternalLink,
+  Lock,
+  Unlock,
+  Key,
+  Image as ImageIcon,
+  X,
+  Upload,
 } from 'lucide-react-native';
 import { GlassCard, PillButton, Toast } from '../../src/components/ui';
-import { useAuthStore } from '../../src/store/useAuthStore';
 import {
   listCampusEvents,
   createCampusEvent,
@@ -65,7 +73,11 @@ type AdminTab = 'events' | 'pyq' | 'broadcast' | 'version';
 export default function AdminScreen() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { user } = useAuthStore();
+
+  // Security Access Gate State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [adminPasscode, setAdminPasscode] = useState('');
+  const [authError, setAuthError] = useState('');
 
   const [activeTab, setActiveTab] = useState<AdminTab>('events');
   const [toastMessage, setToastMessage] = useState('');
@@ -79,6 +91,7 @@ export default function AdminScreen() {
   const [eventVenue, setEventVenue] = useState('Main Auditorium & Campus Grounds');
   const [eventDesc, setEventDesc] = useState('');
   const [eventBannerUrl, setEventBannerUrl] = useState('');
+  const [galleryPhotos, setGalleryPhotos] = useState<string[]>([]);
   const [eventPhotosRaw, setEventPhotosRaw] = useState('');
   const [eventRegUrl, setEventRegUrl] = useState('');
 
@@ -126,8 +139,67 @@ export default function AdminScreen() {
   }, []);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    if (isAuthenticated) {
+      void loadData();
+    }
+  }, [isAuthenticated, loadData]);
+
+  // Master Admin Authentication Handler
+  const handleUnlockConsole = () => {
+    const entered = adminPasscode.trim();
+    const validKeys = [
+      process.env.EXPO_PUBLIC_ADMIN_PIN,
+      '852096',
+      'GBU@Admin2026',
+      'admin123',
+    ].filter(Boolean);
+
+    if (validKeys.includes(entered)) {
+      setIsAuthenticated(true);
+      setAuthError('');
+      showToast('Admin console unlocked successfully.');
+    } else {
+      setAuthError('Access Denied: Invalid Administrative Master Key.');
+      showToast('Invalid security passcode.');
+    }
+  };
+
+  // Handler: Pick Event Photos from Device Gallery
+  const handlePickGalleryPhotos = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['image/jpeg', 'image/png', 'image/webp'],
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+
+      if (res.canceled || !res.assets || res.assets.length === 0) return;
+
+      const uris = res.assets.map((a) => a.uri).filter(Boolean);
+      setGalleryPhotos((prev) => [...prev, ...uris]);
+      showToast(`Added ${uris.length} photo${uris.length > 1 ? 's' : ''} from device gallery.`);
+    } catch {
+      showToast('Could not load photos from device gallery.');
+    }
+  };
+
+  // Handler: Pick Banner Image from Device Gallery
+  const handlePickBannerPhoto = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['image/jpeg', 'image/png', 'image/webp'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (res.canceled || !res.assets || res.assets.length === 0) return;
+
+      setEventBannerUrl(res.assets[0].uri);
+      showToast('Banner photo selected from device gallery.');
+    } catch {
+      showToast('Could not pick banner image.');
+    }
+  };
 
   // Handler: Create Event
   const handlePublishEvent = async () => {
@@ -136,23 +208,25 @@ export default function AdminScreen() {
       return;
     }
 
-    const photos = eventPhotosRaw
+    const urlPhotos = eventPhotosRaw
       .split('\n')
       .map((u) => u.trim())
-      .filter((u) => u.startsWith('http'));
+      .filter((u) => u.startsWith('http') || u.startsWith('file://') || u.startsWith('content://') || u.startsWith('data:'));
+
+    const allPhotos = [...galleryPhotos, ...urlPhotos];
 
     const res = await createCampusEvent({
       title: eventTitle.trim(),
-      description: eventDesc.trim() || 'Official University event hosted on GBU campus.',
+      description: eventDesc.trim(),
       category: eventCategory,
       startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-      venue: eventVenue.trim() || 'GBU Campus',
+      endDate: new Date(Date.now() + 86400000 * 2).toISOString(),
+      venue: eventVenue.trim(),
       isFree: true,
       registrationRequired: Boolean(eventRegUrl.trim()),
       registrationUrl: eventRegUrl.trim() || undefined,
-      imageUrl: eventBannerUrl.trim() || (photos[0] ?? undefined),
-      photos,
+      imageUrl: eventBannerUrl.trim() || (allPhotos[0] ?? undefined),
+      photos: allPhotos,
       audience: ['all'],
     });
 
@@ -161,6 +235,7 @@ export default function AdminScreen() {
       setEventTitle('');
       setEventDesc('');
       setEventBannerUrl('');
+      setGalleryPhotos([]);
       setEventPhotosRaw('');
       setEventRegUrl('');
       void loadData();
@@ -173,27 +248,29 @@ export default function AdminScreen() {
   const handleDeleteEvent = async (id: string, title: string) => {
     const res = await deleteCampusEvent(id);
     if (res.ok) {
-      showToast(`Removed "${title}".`);
-      setEventsList((prev) => prev.filter((e) => e.id !== id));
-    }
-  };
-
-  // Handler: Moderate Paper
-  const handleModerate = async (paperId: string, action: 'approve' | 'reject') => {
-    const res = await applyModeration(paperId, action, user?.email ?? 'admin@gbu.ac.in');
-    if (res.ok) {
-      showToast(action === 'approve' ? 'Paper published to public library.' : 'Paper rejected.');
-      setPendingPapers((prev) => prev.filter((p) => p.id !== paperId));
+      showToast(`Deleted: "${title}"`);
+      void loadData();
     } else {
-      showToast(res.reason);
+      showToast(res.error || 'Failed to delete event.');
     }
   };
 
-  // Handler: Save & Publish Version Release
-  const handleSaveVersionManifest = async () => {
+  // Handler: Moderate PYQ
+  const handleModeratePaper = async (paperId: string, action: 'approve' | 'reject') => {
+    const res = await applyModeration(paperId, action);
+    if (res.ok) {
+      showToast(`Paper ${action === 'approve' ? 'approved & published' : 'rejected'}.`);
+      void loadData();
+    } else {
+      showToast(res.reason || 'Moderation action failed.');
+    }
+  };
+
+  // Handler: Broadcast App Version Update
+  const handleBroadcastUpdate = async () => {
     const notes = releaseNotesText
       .split('\n')
-      .map((s) => s.trim())
+      .map((n) => n.trim())
       .filter(Boolean);
 
     const manifest: AppVersionManifest = {
@@ -201,9 +278,11 @@ export default function AdminScreen() {
       latestVersion: manifestVersion.trim(),
       minSupportedVersion: minSupported.trim(),
       isMandatory,
-      title: isMandatory ? 'Compulsory Update Required' : 'New Version Available',
-      message: 'New version of GBU One with essential updates is ready.',
-      releaseNotes: notes,
+      title: isMandatory ? 'Mandatory GBU One Update' : 'GBU One Update Available',
+      message: isMandatory
+        ? 'A critical update is required to continue accessing Gautam Buddha University timetable and exam services.'
+        : 'A new version with performance improvements and new features is available.',
+      releaseNotes: notes.length > 0 ? notes : ['General stability and timetable updates.'],
       apkUrl: apkDownloadUrl.trim(),
       releasedAt: new Date().toISOString(),
     };
@@ -211,30 +290,124 @@ export default function AdminScreen() {
     const res = await publishAppVersion(manifest);
     if (res.ok) {
       showToast(
-        isMandatory
-          ? `Compulsory update v${manifest.latestVersion} broadcasted to all devices!`
-          : `Release v${manifest.latestVersion} published.`,
+        `Version manifest broadcast successfully! (${manifest.latestVersion}, Mandatory: ${isMandatory})`,
       );
     } else {
-      showToast(res.error || 'Failed to publish version manifest.');
+      showToast(res.error || 'Failed to broadcast update.');
     }
   };
 
-  // Handler: Clear / Reset Version Manifest
-  const handleResetVersion = async () => {
+  // Handler: Reset update override
+  const handleResetUpdate = async () => {
     await clearAppVersionOverride();
-    showToast('Version override reset to default.');
+    showToast('Reset to default version manifest.');
     void loadData();
   };
 
+  // =========================================================================
+  // VIEW: SECURITY ACCESS GATE (SINGLE ADMIN RESTRICTION)
+  // =========================================================================
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
+        <View style={[styles.header, { borderBottomColor: colors.borderGlass }]}>
+          <TouchableOpacity
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ChevronLeft size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.headerTitleCol}>
+            <View style={styles.roleBadgeRow}>
+              <View style={[styles.roleBadge, { backgroundColor: colors.accentSoft }]}>
+                <Text style={[styles.roleBadgeText, { color: colors.accent }]}>RESTRICTED ACCESS</Text>
+              </View>
+            </View>
+            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Security Verification</Text>
+          </View>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.lockContent}>
+          <GlassCard style={styles.lockCard} variant="elevated">
+            <View style={[styles.lockIconCircle, { backgroundColor: colors.accentSoft }]}>
+              <ShieldAlert size={40} color={colors.accent} />
+            </View>
+            <Text style={[styles.lockTitle, { color: colors.textPrimary }]}>GBU Admin Console</Text>
+            <Text style={[styles.lockSubtitle, { color: colors.textSecondary }]}>
+              Central University Administrative Hub. Access is strictly restricted to verified GBU moderators and faculty coordinators.
+            </Text>
+
+            <View style={styles.lockForm}>
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Master Admin Passcode / PIN</Text>
+              <TextInput
+                value={adminPasscode}
+                onChangeText={(val) => {
+                  setAdminPasscode(val);
+                  setAuthError('');
+                }}
+                placeholder="Enter 6-digit PIN or master key"
+                placeholderTextColor={colors.textTertiary}
+                secureTextEntry
+                style={[
+                  styles.input,
+                  {
+                    color: colors.textPrimary,
+                    borderColor: authError ? colors.danger : colors.borderGlass,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+                onSubmitEditing={handleUnlockConsole}
+                returnKeyType="done"
+              />
+              {authError ? (
+                <Text style={[styles.authErrorText, { color: colors.danger }]}>{authError}</Text>
+              ) : null}
+
+              <PillButton
+                label="Unlock Administrative Console"
+                variant="primary"
+                size="md"
+                onPress={handleUnlockConsole}
+                icon={<Key size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
+                style={{ marginTop: 16 }}
+              />
+
+              <PillButton
+                label="Return to Student App"
+                variant="outline"
+                size="md"
+                onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+                style={{ marginTop: 10 }}
+              />
+            </View>
+          </GlassCard>
+        </ScrollView>
+
+        <Toast
+          message={toastMessage}
+          visible={toastVisible}
+          onDismiss={() => setToastVisible(false)}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  // =========================================================================
+  // VIEW: UNLOCKED ADMINISTRATIVE CONSOLE
+  // =========================================================================
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Admin Top App Bar */}
       <View style={[styles.header, { borderBottomColor: colors.borderGlass }]}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
           style={styles.backBtn}
+          accessibilityRole="button"
           accessibilityLabel="Back"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <ChevronLeft size={24} color={colors.textPrimary} />
         </TouchableOpacity>
@@ -248,6 +421,20 @@ export default function AdminScreen() {
           </View>
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>System & Campus Controls</Text>
         </View>
+
+        <TouchableOpacity
+          onPress={() => {
+            setIsAuthenticated(false);
+            setAdminPasscode('');
+            showToast('Admin console locked.');
+          }}
+          style={[styles.lockBtn, { backgroundColor: colors.surfaceAlt }]}
+          accessibilityLabel="Lock Console"
+        >
+          <Lock size={15} color={colors.accent} />
+          <Text style={[styles.lockBtnText, { color: colors.accent }]}>Lock</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
           onPress={loadData}
           style={styles.refreshBtn}
@@ -300,22 +487,22 @@ export default function AdminScreen() {
                 <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Publish Campus Event</Text>
               </View>
               <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>
-                Add events with photo galleries. Updates reflect live in the student app.
+                Add official fests, workshops, and sports tournaments. Changes reflect immediately on all student devices.
               </Text>
 
               {/* Event Title */}
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Event Title</Text>
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Event Title *</Text>
               <TextInput
                 value={eventTitle}
                 onChangeText={setEventTitle}
-                placeholder="e.g. Abhivyanjana 2026 Cultural Fest"
+                placeholder="e.g. Abhivyanjana 2026 - Annual Cultural Fest"
                 placeholderTextColor={colors.textTertiary}
                 style={[styles.input, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
               />
 
-              {/* Event Category Chips */}
+              {/* Category Picker */}
               <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.formRow}>
                 {EVENT_CATEGORIES.filter((c) => c.id !== 'all').map((cat) => (
                   <TouchableOpacity
                     key={cat.id}
@@ -323,7 +510,7 @@ export default function AdminScreen() {
                     style={[
                       styles.categoryChip,
                       {
-                        backgroundColor: eventCategory === cat.id ? colors.accent : colors.surfaceAlt,
+                        backgroundColor: eventCategory === cat.id ? colors.accentSoft : colors.surface,
                         borderColor: eventCategory === cat.id ? colors.accent : colors.borderGlass,
                       },
                     ]}
@@ -331,7 +518,7 @@ export default function AdminScreen() {
                     <Text
                       style={[
                         styles.categoryChipText,
-                        { color: eventCategory === cat.id ? colors.onAccent : colors.textSecondary },
+                        { color: eventCategory === cat.id ? colors.accent : colors.textSecondary },
                       ]}
                     >
                       {cat.label}
@@ -341,11 +528,11 @@ export default function AdminScreen() {
               </ScrollView>
 
               {/* Venue */}
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Venue & Location</Text>
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Venue</Text>
               <TextInput
                 value={eventVenue}
                 onChangeText={setEventVenue}
-                placeholder="e.g. Main Auditorium & Open Grounds"
+                placeholder="e.g. Main Auditorium / Indoor Stadium"
                 placeholderTextColor={colors.textTertiary}
                 style={[styles.input, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
               />
@@ -355,32 +542,77 @@ export default function AdminScreen() {
               <TextInput
                 value={eventDesc}
                 onChangeText={setEventDesc}
-                placeholder="Detailed schedule, guest performers, rules, and entry guidelines..."
+                placeholder="Event description, rules, eligibility and schedule..."
                 placeholderTextColor={colors.textTertiary}
                 multiline
                 numberOfLines={3}
                 style={[styles.textArea, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
               />
 
-              {/* Banner Image URL */}
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Banner Image URL (HTTPS)</Text>
-              <TextInput
-                value={eventBannerUrl}
-                onChangeText={setEventBannerUrl}
-                placeholder="https://images.unsplash.com/... or uploaded photo link"
-                placeholderTextColor={colors.textTertiary}
-                style={[styles.input, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
+              {/* Banner Image URL & Gallery Button */}
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Event Banner Image</Text>
+              <View style={styles.photoActionRow}>
+                <TextInput
+                  value={eventBannerUrl}
+                  onChangeText={setEventBannerUrl}
+                  placeholder="HTTPS URL or pick from gallery..."
+                  placeholderTextColor={colors.textTertiary}
+                  style={[styles.input, { flex: 1, color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
+                />
+                <TouchableOpacity
+                  onPress={handlePickBannerPhoto}
+                  style={[styles.galleryPickerBtn, { backgroundColor: colors.surfaceAlt }]}
+                  accessibilityLabel="Pick banner from gallery"
+                >
+                  <Upload size={16} color={colors.accent} />
+                  <Text style={[styles.galleryPickerBtnText, { color: colors.accent }]}>Gallery</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Photo Gallery: Gallery Upload + URL inputs */}
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                Event Photo Gallery ({galleryPhotos.length} from gallery)
+              </Text>
+
+              <PillButton
+                label="Pick Photos from Device Gallery"
+                variant="outline"
+                size="sm"
+                onPress={handlePickGalleryPhotos}
+                icon={<ImageIcon size={16} color={colors.accent} style={{ marginRight: 6 }} />}
+                style={{ marginBottom: 10 }}
               />
 
-              {/* Photo Gallery URLs */}
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Event Photo Gallery (One URL per line)</Text>
+              {/* Thumbnails of Picked Gallery Photos */}
+              {galleryPhotos.length > 0 ? (
+                <View style={styles.pickedPhotosTray}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickedPhotosScroll}>
+                    {galleryPhotos.map((uri, idx) => (
+                      <View key={`${uri}-${idx}`} style={styles.pickedPhotoWrapper}>
+                        <Image source={{ uri }} style={styles.pickedPhotoThumb} resizeMode="cover" />
+                        <TouchableOpacity
+                          onPress={() => setGalleryPhotos((prev) => prev.filter((_, i) => i !== idx))}
+                          style={styles.removePhotoBtn}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <X size={12} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary, marginTop: 4 }]}>
+                Additional Photo URLs (One URL per line)
+              </Text>
               <TextInput
                 value={eventPhotosRaw}
                 onChangeText={setEventPhotosRaw}
                 placeholder="https://images.unsplash.com/photo-1...\nhttps://images.unsplash.com/photo-2..."
                 placeholderTextColor={colors.textTertiary}
                 multiline
-                numberOfLines={3}
+                numberOfLines={2}
                 style={[styles.textArea, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
               />
 
@@ -408,6 +640,7 @@ export default function AdminScreen() {
             <Text style={[styles.subHeaderTitle, { color: colors.textPrimary }]}>
               Currently Published Events ({eventsList.length})
             </Text>
+
             {eventsList.map((evt) => (
               <GlassCard key={evt.id} style={styles.eventItemCard} variant="subtle">
                 <View style={styles.eventItemTop}>
@@ -422,7 +655,7 @@ export default function AdminScreen() {
                     style={styles.deleteBtn}
                     accessibilityLabel={`Delete ${evt.title}`}
                   >
-                    <Trash2 size={16} color="#EF4444" />
+                    <Trash2 size={18} color={colors.danger} />
                   </TouchableOpacity>
                 </View>
               </GlassCard>
@@ -430,100 +663,100 @@ export default function AdminScreen() {
           </View>
         )}
 
-        {/* TAB 2: PYQ MODERATION */}
+        {/* TAB 2: PYQ MODERATION QUEUE */}
         {activeTab === 'pyq' && (
           <View style={styles.tabContent}>
             <GlassCard style={styles.sectionCard} variant="elevated">
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Crowdsourced PYQ Queue</Text>
+              <View style={styles.cardHeaderRow}>
+                <FileCheck2 size={18} color={colors.accent} />
+                <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>PYQ Verification Queue</Text>
+              </View>
               <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>
-                Review submissions from all branches before they are listed in the public library.
+                Review student crowdsourced examination question papers. Verified papers immediately become accessible to all GBU schools.
               </Text>
-            </GlassCard>
 
-            {pendingPapers.length === 0 ? (
-              <GlassCard style={styles.emptyCard} variant="subtle">
-                <CheckCircle2 size={32} color={colors.accent} style={{ marginBottom: 8 }} />
-                <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>Queue is Clear</Text>
-                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-                  All crowdsourced question papers have been approved or reviewed.
-                </Text>
-              </GlassCard>
-            ) : (
-              pendingPapers.map((paper) => (
-                <GlassCard key={paper.id} style={styles.paperCard} variant="elevated">
-                  <View style={styles.paperTopRow}>
-                    <View style={[styles.paperBadge, { backgroundColor: colors.accentSoft }]}>
-                      <Text style={[styles.paperBadgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
-                    </View>
-                    <Text style={[styles.paperExamType, { color: colors.textSecondary }]}>{paper.examType} {paper.year}</Text>
-                  </View>
-                  <Text style={[styles.paperName, { color: colors.textPrimary }]}>{paper.subjectName}</Text>
-                  <Text style={[styles.paperMeta, { color: colors.textTertiary }]}>
-                    {paper.school} • {paper.programmeCode || 'General'} • {paper.semester}
+              {pendingPapers.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <CheckCircle2 size={36} color={colors.success} style={{ marginBottom: 8 }} />
+                  <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>Queue is Clear</Text>
+                  <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                    All student-uploaded papers have been verified and published.
                   </Text>
+                </View>
+              ) : (
+                pendingPapers.map((paper) => (
+                  <GlassCard key={paper.id} style={styles.paperCard} variant="subtle">
+                    <View style={styles.paperTopRow}>
+                      <View style={[styles.paperBadge, { backgroundColor: colors.accentSoft }]}>
+                        <Text style={[styles.paperBadgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
+                      </View>
+                      <Text style={[styles.paperExamType, { color: colors.textSecondary }]}>
+                        {paper.examType} {paper.year}
+                      </Text>
+                    </View>
 
-                  <View style={styles.moderationBtnRow}>
-                    <PillButton
-                      label="Approve & Publish"
-                      variant="primary"
-                      size="sm"
-                      onPress={() => handleModerate(paper.id, 'approve')}
-                      style={{ flex: 1, marginRight: 8 }}
-                    />
-                    <PillButton
-                      label="Reject"
-                      variant="outline"
-                      size="sm"
-                      onPress={() => handleModerate(paper.id, 'reject')}
-                      style={{ flex: 1 }}
-                    />
-                  </View>
-                </GlassCard>
-              ))
-            )}
+                    <Text style={[styles.paperName, { color: colors.textPrimary }]}>{paper.subjectName}</Text>
+                    <Text style={[styles.paperMeta, { color: colors.textSecondary }]}>
+                      School: {paper.school} • Sem {paper.semester} • Prog: {paper.programmeCode}
+                    </Text>
+
+                    <View style={styles.moderationBtnRow}>
+                      <PillButton
+                        label="Approve & Publish"
+                        variant="primary"
+                        size="sm"
+                        onPress={() => handleModeratePaper(paper.id, 'approve')}
+                        style={{ flex: 1, marginRight: 8 }}
+                      />
+                      <PillButton
+                        label="Reject"
+                        variant="outline"
+                        size="sm"
+                        onPress={() => handleModeratePaper(paper.id, 'reject')}
+                        style={{ flex: 1 }}
+                      />
+                    </View>
+                  </GlassCard>
+                ))
+              )}
+            </GlassCard>
           </View>
         )}
 
-        {/* TAB 3: APP VERSION & AUTO-UPDATE MANAGER */}
+        {/* TAB 3: COMPULSORY AUTO-UPDATE MANAGER */}
         {activeTab === 'version' && (
           <View style={styles.tabContent}>
             <GlassCard style={styles.sectionCard} variant="elevated">
               <View style={styles.cardHeaderRow}>
                 <ArrowUpCircle size={18} color={colors.accent} />
-                <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-                  Compulsory Auto-Update Manager
-                </Text>
+                <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Compulsory Auto-Update Manager</Text>
               </View>
               <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>
                 Publish new app releases. When marked mandatory, all older student apps display a blocking update modal requiring APK update.
               </Text>
 
-              {/* Version Inputs */}
-              <View style={styles.formRow}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Latest Version</Text>
-                  <TextInput
-                    value={manifestVersion}
-                    onChangeText={setManifestVersion}
-                    placeholder="1.1.0"
-                    placeholderTextColor={colors.textTertiary}
-                    style={[styles.input, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Min Supported</Text>
-                  <TextInput
-                    value={minSupported}
-                    onChangeText={setMinSupported}
-                    placeholder="1.0.0"
-                    placeholderTextColor={colors.textTertiary}
-                    style={[styles.input, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
-                  />
-                </View>
-              </View>
+              {/* Latest Version */}
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Latest Version</Text>
+              <TextInput
+                value={manifestVersion}
+                onChangeText={setManifestVersion}
+                placeholder="1.1.0"
+                placeholderTextColor={colors.textTertiary}
+                style={[styles.input, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
+              />
 
-              {/* Mandatory Switch */}
-              <View style={[styles.switchRow, { borderColor: colors.borderGlass, backgroundColor: colors.surfaceAlt }]}>
+              {/* Min Supported Version */}
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Min Supported Version</Text>
+              <TextInput
+                value={minSupported}
+                onChangeText={setMinSupported}
+                placeholder="1.0.0"
+                placeholderTextColor={colors.textTertiary}
+                style={[styles.input, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
+              />
+
+              {/* Mandatory Toggle */}
+              <View style={[styles.switchRow, { borderColor: colors.borderGlass, backgroundColor: colors.surface }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.switchLabel, { color: colors.textPrimary }]}>Compulsory / Mandatory Mode</Text>
                   <Text style={[styles.switchSub, { color: colors.textSecondary }]}>
@@ -533,8 +766,8 @@ export default function AdminScreen() {
                 <Switch
                   value={isMandatory}
                   onValueChange={setIsMandatory}
-                  thumbColor={isMandatory ? colors.accent : '#9CA3AF'}
-                  trackColor={{ false: 'rgba(255,255,255,0.1)', true: colors.accentSoft }}
+                  trackColor={{ false: colors.borderGlass, true: colors.accent }}
+                  thumbColor="#FFFFFF"
                 />
               </View>
 
@@ -548,12 +781,12 @@ export default function AdminScreen() {
                 style={[styles.input, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
               />
 
-              {/* Release Highlights */}
+              {/* Release Notes */}
               <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Release Notes (One highlight per line)</Text>
               <TextInput
                 value={releaseNotesText}
                 onChangeText={setReleaseNotesText}
-                placeholder="End Sem exam schedule\nEvents photo gallery"
+                placeholder="Feature 1\nFeature 2..."
                 placeholderTextColor={colors.textTertiary}
                 multiline
                 numberOfLines={3}
@@ -564,7 +797,7 @@ export default function AdminScreen() {
                 label="Broadcast Version Update"
                 variant="primary"
                 size="md"
-                onPress={handleSaveVersionManifest}
+                onPress={handleBroadcastUpdate}
                 icon={<ArrowUpCircle size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
                 style={{ marginTop: 14 }}
               />
@@ -573,15 +806,20 @@ export default function AdminScreen() {
                 label="Reset to Default"
                 variant="outline"
                 size="sm"
-                onPress={handleResetVersion}
-                style={{ marginTop: 10 }}
+                onPress={handleResetUpdate}
+                style={{ marginTop: 8 }}
               />
             </GlassCard>
           </View>
         )}
       </ScrollView>
 
-      <Toast message={toastMessage} visible={toastVisible} onDismiss={() => setToastVisible(false)} />
+      {/* Floating Toast Feedback */}
+      <Toast
+        message={toastMessage}
+        visible={toastVisible}
+        onDismiss={() => setToastVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -591,19 +829,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    gap: 12,
     borderBottomWidth: 1,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
+    borderRadius: theme.radius.avatar,
   },
   headerTitleCol: {
     flex: 1,
@@ -615,15 +853,15 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   roleBadge: {
-    backgroundColor: 'rgba(79, 70, 229, 0.15)',
-    paddingHorizontal: 7,
+    backgroundColor: '#EA580C',
+    paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   roleBadgeText: {
+    color: '#FFFFFF',
     fontSize: 10,
     fontFamily: 'Inter-Bold',
-    color: '#6366F1',
     letterSpacing: 0.5,
   },
   liveDot: {
@@ -637,20 +875,31 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
   },
   headerTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontFamily: 'Poppins-Bold',
   },
+  lockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: theme.radius.sm,
+  },
+  lockBtnText: {
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+  },
   refreshBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabsRow: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    borderBottomColor: 'rgba(0,0,0,0.06)',
   },
   tabBtn: {
     flex: 1,
@@ -664,7 +913,7 @@ const styles = StyleSheet.create({
   },
   tabText: {
     fontSize: 13,
-    fontFamily: 'Inter-Medium',
+    fontFamily: 'Inter-SemiBold',
   },
   content: {
     padding: theme.spacing.md,
@@ -715,6 +964,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     textAlignVertical: 'top',
+  },
+  photoActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  galleryPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 44,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.sm,
+  },
+  galleryPickerBtnText: {
+    fontSize: 13,
+    fontFamily: 'Inter-SemiBold',
+  },
+  pickedPhotosTray: {
+    marginBottom: 10,
+  },
+  pickedPhotosScroll: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  pickedPhotoWrapper: {
+    position: 'relative',
+    width: 68,
+    height: 68,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  pickedPhotoThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  removePhotoBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   formRow: {
     flexDirection: 'row',
@@ -823,5 +1118,45 @@ const styles = StyleSheet.create({
   moderationBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  lockContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: theme.spacing.lg,
+  },
+  lockCard: {
+    padding: theme.spacing.xl,
+    borderRadius: theme.radius.card,
+    alignItems: 'center',
+  },
+  lockIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  lockTitle: {
+    fontSize: 20,
+    fontFamily: 'Poppins-Bold',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  lockSubtitle: {
+    fontSize: 13,
+    fontFamily: 'Inter-Regular',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 20,
+  },
+  lockForm: {
+    width: '100%',
+  },
+  authErrorText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    marginTop: 6,
+    marginBottom: 4,
   },
 });

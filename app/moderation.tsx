@@ -99,7 +99,7 @@ export default function ModerationQueueScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.navBar, { borderBottomColor: colors.borderGlass }]}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
           hitSlop={16}
           style={({ pressed }) => [
             styles.iconButton,

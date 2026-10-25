@@ -68,7 +68,7 @@ export default function NoticeDetailScreen() {
       <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
         <View style={[styles.navBar, { borderBottomColor: colors.borderGlass }]}>
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/notices'))}
             hitSlop={16}
             style={({ pressed }) => [
               styles.iconButton,
@@ -88,7 +88,7 @@ export default function NoticeDetailScreen() {
             The notice you requested may have expired, been removed, or the link is invalid.
           </Text>
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/notices'))}
             style={[styles.notFoundBtn, { backgroundColor: colors.accentFill }]}
           >
             <Text style={styles.notFoundBtnText}>Return to Notices</Text>
@@ -179,7 +179,7 @@ export default function NoticeDetailScreen() {
       {/* Top Navigation Bar */}
       <View style={[styles.navBar, { borderBottomColor: colors.borderGlass }]}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/notices'))}
           hitSlop={16}
           style={({ pressed }) => [
             styles.iconButton,
