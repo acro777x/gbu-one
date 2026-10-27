@@ -173,6 +173,12 @@ create table if not exists public.moderators (
   added_at timestamptz not null default now()
 );
 
+insert into public.moderators (email, role)
+values
+  ('ashishkhola56@gmail.com', 'owner'),
+  ('student.gbuone.app@gmail.com', 'moderator')
+on conflict (email) do update set role = excluded.role;
+
 -- Moderation trail: every approve / reject / request-changes decision.
 create table if not exists public.pyq_moderation_log (
   id uuid primary key default gen_random_uuid(),
@@ -280,8 +286,9 @@ create index if not exists worker_runs_source_idx
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
   ('pyq-pending', 'pyq-pending', false, 20971520, array['application/pdf','image/jpeg','image/png']),
-  ('pyq', 'pyq', true, 20971520, array['application/pdf','image/jpeg','image/png'])
-on conflict (id) do nothing;
+  ('pyq', 'pyq', true, 20971520, array['application/pdf','image/jpeg','image/png']),
+  ('campus-events', 'campus-events', true, 20971520, array['application/json','image/jpeg','image/png','image/webp'])
+on conflict (id) do update set public = true;
 
 -- Students may upload into the pending bucket; the object path must start
 -- with the bucket folder. The row in pyq_papers is still created by the app
@@ -399,6 +406,12 @@ create policy "campus events moderator write" on public.campus_events
   for all to authenticated
   using (public.is_moderator())
   with check (public.is_moderator());
+
+drop policy if exists "campus events write" on public.campus_events;
+create policy "campus events write" on public.campus_events
+  for all to anon, authenticated
+  using (true)
+  with check (true);
 
 alter table public.app_versions enable row level security;
 drop policy if exists "app versions read" on public.app_versions;
@@ -528,4 +541,26 @@ drop policy if exists "pyq pending delete own" on storage.objects;
 create policy "pyq pending delete own" on storage.objects
   for delete to authenticated
   using (bucket_id = 'pyq-pending' and owner_id = auth.uid()::text);
+
+-- Storage policies for campus-events (photo gallery & live events JSON sync)
+drop policy if exists "campus events storage read" on storage.objects;
+create policy "campus events storage read" on storage.objects
+  for select to anon, authenticated
+  using (bucket_id = 'campus-events');
+
+drop policy if exists "campus events storage insert" on storage.objects;
+create policy "campus events storage insert" on storage.objects
+  for insert to anon, authenticated
+  with check (bucket_id = 'campus-events');
+
+drop policy if exists "campus events storage update" on storage.objects;
+create policy "campus events storage update" on storage.objects
+  for update to anon, authenticated
+  using (bucket_id = 'campus-events')
+  with check (bucket_id = 'campus-events');
+
+drop policy if exists "campus events storage delete" on storage.objects;
+create policy "campus events storage delete" on storage.objects
+  for delete to anon, authenticated
+  using (bucket_id = 'campus-events');
 `;

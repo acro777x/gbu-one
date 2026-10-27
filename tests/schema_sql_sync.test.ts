@@ -32,6 +32,10 @@ describe('generated schema', () => {
       'create policy "pyq papers moderator update"',
       'create policy "device tokens own"',
       'create policy "pyq moderator move"',
+      'campus-events',
+      'create policy "campus events storage read"',
+      'create policy "campus events storage insert"',
+      'create policy "campus events write"',
     ]) {
       expect(generated).toContain(needle);
     }

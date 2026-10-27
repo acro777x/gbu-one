@@ -158,7 +158,8 @@ export function buildCacheFileName(url: string, discriminator?: string | number)
     hash = ((hash << 5) + hash + url.charCodeAt(index)) >>> 0;
   }
   const suffix = discriminator === undefined ? '' : `-${discriminator}`;
-  return `gbu-document-${hash.toString(16)}${suffix}.pdf`;
+  const ext = looksLikeImageUrl(url) ? (url.toLowerCase().indexOf('.png') !== -1 ? '.png' : '.jpg') : '.pdf';
+  return `gbu-document-${hash.toString(16)}${suffix}${ext}`;
 }
 
 /**
@@ -202,3 +203,19 @@ export function looksLikeImageUrl(url: string): boolean {
     lower.indexOf('.webp') !== -1
   );
 }
+
+/** True when the bytes look like a common raster image format (JPEG, PNG, WebP, GIF). */
+export function isProbablyImage(bytes: string): boolean {
+  if (!bytes || bytes.length < 4) return false;
+  // JPEG: FF D8 FF
+  if (bytes.charCodeAt(0) === 0xff && bytes.charCodeAt(1) === 0xd8) return true;
+  // PNG: \x89PNG
+  if (bytes.charCodeAt(0) === 0x89 && bytes.slice(1, 4) === 'PNG') return true;
+  if (bytes.slice(0, 4) === '\x89PNG') return true;
+  // GIF: GIF8
+  if (bytes.slice(0, 4) === 'GIF8') return true;
+  // WEBP: RIFF...WEBP
+  if (bytes.slice(0, 4) === 'RIFF' && bytes.indexOf('WEBP') !== -1) return true;
+  return false;
+}
+

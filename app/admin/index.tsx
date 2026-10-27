@@ -29,7 +29,6 @@ import {
   ChevronLeft,
   Calendar,
   FileCheck2,
-  BellRing,
   ArrowUpCircle,
   PlusCircle,
   Trash2,
@@ -37,9 +36,7 @@ import {
   ShieldAlert,
   CheckCircle2,
   RefreshCw,
-  ExternalLink,
   Lock,
-  Unlock,
   Key,
   Image as ImageIcon,
   X,
@@ -67,12 +64,25 @@ import {
 } from '../../src/features/updates/versionChecker';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
+import { isAdminApp } from '../../src/lib/appVariant';
+import { supabase, isSupabaseConfigured } from '../../src/lib/supabase';
+import { queryClient, EVENTS_QUERY_KEY } from '../../src/lib/queryClient';
 
 type AdminTab = 'events' | 'pyq' | 'broadcast' | 'version';
 
 export default function AdminScreen() {
-  const { colors, isDark } = useAppTheme();
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (!isAdminApp()) {
+      router.replace('/(tabs)');
+    }
+  }, []);
+
+  if (!isAdminApp()) {
+    return null;
+  }
 
   // Security Access Gate State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -82,7 +92,7 @@ export default function AdminScreen() {
   const [activeTab, setActiveTab] = useState<AdminTab>('events');
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
 
   // Events State
   const [eventsList, setEventsList] = useState<CampusEvent[]>([]);
@@ -145,19 +155,41 @@ export default function AdminScreen() {
   }, [isAuthenticated, loadData]);
 
   // Master Admin Authentication Handler
-  const handleUnlockConsole = () => {
+  const handleUnlockConsole = async () => {
     const entered = adminPasscode.trim();
     const validKeys = [
       process.env.EXPO_PUBLIC_ADMIN_PIN,
       '852096',
       'GBU@Admin2026',
-      'admin123',
     ].filter(Boolean);
 
     if (validKeys.includes(entered)) {
       setIsAuthenticated(true);
       setAuthError('');
       showToast('Admin console unlocked successfully.');
+
+      // Authenticate with Supabase so session is an authenticated moderator
+      try {
+        const adminEmail =
+          process.env.EXPO_PUBLIC_ADMIN_EMAIL ||
+          process.env.GBU_ADMIN_EMAIL ||
+          'ashishkhola56@gmail.com';
+        const adminPass =
+          process.env.EXPO_PUBLIC_ADMIN_PASSWORD ||
+          process.env.GBU_ADMIN_PASSWORD ||
+          'Ashish@GBU2026';
+        if (isSupabaseConfigured && adminEmail && adminPass) {
+          const { error: signErr } = await supabase.auth.signInWithPassword({
+            email: adminEmail,
+            password: adminPass,
+          });
+          if (signErr) {
+            console.warn('Admin auto-auth warning:', signErr.message);
+          }
+        }
+      } catch (err) {
+        console.warn('Admin Supabase auth error:', err);
+      }
     } else {
       setAuthError('Access Denied: Invalid Administrative Master Key.');
       showToast('Invalid security passcode.');
@@ -208,6 +240,9 @@ export default function AdminScreen() {
       return;
     }
 
+    setLoading(true);
+    showToast('Uploading photos and publishing live event...');
+
     const urlPhotos = eventPhotosRaw
       .split('\n')
       .map((u) => u.trim())
@@ -215,32 +250,62 @@ export default function AdminScreen() {
 
     const allPhotos = [...galleryPhotos, ...urlPhotos];
 
-    const res = await createCampusEvent({
-      title: eventTitle.trim(),
-      description: eventDesc.trim(),
-      category: eventCategory,
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 86400000 * 2).toISOString(),
-      venue: eventVenue.trim(),
-      isFree: true,
-      registrationRequired: Boolean(eventRegUrl.trim()),
-      registrationUrl: eventRegUrl.trim() || undefined,
-      imageUrl: eventBannerUrl.trim() || (allPhotos[0] ?? undefined),
-      photos: allPhotos,
-      audience: ['all'],
-    });
+    try {
+      // Ensure Supabase session is active before publishing
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData?.session) {
+          const adminEmail =
+            process.env.EXPO_PUBLIC_ADMIN_EMAIL ||
+            process.env.GBU_ADMIN_EMAIL ||
+            'ashishkhola56@gmail.com';
+          const adminPass =
+            process.env.EXPO_PUBLIC_ADMIN_PASSWORD ||
+            process.env.GBU_ADMIN_PASSWORD ||
+            'Ashish@GBU2026';
+          if (isSupabaseConfigured && adminEmail && adminPass) {
+            await supabase.auth.signInWithPassword({
+              email: adminEmail,
+              password: adminPass,
+            });
+          }
+        }
+      } catch {
+        // ignore
+      }
 
-    if (res.ok) {
-      showToast('Live event and photo gallery published to all student apps!');
-      setEventTitle('');
-      setEventDesc('');
-      setEventBannerUrl('');
-      setGalleryPhotos([]);
-      setEventPhotosRaw('');
-      setEventRegUrl('');
-      void loadData();
-    } else {
-      showToast(res.error || 'Failed to publish event.');
+      const res = await createCampusEvent({
+        title: eventTitle.trim(),
+        description: eventDesc.trim(),
+        category: eventCategory,
+        startDate: new Date().toISOString(),
+        endDate: new Date(Date.now() + 86400000 * 2).toISOString(),
+        venue: eventVenue.trim(),
+        isFree: true,
+        registrationRequired: Boolean(eventRegUrl.trim()),
+        registrationUrl: eventRegUrl.trim() || undefined,
+        imageUrl: eventBannerUrl.trim() || (allPhotos[0] ?? undefined),
+        photos: allPhotos,
+        audience: ['all'],
+      });
+
+      if (res.ok) {
+        showToast('Live event and photo gallery published to all student apps!');
+        setEventTitle('');
+        setEventDesc('');
+        setEventBannerUrl('');
+        setGalleryPhotos([]);
+        setEventPhotosRaw('');
+        setEventRegUrl('');
+        void loadData();
+        void queryClient.invalidateQueries({ queryKey: EVENTS_QUERY_KEY });
+      } else {
+        showToast(res.error || 'Failed to publish event.');
+      }
+    } catch {
+      showToast('Network error while publishing event.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -250,6 +315,7 @@ export default function AdminScreen() {
     if (res.ok) {
       showToast(`Deleted: "${title}"`);
       void loadData();
+      void queryClient.invalidateQueries({ queryKey: EVENTS_QUERY_KEY });
     } else {
       showToast(res.error || 'Failed to delete event.');
     }

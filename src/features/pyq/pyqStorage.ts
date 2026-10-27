@@ -183,6 +183,6 @@ export function statusAfterAction(action: ModerationAction): PyqStatus {
 /** Public URL of an approved paper. */
 export function publicPaperUrl(filePath: string, baseUrl: string): string {
   if (!baseUrl) return filePath;
-  const clean = filePath.replace(/^pyq\//, '');
+  const clean = filePath.replace(/^pyq-pending\//, '').replace(/^pyq\//, '');
   return `${baseUrl.replace(/\/$/, '')}/storage/v1/object/public/${PYQ_APPROVED_BUCKET}/${clean}`;
 }

@@ -11,6 +11,7 @@ import {
   describeDownloadProblem,
   hostOfUrl,
   isPdfErrorPage,
+  isProbablyImage,
   isProbablyPdf,
   isSafePdfUrl,
   looksLikeImageUrl,
@@ -158,10 +159,36 @@ describe('cache file names', () => {
     expect(buildCacheFileName('https://gbu.ac.in/a.pdf').endsWith('.pdf')).toBe(true);
   });
 
+  it('ends with the image extension for image links', () => {
+    expect(buildCacheFileName('https://gbu.ac.in/scan.jpg').endsWith('.jpg')).toBe(true);
+    expect(buildCacheFileName('https://gbu.ac.in/scan.png').endsWith('.png')).toBe(true);
+  });
+
   it('gives two overlapping runs of the same url their own file', () => {
     expect(buildCacheFileName('https://gbu.ac.in/a.pdf', 1)).not.toBe(
       buildCacheFileName('https://gbu.ac.in/a.pdf', 2),
     );
+  });
+});
+
+describe('isProbablyImage', () => {
+  it('accepts JPEG bytes', () => {
+    expect(isProbablyImage('\xFF\xD8\xFF\xE0\x00\x10JFIF')).toBe(true);
+  });
+
+  it('accepts PNG bytes', () => {
+    expect(isProbablyImage('\x89PNG\r\n\x1a\n')).toBe(true);
+  });
+
+  it('accepts WebP and GIF bytes', () => {
+    expect(isProbablyImage('RIFF1234WEBPVP8')).toBe(true);
+    expect(isProbablyImage('GIF89a')).toBe(true);
+  });
+
+  it('rejects PDF or short content', () => {
+    expect(isProbablyImage(PDF_HEAD)).toBe(false);
+    expect(isProbablyImage('')).toBe(false);
+    expect(isProbablyImage('ab')).toBe(false);
   });
 });
 

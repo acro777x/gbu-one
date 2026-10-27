@@ -5,7 +5,7 @@
  * unavailable the bundled seed keeps the screen usable.
  */
 import { useQuery } from '@tanstack/react-query';
-import { MOCK_PAPERS, type PYQItem } from './pyqService';
+import { FULL_CATALOGUE_PAPERS, type PYQItem } from './pyqService';
 import { listApprovedPapers, type PyqPaperRecord } from './pyqRepository';
 
 export const PYQ_QUERY_KEY = ['pyq-papers'] as const;
@@ -32,11 +32,22 @@ export function usePyqQuery() {
     queryKey: PYQ_QUERY_KEY,
     queryFn: async () => {
       const records = await listApprovedPapers();
-      if (records.length > 0) return records.map(paperRecordToItem);
-      return MOCK_PAPERS;
+      const liveItems = records.map(paperRecordToItem);
+      if (liveItems.length === 0) return FULL_CATALOGUE_PAPERS;
+
+      // Collect all subject codes that have live approved uploads
+      const liveSubjectCodes = new Set(liveItems.map((p) => p.subjectCode.toUpperCase()));
+
+      // Preserve all university subjects from the catalogue for subjects without live uploads
+      const catalogueFallbacks = FULL_CATALOGUE_PAPERS.filter(
+        (cat) => !liveSubjectCodes.has(cat.subjectCode.toUpperCase()),
+      );
+
+      // Return all live papers (every year, exam type, and upload) + catalogue subjects for complete coverage
+      return [...liveItems, ...catalogueFallbacks];
     },
     // The seed paints instantly; the network refresh follows.
-    initialData: MOCK_PAPERS,
+    initialData: FULL_CATALOGUE_PAPERS,
     // The seed must not count as fresh, or the query never fetches.
     initialDataUpdatedAt: 0,
     staleTime: 5 * 60 * 1000,

@@ -39,6 +39,26 @@ try:
     with open(app_json_path, 'w', encoding='utf-8') as f:
         f.write(app_json)
 
+    source_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Ensure admin routes are available in BUILD for admin build
+    src_admin = os.path.join(source_dir, 'app', 'admin')
+    dst_admin = r'C:\gbuone-build\app\admin'
+    if os.path.isdir(src_admin):
+        shutil.copytree(src_admin, dst_admin, dirs_exist_ok=True)
+        print("Injected app/admin into Admin build.")
+
+    src_mod = os.path.join(source_dir, 'app', 'moderation.tsx')
+    dst_mod = r'C:\gbuone-build\app\moderation.tsx'
+    if os.path.exists(src_mod):
+        shutil.copy2(src_mod, dst_mod)
+        print("Injected app/moderation.tsx into Admin build.")
+
+    var_file = r'C:\gbuone-build\src\lib\appVariant.ts'
+    if os.path.exists(var_file):
+        with open(var_file, 'w', encoding='utf-8') as f:
+            f.write("export function isAdminApp(): boolean { return true; }\n")
+
     print("Running assembleDebug for Admin APK...")
     res = subprocess.run([r'cmd.exe', '/c', r'C:\gbuone-build\build_apk.bat'], check=True)
     print("Admin build finished with return code:", res.returncode)
@@ -57,4 +77,14 @@ finally:
     shutil.copy(strings_bak, strings_xml_path)
     shutil.copy(app_json_bak, app_json_path)
     shutil.rmtree(backup_dir, ignore_errors=True)
+
+    # Clean up admin files from BUILD
+    if os.path.isdir(r'C:\gbuone-build\app\admin'):
+        shutil.rmtree(r'C:\gbuone-build\app\admin', ignore_errors=True)
+    if os.path.exists(r'C:\gbuone-build\app\moderation.tsx'):
+        os.remove(r'C:\gbuone-build\app\moderation.tsx')
+    var_file = r'C:\gbuone-build\src\lib\appVariant.ts'
+    if os.path.exists(var_file):
+        with open(var_file, 'w', encoding='utf-8') as f:
+            f.write("export function isAdminApp(): boolean { return false; }\n")
     print("Restored.")

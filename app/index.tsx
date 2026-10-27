@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Redirect } from 'expo-router';
-import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppTheme } from '../src/lib/ThemeContext';
+import { isAdminApp } from '../src/lib/appVariant';
 
 export default function Index() {
   const { colors } = useAppTheme();
@@ -11,8 +11,7 @@ export default function Index() {
 
   useEffect(() => {
     let mounted = true;
-    const pkg = Constants.expoConfig?.android?.package;
-    if (pkg === 'in.gbu.one.admin' || process.env.EXPO_PUBLIC_APP_VARIANT === 'admin') {
+    if (isAdminApp()) {
       setTarget('/admin');
       return;
     }

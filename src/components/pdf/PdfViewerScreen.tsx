@@ -24,8 +24,10 @@ export const PdfViewerScreen: React.FC = () => {
   // file links carry a query string that does not survive a round trip
   // through route parameters. A plain `url` parameter is still accepted, so
   // a link into the viewer still works.
-  const registered = getDocument(typeof params.id === 'string' ? params.id : undefined);
-  const url = registered?.url ?? (typeof params.url === 'string' ? params.url : '');
+  const rawId = typeof params.id === 'string' ? params.id : undefined;
+  const rawUrl = typeof params.url === 'string' ? params.url : undefined;
+  const registered = getDocument(rawId);
+  const url = registered?.url ?? rawUrl ?? (rawId && (rawId.startsWith('http://') || rawId.startsWith('https://')) ? rawId : '');
   const title =
     registered?.title ?? (typeof params.title === 'string' ? params.title : '');
 

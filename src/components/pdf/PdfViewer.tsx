@@ -2,14 +2,17 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   DimensionValue,
+  Dimensions,
+  Image,
   Linking,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react-native';
+import { AlertCircle, ChevronLeft, ChevronRight, X, Download } from 'lucide-react-native';
 import Pdf from 'react-native-pdf';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { useAppTheme } from '../../lib/ThemeContext';
@@ -18,8 +21,10 @@ import { PillButton } from '../ui/PillButton';
 import {
   buildCacheFileName,
   describeDownloadProblem,
+  isProbablyImage,
   isProbablyPdf,
   isSafePdfUrl,
+  looksLikeImageUrl,
   MIN_PDF_BYTES,
   PDF_MIME_TYPE,
 } from './pdfHelpers';
@@ -86,7 +91,7 @@ const readDownloadFacts = async (
 
   try {
     await ReactNativeBlobUtil.fs.slice(path, headPath, 0, HEAD_WINDOW);
-    const raw: unknown = await ReactNativeBlobUtil.fs.readFile(headPath, 'utf8');
+    const raw: unknown = await ReactNativeBlobUtil.fs.readFile(headPath, 'ascii');
     return { head: typeof raw === 'string' ? raw : '', size };
   } catch {
     return { head: '', size };
@@ -108,9 +113,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
 
   const [phase, setPhase] = useState<ViewerPhase>({ status: 'downloading', progress: 0 });
   const [fileUri, setFileUri] = useState<string | null>(null);
+  const [isImageDoc, setIsImageDoc] = useState(false);
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [handoffError, setHandoffError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isImageDoc && fileUri) {
+      Image.getSize(
+        fileUri,
+        (width, height) => setImageDimensions({ width, height }),
+        () => setImageDimensions(null),
+      );
+    }
+  }, [isImageDoc, fileUri]);
 
   // The cached file of the current run, so it can be deleted on unmount.
   const filePathRef = useRef<string | null>(null);
@@ -126,6 +143,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
     setPhase({ status: 'downloading', progress: 0 });
     setHandoffError(null);
     setFileUri(null);
+    setIsImageDoc(false);
     setPage(1);
     setTotalPages(0);
 
@@ -173,16 +191,43 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         return;
       }
 
-      // A real document starts with the PDF magic and is big enough to be one.
-      // Anything else is one of the portal's error pages.
-      if (!isProbablyPdf(head) || size < MIN_PDF_BYTES) {
-        await removeCachedFile(target);
-        setPhase({ status: 'error', message: describeDownloadProblem(status, head, size) });
-        return;
+      const isImg = looksLikeImageUrl(url) || isProbablyImage(head);
+      setIsImageDoc(isImg);
+
+      if (isImg) {
+        if (size < 100) {
+          await removeCachedFile(target);
+          setPhase({
+            status: 'error',
+            message: 'The image file could not be downloaded or was empty.',
+          });
+          return;
+        }
+      } else {
+        // A real document starts with the PDF magic and is big enough to be one.
+        // Anything else is one of the portal's error pages.
+        if (!isProbablyPdf(head) || size < MIN_PDF_BYTES) {
+          await removeCachedFile(target);
+          setPhase({ status: 'error', message: describeDownloadProblem(status, head, size) });
+          return;
+        }
       }
 
-      filePathRef.current = target;
-      setFileUri(`file://${target}`);
+      let finalTarget = target;
+      if (isImg && !target.toLowerCase().endsWith('.jpg') && !target.toLowerCase().endsWith('.png') && !target.toLowerCase().endsWith('.jpeg')) {
+        const ext = head.slice(0, 4).indexOf('PNG') !== -1 || (head.charCodeAt(0) === 0x89) ? '.png' : '.jpg';
+        const imageTarget = `${target}${ext}`;
+        try {
+          await ReactNativeBlobUtil.fs.cp(target, imageTarget);
+          await removeCachedFile(target);
+          finalTarget = imageTarget;
+        } catch {
+          // keep original target if copy fails
+        }
+      }
+
+      filePathRef.current = finalTarget;
+      setFileUri(`file://${finalTarget}`);
       setPhase({ status: 'ready' });
     } catch {
       // The half written file of a superseded run is still ours to remove.
@@ -210,6 +255,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
     void startDownload();
   }, [startDownload]);
 
+  const [downloadSuccessMessage, setDownloadSuccessMessage] = useState<string | null>(null);
+
   /**
    * Hands the document to the operating system: the native PDF reader on
    * Android, the browser on iOS, where a `file://` URL cannot be opened
@@ -219,10 +266,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
     const path = filePathRef.current;
     try {
       if (path && Platform.OS === 'android') {
+        const mime = isImageDoc ? 'image/*' : PDF_MIME_TYPE;
         const opened = await ReactNativeBlobUtil.android.actionViewIntent(
           path,
-          PDF_MIME_TYPE,
-          'Open document with',
+          mime,
+          isImageDoc ? 'Open image with' : 'Open document with',
         );
         if (opened === false || opened === null) {
           throw new Error('No application accepted the document.');
@@ -235,7 +283,77 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         'No app on this device could open the document. Try the original link on the university website instead.',
       );
     }
-  }, [url]);
+  }, [url, isImageDoc]);
+
+  /**
+   * Saves the document directly to the student's device storage in DownloadDir
+   * and registers it with Android DownloadManager.
+   */
+  const saveToDevice = useCallback(async () => {
+    const path = filePathRef.current;
+    if (!path) {
+      void openExternally();
+      return;
+    }
+
+    try {
+      if (Platform.OS === 'android') {
+        const safeName = (title || 'question-paper')
+          .replace(/[/\\?%*:|"<>]/g, '_')
+          .replace(/\s+/g, '_')
+          .slice(0, 50);
+        const ext = isImageDoc ? (path.toLowerCase().endsWith('.png') ? '.png' : '.jpg') : '.pdf';
+        const targetFileName = `${safeName}${ext}`;
+        const mime = isImageDoc ? 'image/jpeg' : PDF_MIME_TYPE;
+
+        let saved = false;
+        // 1. Android MediaStore copy (Works on modern Android 10+ without storage permission)
+        try {
+          if (ReactNativeBlobUtil.MediaCollection?.copyToMediaStore) {
+            await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
+              { name: targetFileName, parentFolder: '', mimeType: mime },
+              'Download',
+              path,
+            );
+            saved = true;
+          }
+        } catch (mediaErr) {
+          console.warn('copyToMediaStore fallback:', mediaErr);
+        }
+
+        // 2. Direct DownloadDir copy fallback
+        if (!saved) {
+          try {
+            const downloadDir = ReactNativeBlobUtil.fs.dirs.DownloadDir;
+            const destPath = `${downloadDir}/${targetFileName}`;
+            await ReactNativeBlobUtil.fs.cp(path, destPath);
+            try {
+              await ReactNativeBlobUtil.android.addCompleteDownload({
+                title: targetFileName,
+                description: `${title || 'Question paper'} from GBU One`,
+                mime,
+                path: destPath,
+                showNotification: true,
+              });
+            } catch {
+              // ignore
+            }
+            saved = true;
+          } catch (cpErr) {
+            console.warn('DownloadDir cp fallback:', cpErr);
+          }
+        }
+
+        setDownloadSuccessMessage(`Saved to Downloads/${targetFileName}`);
+        return;
+      }
+
+      await openExternally();
+    } catch (err) {
+      console.warn('Failed to save to device downloads:', err);
+      void openExternally();
+    }
+  }, [title, isImageDoc, openExternally]);
 
   const goToPage = useCallback(
     (next: number) => {
@@ -279,7 +397,30 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
             </Text>
           ) : null}
         </View>
+
+        {phase.status === 'ready' && (
+          <Pressable
+            onPress={() => void saveToDevice()}
+            hitSlop={12}
+            style={({ pressed }) => [
+              styles.iconButton,
+              { backgroundColor: colors.surfaceAlt, opacity: pressed ? 0.7 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Download and save to device"
+          >
+            <Download size={20} color={colors.textPrimary} />
+          </Pressable>
+        )}
       </View>
+
+      {downloadSuccessMessage && (
+        <View style={[styles.downloadToast, { backgroundColor: colors.accent }]}>
+          <Text style={[styles.downloadToastText, { color: colors.onAccent }]}>
+            ✓ {downloadSuccessMessage}
+          </Text>
+        </View>
+      )}
 
       {/* Content */}
       <View style={styles.content}>
@@ -332,31 +473,60 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         )}
 
         {phase.status === 'ready' && fileUri ? (
-          <Pdf
-            source={{ uri: fileUri }}
-            style={styles.pdf}
-            fitPolicy={0}
-            onLoadComplete={(numberOfPages) => {
-              setTotalPages(numberOfPages);
-              setPage(1);
-            }}
-            onPageChanged={(currentPage, numberOfPages) => {
-              setPage(currentPage);
-              setTotalPages(numberOfPages);
-            }}
-            onError={() => {
-              setPhase({
-                status: 'error',
-                message:
-                  'The document could not be rendered on this device. Opening it in another app may still work.',
-              });
-            }}
-          />
+          isImageDoc ? (
+            <ScrollView
+              style={styles.imageScroll}
+              contentContainerStyle={styles.imageScrollContent}
+              maximumZoomScale={4}
+              minimumZoomScale={1}
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={true}
+            >
+              <Image
+                source={{ uri: fileUri }}
+                style={{
+                  width: Dimensions.get('window').width,
+                  height:
+                    imageDimensions && imageDimensions.width > 0
+                      ? Math.max(
+                          500,
+                          Math.round(
+                            (Dimensions.get('window').width / imageDimensions.width) *
+                              imageDimensions.height,
+                          ),
+                        )
+                      : 700,
+                }}
+                resizeMode="contain"
+              />
+            </ScrollView>
+          ) : (
+            <Pdf
+              source={{ uri: fileUri }}
+              style={styles.pdf}
+              fitPolicy={0}
+              onLoadComplete={(numberOfPages) => {
+                setTotalPages(numberOfPages);
+                setPage(1);
+              }}
+              onPageChanged={(currentPage, numberOfPages) => {
+                setPage(currentPage);
+                setTotalPages(numberOfPages);
+              }}
+              onError={() => {
+                setPhase({
+                  status: 'error',
+                  message:
+                    'The document could not be rendered on this device. Opening it in another app may still work.',
+                });
+              }}
+            />
+          )
         ) : null}
       </View>
 
       {/* Page controls */}
-      {phase.status === 'ready' ? (
+      {phase.status === 'ready' && !isImageDoc ? (
         <View style={[styles.footer, { backgroundColor: colors.surface, borderTopColor: colors.borderGlass }]}>
           <Pressable
             onPress={() => goToPage(page - 1)}
@@ -443,6 +613,20 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#FFFFFF',
   },
+  imageScroll: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  imageScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: '100%',
+  },
+  imageViewer: {
+    width: '100%',
+    height: 600,
+  },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -508,6 +692,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     minWidth: 120,
     textAlign: 'center',
+  },
+  downloadToast: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  downloadToastText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 13,
   },
 });
 

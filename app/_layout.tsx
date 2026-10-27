@@ -17,6 +17,7 @@ import {
 import { useClassAlarmLifecycle } from '../src/features/notifications/useClassAlarmLifecycle';
 import { AlarmRungPrompt } from '../src/components/notifications/AlarmRungPrompt';
 import { MandatoryUpdateModal } from '../src/components/ui/MandatoryUpdateModal';
+import { isAdminApp } from '../src/lib/appVariant';
 
 
 function AppShell() {
@@ -120,8 +121,12 @@ function AppShell() {
             <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="login" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="class-setup" options={{ animation: 'slide_from_bottom' }} />
-            <Stack.Screen name="moderation" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="admin/index" options={{ animation: 'slide_from_right' }} />
+            {isAdminApp() ? (
+              <>
+                <Stack.Screen name="moderation" options={{ animation: 'slide_from_right' }} />
+                <Stack.Screen name="admin/index" options={{ animation: 'slide_from_right' }} />
+              </>
+            ) : null}
             <Stack.Screen name="events" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="notice/[id]" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="pdf" options={{ animation: 'slide_from_right' }} />

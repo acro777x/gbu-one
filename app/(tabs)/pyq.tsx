@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -26,7 +26,8 @@ import {
 } from 'lucide-react-native';
 import { GlassCard, PillButton, Toast, BottomSheet, Chip, EmptyState } from '../../src/components/ui';
 import { useAuthStore } from '../../src/store/useAuthStore';
-import { PYQItem, MOCK_PAPERS, filterPapers } from '../../src/features/pyq/pyqService';
+import { PYQItem, MOCK_PAPERS, SAMPLE_PAPER_URL, filterPapers, normalizeSemester } from '../../src/features/pyq/pyqService';
+import { registerDocument } from '../../src/components/pdf/pdfRegistry';
 import { usePyqQuery } from '../../src/features/pyq/usePyqQuery';
 import {
   reportPaper,
@@ -56,6 +57,7 @@ export default function PYQScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSchool, setSelectedSchool] = useState('All');
   const [selectedSemester, setSelectedSemester] = useState('All');
+  const [selectedSubject, setSelectedSubject] = useState('All');
   const [examTab, setExamTab] = useState<ExamTab>('All');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState('');
@@ -114,10 +116,12 @@ export default function PYQScreen() {
 
   const handleSingleDownload = (paper: PYQItem) => {
     setDetailSheetVisible(false);
-    const targetUrl = paper.fileUrl || 'https://www.gbu.ac.in';
+    const targetUrl = paper.fileUrl || SAMPLE_PAPER_URL;
+    const title = `${paper.subjectCode} - ${paper.subjectName}`;
+    const docId = registerDocument(targetUrl, title);
     router.push({
       pathname: '/pdf',
-      params: { id: targetUrl, title: `${paper.subjectCode} - ${paper.subjectName}` },
+      params: { id: docId, url: targetUrl, title },
     });
     showToast(`Opening ${paper.subjectCode} (${paper.examType}). Download logged.`);
   };
@@ -239,12 +243,43 @@ export default function PYQScreen() {
     void refetch();
   };
 
+  const availableSubjects = useMemo(() => {
+    const map = new Map<string, { code: string; name: string; count: number }>();
+    const cleanSem = selectedSemester === 'All' ? 'All' : normalizeSemester(selectedSemester);
+    papers.forEach((p) => {
+      if (selectedSchool !== 'All' && p.school.toUpperCase() !== selectedSchool.toUpperCase()) return;
+      if (cleanSem !== 'All') {
+        const pSem = normalizeSemester(p.semester);
+        if (pSem !== cleanSem) return;
+      }
+      const code = p.subjectCode.trim();
+      const existing = map.get(code);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        map.set(code, { code, name: p.subjectName, count: 1 });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
+  }, [papers, selectedSchool, selectedSemester]);
+
+  const displayedSubjectChips = useMemo(() => {
+    return availableSubjects;
+  }, [availableSubjects]);
+
+  useEffect(() => {
+    if (selectedSubject !== 'All' && !availableSubjects.some((s) => s.code === selectedSubject)) {
+      setSelectedSubject('All');
+    }
+  }, [availableSubjects, selectedSubject]);
+
   const filteredPapers = filterPapers(
     papers,
     searchQuery,
     selectedSchool,
     selectedSemester,
     examTab,
+    selectedSubject,
   );
 
   const trendingPapers = [...papers].sort((a, b) => b.downloads - a.downloads).slice(0, 3);
@@ -357,7 +392,28 @@ export default function PYQScreen() {
 
       {/* Papers Grid Header */}
       <View style={styles.allPapersHeaderRow}>
-        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>All Question Papers</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>All Question Papers</Text>
+          {selectedSubject !== 'All' && (
+            <TouchableOpacity
+              onPress={() => setSelectedSubject('All')}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: colors.accentSoft,
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+                borderRadius: 12,
+                gap: 4,
+              }}
+            >
+              <Text style={{ fontSize: 11, color: colors.accent, fontWeight: '600' }}>
+                Subject: {selectedSubject}
+              </Text>
+              <X size={12} color={colors.accent} />
+            </TouchableOpacity>
+          )}
+        </View>
         <Text style={[styles.resultsCount, { color: colors.textSecondary }]}>
           {isFetching ? 'Syncing…' : `${filteredPapers.length} paper${filteredPapers.length === 1 ? '' : 's'}`}
         </Text>
@@ -478,6 +534,30 @@ export default function PYQScreen() {
           ))}
         </ScrollView>
       </View>
+
+      {/* Subject Filter Row */}
+      {availableSubjects.length > 0 && (
+        <View style={[styles.filterSection, { paddingTop: 0 }]}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+            <Chip
+              key="all_subjects"
+              label={`All Subjects (${availableSubjects.length})`}
+              selected={selectedSubject === 'All'}
+              onPress={() => setSelectedSubject('All')}
+              style={styles.filterChip}
+            />
+            {displayedSubjectChips.map((sub) => (
+              <Chip
+                key={sub.code}
+                label={`${sub.code} (${sub.count})`}
+                selected={selectedSubject === sub.code}
+                onPress={() => setSelectedSubject(sub.code === selectedSubject ? 'All' : sub.code)}
+                style={styles.filterChip}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       <FlatList
         data={filteredPapers}

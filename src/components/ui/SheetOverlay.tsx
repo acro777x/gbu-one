@@ -16,6 +16,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { X } from 'lucide-react-native';
 import { motion } from '../../lib/motion';
 import { theme } from '../../lib/theme';
 import { useAppTheme } from '../../lib/ThemeContext';
@@ -141,9 +142,30 @@ export const SheetOverlay: React.FC<SheetOverlayProps> = ({
       >
         {variant === 'sheet' && <View style={[styles.handle, { backgroundColor: colors.borderStrong }]} />}
 
-        {title && (
+        {title ? (
           <View style={[styles.header, { borderBottomColor: colors.divider }]}>
             <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
+            <Pressable
+              onPress={handleClose}
+              hitSlop={12}
+              style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.7 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Close sheet"
+            >
+              <X size={18} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.topBar}>
+            <Pressable
+              onPress={handleClose}
+              hitSlop={12}
+              style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.7 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Close sheet"
+            >
+              <X size={18} color={colors.textSecondary} />
+            </Pressable>
           </View>
         )}
 
@@ -153,6 +175,7 @@ export const SheetOverlay: React.FC<SheetOverlayProps> = ({
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           bounces={false}
+          nestedScrollEnabled={true}
           keyboardShouldPersistTaps="handled"
         >
           {children}
@@ -218,13 +241,29 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingBottom: theme.spacing.md,
     borderBottomWidth: 1,
     marginBottom: theme.spacing.md,
   },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: theme.spacing.xs,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
     fontFamily: 'Poppins-Bold',
     fontSize: 18,
+    flex: 1,
   },
   content: {
     paddingTop: theme.spacing.xs,

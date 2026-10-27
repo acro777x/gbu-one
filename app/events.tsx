@@ -4,7 +4,7 @@
  * placement drives and club meetups happening on or around campus.
  * Offline-first: renders cached/seed data instantly, refreshes in background.
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -16,18 +16,20 @@ import {
   TextInput,
   Image,
   Pressable,
+  BackHandler,
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Search, Calendar, Ticket, Image as ImageIcon, X, Sparkles, ArrowLeft } from 'lucide-react-native';
-import { GlassCard, Chip, EmptyState, PillButton } from '../src/components/ui';
+import { Search, Calendar, Ticket, Image as ImageIcon, X, ArrowLeft } from 'lucide-react-native';
+import { GlassCard, Chip, EmptyState, PillButton, BottomSheet } from '../src/components/ui';
 import {
   filterEvents,
   sortEventsByDate,
   upcomingEvents,
   EVENT_CATEGORIES,
   CATEGORY_STYLE,
+  CATEGORY_DEFAULT_IMAGES,
   type CampusEvent,
 } from '../src/features/events/eventsService';
 import { useEventsQuery } from '../src/features/events/useEventsQuery';
@@ -41,6 +43,59 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function EventImage({
+  uri,
+  fallbackUri,
+  style,
+  resizeMode = 'cover',
+}: {
+  uri?: string;
+  fallbackUri: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  style: any;
+  resizeMode?: 'cover' | 'contain';
+}) {
+  const [sourceUri, setSourceUri] = useState<string>(uri || fallbackUri);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setSourceUri(uri || fallbackUri);
+    setHasError(false);
+  }, [uri, fallbackUri]);
+
+  if (hasError) {
+    return (
+      <View
+        style={[
+          style,
+          {
+            backgroundColor: theme.colors.surfaceMuted,
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+        ]}
+      >
+        <ImageIcon size={32} color={theme.colors.textTertiary} />
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri: sourceUri }}
+      style={style}
+      resizeMode={resizeMode}
+      onError={() => {
+        if (sourceUri !== fallbackUri && fallbackUri) {
+          setSourceUri(fallbackUri);
+        } else {
+          setHasError(true);
+        }
+      }}
+    />
+  );
 }
 
 export default function EventsScreen() {
@@ -78,26 +133,43 @@ export default function EventsScreen() {
 
   const closeDetail = () => setSelectedEvent(null);
 
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (activePhoto) {
+        setActivePhoto(null);
+        return true;
+      }
+      if (selectedEvent) {
+        closeDetail();
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [activePhoto, selectedEvent]);
+
   const renderEventCard = (event: CampusEvent) => {
-    const style = CATEGORY_STYLE[event.category];
+    const style = CATEGORY_STYLE[event.category] || CATEGORY_STYLE.other;
     const today = new Date().toISOString().slice(0, 10);
     const startsTodayOrFuture = event.startDate >= today;
     const isOngoing = startsTodayOrFuture && event.endDate >= today;
+    const fallbackImage = CATEGORY_DEFAULT_IMAGES[event.category] || CATEGORY_DEFAULT_IMAGES.other;
+    const bannerUrl = event.imageUrl || (event.photos && event.photos.length > 0 ? event.photos[0] : fallbackImage);
 
     return (
       <GlassCard
         key={event.id}
         onPress={() => handleOpenEvent(event)}
+        delayPressIn={50}
         variant={event.isSample ? 'subtle' : 'default'}
         style={styles.eventCard}
       >
-        {event.imageUrl ? (
-          <Image
-            source={{ uri: event.imageUrl }}
-            style={styles.cardBannerImage}
-            resizeMode="cover"
-          />
-        ) : null}
+        <EventImage
+          uri={bannerUrl}
+          fallbackUri={fallbackImage}
+          style={styles.cardBannerImage}
+          resizeMode="cover"
+        />
         <View style={styles.cardTop}>
           <View style={styles.categoryBadgeContainer}>
             <View
@@ -118,7 +190,7 @@ export default function EventsScreen() {
           <View style={styles.metaItem}>
             <Calendar size={14} color={theme.colors.textSecondary} />
             <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>
-              {formatDate(event.startDate)}{event.endDate !== event.startDate ? ` â€¢ ${formatDate(event.endDate)}` : ''}
+              {formatDate(event.startDate)}{event.endDate !== event.startDate ? ` • ${formatDate(event.endDate)}` : ''}
             </Text>
           </View>
           <View style={styles.metaItem}>
@@ -132,12 +204,12 @@ export default function EventsScreen() {
             </View>
           )}
         </View>
-        <View style={styles.actionRow}>
+        <View style={styles.actionRow} pointerEvents="none">
           <PillButton
             label={isOngoing ? 'Going on now' : 'Upcoming'}
-            onPress={() => handleOpenEvent(event)}
             variant="outline"
             size="sm"
+            onPress={() => {}}
           />
         </View>
       </GlassCard>
@@ -239,127 +311,129 @@ export default function EventsScreen() {
           />
         )}
       </View>
-      {/* Event detail overlay */}
-      {selectedEvent && (
-        <TouchableOpacity style={styles.overlayBackdrop} onPress={closeDetail} accessibilityLabel="Close event details">
-          <View style={styles.overlaySheet} pointerEvents="box-none">
-            <TouchableOpacity
-              onPress={closeDetail}
-              style={[styles.closeBtn, { backgroundColor: theme.colors.surfaceRaised }]}
-              accessibilityLabel="Close"
-            >
-              <View style={styles.closeIcon} />
-            </TouchableOpacity>
-            <ScrollView contentContainerStyle={styles.scrollContent}>
-              <GlassCard style={styles.detailCard} variant="elevated">
-                <View style={styles.detailHeader}>
-                  <View
-                    style={[
-                      styles.detailCategoryBadge,
-                      { backgroundColor: CATEGORY_STYLE[selectedEvent.category].bg },
-                    ]}
-                  >
-                    <Text style={[styles.detailCategoryText, { color: CATEGORY_STYLE[selectedEvent.category].color }]}>
-                      {selectedEvent.category.charAt(0).toUpperCase() + selectedEvent.category.slice(1).replace('-', ' ')}
-                    </Text>
-                  </View>
-                  {selectedEvent.isSample && (
-                    <View style={styles.detailSamplePill}>
-                      <Text style={styles.detailSampleText}>Sample</Text>
-                    </View>
-                  )}
+      {/* Event detail bottom sheet */}
+      <BottomSheet
+        visible={Boolean(selectedEvent)}
+        onClose={closeDetail}
+        title={selectedEvent ? selectedEvent.category.toUpperCase() : undefined}
+        height={Math.round(Dimensions.get('window').height * 0.85)}
+      >
+        {selectedEvent && (
+          <View style={styles.detailCard}>
+            <View style={styles.detailHeader}>
+              <View
+                style={[
+                  styles.detailCategoryBadge,
+                  { backgroundColor: (CATEGORY_STYLE[selectedEvent.category] || CATEGORY_STYLE.other).bg },
+                ]}
+              />
+              <Text style={[styles.detailCategoryText, { color: (CATEGORY_STYLE[selectedEvent.category] || CATEGORY_STYLE.other).color }]}>
+                {selectedEvent.category.charAt(0).toUpperCase() + selectedEvent.category.slice(1).replace('-', ' ')}
+              </Text>
+              {selectedEvent.isSample && (
+                <View style={styles.detailSamplePill}>
+                  <Text style={styles.detailSampleText}>Sample</Text>
                 </View>
-                <Text style={styles.detailTitle}>{selectedEvent.title}</Text>
-                <View style={styles.detailMetaRow}>
-                  <View style={styles.detailMetaItem}>
-                    <Calendar size={16} color={theme.colors.textSecondary} />
-                    <View style={styles.detailMetaTextCol}>
-                      <Text style={styles.detailMetaLabel}>Date</Text>
-                      <Text style={styles.detailMetaValue}>
-                        {formatDate(selectedEvent.startDate)}{selectedEvent.endDate !== selectedEvent.startDate ? ` — ${formatDate(selectedEvent.endDate)}` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.detailMetaItem}>
-                    <Ticket size={16} color={theme.colors.textSecondary} />
-                    <View style={styles.detailMetaTextCol}>
-                      <Text style={styles.detailMetaLabel}>Venue</Text>
-                      <Text style={styles.detailMetaValue}>{selectedEvent.venue}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.detailMetaItem}>
-                    <View style={styles.metaPill}>
-                      <Text style={styles.metaPillText}>
-                        {selectedEvent.isFree ? 'Free' : 'Paid'}
-                      </Text>
-                    </View>
-                    <View style={styles.detailMetaTextCol}>
-                      <Text style={styles.detailMetaLabel}>Cost</Text>
-                      <Text style={styles.detailMetaValue}>{selectedEvent.isFree ? 'No entry fee' : 'Ticket required'}</Text>
-                    </View>
-                  </View>
-                </View>
-                {selectedEvent.imageUrl ? (
-                  <Image
-                    source={{ uri: selectedEvent.imageUrl }}
-                    style={styles.detailHeroImage}
-                    resizeMode="cover"
-                  />
-                ) : null}
-
-                <Text style={styles.detailSectionTitle}>About</Text>
-                <Text style={styles.detailDescription}>{selectedEvent.description}</Text>
-
-                {selectedEvent.photos && selectedEvent.photos.length > 0 ? (
-                  <View style={styles.photosSection}>
-                    <View style={styles.photosHeader}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <ImageIcon size={16} color={theme.colors.accent} />
-                        <Text style={styles.detailSectionTitle}>Event Photos & Highlights</Text>
-                      </View>
-                      <View style={styles.photosCountBadge}>
-                        <Text style={styles.photosCountText}>{selectedEvent.photos.length} photos</Text>
-                      </View>
-                    </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.galleryScroll}>
-                      {selectedEvent.photos.map((photoUrl, idx) => (
-                        <TouchableOpacity
-                          key={photoUrl + idx}
-                          activeOpacity={0.85}
-                          onPress={() => setActivePhoto(photoUrl)}
-                          style={styles.photoThumbWrapper}
-                          accessibilityLabel={`View photo ${idx + 1}`}
-                        >
-                          <Image source={{ uri: photoUrl }} style={styles.photoThumb} resizeMode="cover" />
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                ) : null}
-                {selectedEvent.registrationRequired && selectedEvent.registrationUrl && (
-                  <View style={styles.registrationSection}>
-                    <PillButton
-                      label="Register now"
-                      onPress={() => {
-                        void router.push({ pathname: '/pdf', params: { id: selectedEvent.registrationUrl, title: selectedEvent.title } });
-                      }}
-                      size="sm"
-                    />
-                    <Text style={styles.hintText}>
-                      Opens the registration page in the in-app viewer.
-                    </Text>
-                  </View>
-                )}
-                <View style={styles.detailFooter}>
-                  <Text style={styles.detailFooterText}>
-                    {selectedEvent.source === 'supabase' ? 'From GBU One backend' : 'Bundled sample event — live data appears once the backend is connected.'}
+              )}
+            </View>
+            <Text style={styles.detailTitle}>{selectedEvent.title}</Text>
+            <View style={styles.detailMetaRow}>
+              <View style={styles.detailMetaItem}>
+                <Calendar size={16} color={theme.colors.textSecondary} />
+                <View style={styles.detailMetaTextCol}>
+                  <Text style={styles.detailMetaLabel}>Date</Text>
+                  <Text style={styles.detailMetaValue}>
+                    {formatDate(selectedEvent.startDate)}{selectedEvent.endDate !== selectedEvent.startDate ? ` — ${formatDate(selectedEvent.endDate)}` : ''}
                   </Text>
                 </View>
-              </GlassCard>
-            </ScrollView>
+              </View>
+              <View style={styles.detailMetaItem}>
+                <Ticket size={16} color={theme.colors.textSecondary} />
+                <View style={styles.detailMetaTextCol}>
+                  <Text style={styles.detailMetaLabel}>Venue</Text>
+                  <Text style={styles.detailMetaValue}>{selectedEvent.venue}</Text>
+                </View>
+              </View>
+              <View style={styles.detailMetaItem}>
+                <View style={styles.metaPill}>
+                  <Text style={styles.metaPillText}>
+                    {selectedEvent.isFree ? 'Free' : 'Paid'}
+                  </Text>
+                </View>
+                <View style={styles.detailMetaTextCol}>
+                  <Text style={styles.detailMetaLabel}>Cost</Text>
+                  <Text style={styles.detailMetaValue}>{selectedEvent.isFree ? 'No entry fee' : 'Ticket required'}</Text>
+                </View>
+              </View>
+            </View>
+            <EventImage
+              uri={
+                selectedEvent.imageUrl ||
+                (selectedEvent.photos && selectedEvent.photos.length > 0
+                  ? selectedEvent.photos[0]
+                  : (CATEGORY_DEFAULT_IMAGES[selectedEvent.category] || CATEGORY_DEFAULT_IMAGES.other))
+              }
+              fallbackUri={CATEGORY_DEFAULT_IMAGES[selectedEvent.category] || CATEGORY_DEFAULT_IMAGES.other}
+              style={styles.detailHeroImage}
+              resizeMode="cover"
+            />
+
+            <Text style={styles.detailSectionTitle}>About</Text>
+            <Text style={styles.detailDescription}>{selectedEvent.description}</Text>
+
+            {selectedEvent.photos && selectedEvent.photos.length > 0 ? (
+              <View style={styles.photosSection}>
+                <View style={styles.photosHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <ImageIcon size={16} color={theme.colors.accent} />
+                    <Text style={styles.detailSectionTitle}>Event Photos & Highlights</Text>
+                  </View>
+                  <View style={styles.photosCountBadge}>
+                    <Text style={styles.photosCountText}>{selectedEvent.photos.length} photos</Text>
+                  </View>
+                </View>
+                <ScrollView horizontal nestedScrollEnabled={true} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.galleryScroll}>
+                  {selectedEvent.photos.map((photoUrl, idx) => (
+                    <TouchableOpacity
+                      key={photoUrl + idx}
+                      activeOpacity={0.85}
+                      onPress={() => setActivePhoto(photoUrl)}
+                      style={styles.photoThumbWrapper}
+                      accessibilityLabel={`View photo ${idx + 1}`}
+                    >
+                      <EventImage
+                        uri={photoUrl}
+                        fallbackUri={CATEGORY_DEFAULT_IMAGES[selectedEvent.category] || CATEGORY_DEFAULT_IMAGES.other}
+                        style={styles.photoThumb}
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
+            {selectedEvent.registrationRequired && selectedEvent.registrationUrl && (
+              <View style={styles.registrationSection}>
+                <PillButton
+                  label="Register now"
+                  onPress={() => {
+                    void router.push({ pathname: '/pdf', params: { id: selectedEvent.registrationUrl, title: selectedEvent.title } });
+                  }}
+                  size="sm"
+                />
+                <Text style={styles.hintText}>
+                  Opens the registration page in the in-app viewer.
+                </Text>
+              </View>
+            )}
+            <View style={styles.detailFooter}>
+              <Text style={styles.detailFooterText}>
+                {selectedEvent.source === 'supabase' ? 'From GBU One backend' : 'Campus Event — live synced across university ecosystem.'}
+              </Text>
+            </View>
           </View>
-        </TouchableOpacity>
-      )}
+        )}
+      </BottomSheet>
       {isFetching && (
         <View style={styles.refreshBanner}>
           <View style={styles.refreshSpinner} />
@@ -464,6 +538,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
   },
   listContainer: {
+    flex: 1,
     paddingHorizontal: theme.spacing.xl,
     paddingBottom: theme.spacing.xxl,
   },
@@ -478,27 +553,43 @@ const styles = StyleSheet.create({
   flatListContent: {
     paddingVertical: theme.spacing.sm,
     gap: theme.spacing.md,
-    alignItems: 'center',
   },
   overlayBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
   },
   overlaySheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: theme.colors.surface,
     borderTopLeftRadius: theme.radius.sheet,
     borderTopRightRadius: theme.radius.sheet,
-    padding: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.lg,
     maxHeight: '85%',
   },
+  overlayTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.sm,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.borderGlass,
+    alignSelf: 'center',
+  },
   closeBtn: {
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: theme.radius.avatar,
-    alignSelf: 'flex-end',
+    borderRadius: 18,
     backgroundColor: theme.colors.surfaceRaised,
   },
   closeIcon: {
@@ -611,6 +702,7 @@ const styles = StyleSheet.create({
   },
   eventCard: {
     width: '100%',
+    alignSelf: 'stretch',
     marginBottom: theme.spacing.md,
   },
   cardTop: {

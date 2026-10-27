@@ -31,11 +31,22 @@ import {
 import { moderationActionLabel, type ModerationAction } from '../src/features/pyq/pyqStorage';
 import { useAppTheme } from '../src/lib/ThemeContext';
 import { spacing } from '../src/lib/theme';
+import { isAdminApp } from '../src/lib/appVariant';
 
 export default function ModerationQueueScreen() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
+
+  useEffect(() => {
+    if (!isAdminApp()) {
+      router.replace('/(tabs)/pyq');
+    }
+  }, []);
+
+  if (!isAdminApp()) {
+    return null;
+  }
 
   const [papers, setPapers] = useState<PyqPaperRecord[]>([]);
   const [loading, setLoading] = useState(true);

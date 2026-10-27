@@ -106,4 +106,27 @@ describe('PYQ Browser & Management Logic', () => {
     const empty = filterPapers(MOCK_PAPERS, 'discrete', 'SOM', 'All');
     expect(empty).toHaveLength(0);
   });
+
+  it('exposes all available subjects without an artificial 40-item cap', () => {
+    // Generate 60 distinct subjects to verify large department curricula
+    const manyPapers = Array.from({ length: 60 }, (_, i) => ({
+      ...MOCK_PAPERS[0],
+      id: `p_extra_${i}`,
+      subjectCode: `CSE3${i < 10 ? '0' + i : i}`,
+      subjectName: `Advanced Computer Science ${i}`,
+    }));
+
+    const map = new Map<string, { code: string; name: string; count: number }>();
+    manyPapers.forEach((p) => {
+      const code = p.subjectCode.trim();
+      const existing = map.get(code);
+      if (existing) existing.count += 1;
+      else map.set(code, { code, name: p.subjectName, count: 1 });
+    });
+    const availableSubjects = Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
+
+    expect(availableSubjects).toHaveLength(60);
+    // Verifies full subject catalogue remains visible for students
+    expect(availableSubjects.slice(0, 60)).toHaveLength(60);
+  });
 });

@@ -3,7 +3,6 @@ import {
   checkForAppUpdate,
   publishAppVersion,
   clearAppVersionOverride,
-  FALLBACK_VERSION_MANIFEST,
   type AppVersionManifest,
 } from '../src/features/updates/versionChecker';
 
