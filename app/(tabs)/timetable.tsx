@@ -369,43 +369,49 @@ export default function TimetableScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Top Header */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerTitleBox}>
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Class Schedule</Text>
           <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
             {currentSection} - Semester Session {timetable?.semesterSessionId ?? '39'}
           </Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <TouchableOpacity
-            style={[styles.alarmNavBtn, { backgroundColor: colors.accentSoft }]}
-            onPress={() => router.push('/alarms')}
-            accessibilityLabel="Manage class alarms and test ringtones"
-          >
-            <BellRing size={16} color={colors.accent} />
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.alarmNavBtn, { backgroundColor: colors.accentSoft }]}
+          onPress={() => router.push('/alarms')}
+          accessibilityLabel="Manage class alarms and test ringtones"
+        >
+          <BellRing size={18} color={colors.accent} />
+        </TouchableOpacity>
+      </View>
 
-          {/* View Mode Toggle: Day / Week / Compact */}
-          <View style={[styles.toggleGroup, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
-            <TouchableOpacity
-              style={[styles.toggleBtn, viewMode === 'day' && { backgroundColor: colors.accentFill }]}
-              onPress={() => setViewMode('day')}
-            >
-              <Text style={[styles.toggleText, { color: viewMode === 'day' ? colors.onAccent : colors.textSecondary }]}>Day</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleBtn, viewMode === 'week' && { backgroundColor: colors.accentFill }]}
-              onPress={() => setViewMode('week')}
-            >
-              <Text style={[styles.toggleText, { color: viewMode === 'week' ? colors.onAccent : colors.textSecondary }]}>Week</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleBtn, viewMode === 'compact' && { backgroundColor: colors.accentFill }]}
-              onPress={() => setViewMode('compact')}
-            >
-              <Text style={[styles.toggleText, { color: viewMode === 'compact' ? colors.onAccent : colors.textSecondary }]}>Compact</Text>
-            </TouchableOpacity>
-          </View>
+      {/* View Mode Toggle: Day / Week / Compact */}
+      <View style={styles.viewModeRow}>
+        <View style={[styles.toggleGroup, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
+          <TouchableOpacity
+            style={[styles.toggleBtn, viewMode === 'day' && { backgroundColor: colors.accentFill }]}
+            onPress={() => setViewMode('day')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: viewMode === 'day' }}
+          >
+            <Text style={[styles.toggleText, { color: viewMode === 'day' ? colors.onAccent : colors.textSecondary }]}>Day</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleBtn, viewMode === 'week' && { backgroundColor: colors.accentFill }]}
+            onPress={() => setViewMode('week')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: viewMode === 'week' }}
+          >
+            <Text style={[styles.toggleText, { color: viewMode === 'week' ? colors.onAccent : colors.textSecondary }]}>Week</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleBtn, viewMode === 'compact' && { backgroundColor: colors.accentFill }]}
+            onPress={() => setViewMode('compact')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: viewMode === 'compact' }}
+          >
+            <Text style={[styles.toggleText, { color: viewMode === 'compact' ? colors.onAccent : colors.textSecondary }]}>Compact</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -1122,12 +1128,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
+  headerTitleBox: {
+    flex: 1,
+    paddingRight: theme.spacing.sm,
+  },
   alarmNavBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  viewModeRow: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: 4,
+    paddingBottom: 8,
   },
   manageAlarmsBtn: {
     paddingHorizontal: 10,
@@ -1145,13 +1160,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   toggleBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 999,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    borderRadius: theme.radius.pill,
   },
   toggleText: {
     fontFamily: 'Inter-Medium',
-    fontSize: 12,
+    fontSize: 13,
   },
   offlineBanner: {
     flexDirection: 'row',

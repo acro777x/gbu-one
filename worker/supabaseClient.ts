@@ -67,10 +67,13 @@ function toRow(n: NoticeItem): Record<string, unknown> {
 export async function upsertNotices(notices: NoticeItem[]): Promise<number> {
   const sb = getWorkerSupabase();
   if (!sb || notices.length === 0) return 0;
+  const uniqueNotices = Array.from(
+    new Map(notices.map((n) => [n.sourceId, n])).values()
+  );
   const BATCH = 100;
   let written = 0;
-  for (let i = 0; i < notices.length; i += BATCH) {
-    const batch = notices.slice(i, i + BATCH).map(toRow);
+  for (let i = 0; i < uniqueNotices.length; i += BATCH) {
+    const batch = uniqueNotices.slice(i, i + BATCH).map(toRow);
     try {
       const { error } = await sb
         .from('notices')

@@ -6,6 +6,7 @@
  * Exits 0 even when individual sources fail; never overwrites stored data
  * with an empty parse (layout-change guard lives in noticesJob).
  */
+import 'dotenv/config';
 import { NoticesWorkerJob, fetchWithTlsTolerance } from './noticesJob';
 import { collectCalendarRows } from './calendarJob';
 import {

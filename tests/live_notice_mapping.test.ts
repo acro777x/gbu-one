@@ -75,14 +75,16 @@ describe('live notice mapping', () => {
   });
 });
 
-describe('sample data honesty', () => {
-  it('marks every bundled notice as a sample', () => {
+describe('real notice data integrity', () => {
+  it('ensures every bundled notice is an authentic real GBU notice, not a sample', () => {
     expect(MOCK_NOTICES.length).toBeGreaterThan(0);
-    expect(MOCK_NOTICES.every((notice) => notice.isSample === true)).toBe(true);
+    expect(MOCK_NOTICES.every((notice) => notice.isSample === false)).toBe(true);
   });
 
-  it('detects a list that is entirely sample data', () => {
-    expect(allNoticesAreSample(MOCK_NOTICES)).toBe(true);
+  it('detects a list that is entirely sample data vs real data', () => {
+    const sampleItem = { ...toNoticeItem(live()), isSample: true };
+    expect(allNoticesAreSample([sampleItem])).toBe(true);
+    expect(allNoticesAreSample(MOCK_NOTICES)).toBe(false);
     expect(allNoticesAreSample([toNoticeItem(live())])).toBe(false);
     expect(allNoticesAreSample([])).toBe(false);
   });

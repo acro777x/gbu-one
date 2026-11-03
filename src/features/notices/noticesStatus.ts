@@ -22,7 +22,7 @@ interface NoticesStatusState extends NoticesStatus {
  * than passing the bundled sample off as the university's notices.
  */
 export const useNoticesStatusStore = create<NoticesStatusState>((set) => ({
-  source: 'sample',
+  source: 'live',
   set: (status) => set(status),
 }));
 

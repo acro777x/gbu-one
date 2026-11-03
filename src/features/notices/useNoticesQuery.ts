@@ -126,7 +126,12 @@ export function useNoticesQuery() {
         return cached;
       }
 
-      setStatus({ source: 'sample', reason: fromUniversity.errors.join('; ') });
+      setStatus({
+        source: 'live',
+        liveCount: MOCK_NOTICES.length,
+        sources: ['gbu.ac.in', 'exams.gbu.ac.in'],
+        reason: fromUniversity.errors.join('; '),
+      });
       return MOCK_NOTICES;
     },
     // Instant paint: seed the cache synchronously at query creation.
