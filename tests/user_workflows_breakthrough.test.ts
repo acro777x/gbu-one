@@ -391,22 +391,22 @@ describe('Hostile User Workflows Breakthrough Suite', () => {
   // 10. Erratic university timetable room codes & campus building mapping
   // =========================================================================
   describe('Path 10: Erratic university room code parsing and campus building mapping', () => {
-    it('maps LL room codes to Low Building (Low Lecture Hall)', () => {
+    it('maps LL room codes to Law Building (Law Lecture Hall)', () => {
       const r1 = parseRoomLocation('LL101');
-      expect(r1.building).toBe('Low Building');
-      expect(r1.roomType).toBe('Low Lecture Hall');
-      expect(r1.fullDisplay).toBe('LL101 • Low Building');
+      expect(r1.building).toBe('Law Building');
+      expect(r1.roomType).toBe('Law Lecture Hall');
+      expect(r1.fullDisplay).toBe('LL101 • Law Building');
 
       const r2 = parseRoomLocation('LL 204');
-      expect(r2.building).toBe('Low Building');
-      expect(r2.fullDisplay).toBe('LL 204 • Low Building');
+      expect(r2.building).toBe('Law Building');
+      expect(r2.fullDisplay).toBe('LL 204 • Law Building');
     });
 
-    it('maps LP room codes to Low Building (Low Practical Lab)', () => {
+    it('maps LP room codes to Law Building (Law Practical Lab)', () => {
       const r = parseRoomLocation('LP102');
-      expect(r.building).toBe('Low Building');
-      expect(r.roomType).toBe('Low Practical Lab');
-      expect(r.fullDisplay).toContain('Low Building (Low Lab)');
+      expect(r.building).toBe('Law Building');
+      expect(r.roomType).toBe('Law Practical Lab');
+      expect(r.fullDisplay).toContain('Law Building (Law Lab)');
     });
 
     it('maps IP room codes to SOICT Building (ICT Practical Lab)', () => {

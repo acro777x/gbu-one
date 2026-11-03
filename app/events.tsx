@@ -66,19 +66,21 @@ function EventImage({
     setHasError(false);
   }, [uri, fallbackUri]);
 
+  const { colors } = useAppTheme();
+
   if (hasError) {
     return (
       <View
         style={[
           style,
           {
-            backgroundColor: theme.colors.surfaceMuted,
+            backgroundColor: colors.surfaceMuted,
             alignItems: 'center',
             justifyContent: 'center',
           },
         ]}
       >
-        <ImageIcon size={32} color={theme.colors.textTertiary} />
+        <ImageIcon size={32} color={colors.textTertiary} />
       </View>
     );
   }
@@ -162,7 +164,7 @@ export default function EventsScreen() {
       <GlassCard
         key={event.id}
         onPress={() => handleOpenEvent(event)}
-        delayPressIn={50}
+        delayPressIn={180}
         variant={event.isSample ? 'subtle' : 'default'}
         style={styles.eventCard}
       >

@@ -1,19 +1,19 @@
 import { parseRoomLocation, formatRoomLocation } from '../src/features/timetable/roomMapping';
 
 describe('GBU Room & Building Mapping', () => {
-  it('maps Low Lecture Hall (LL) to Low Building correctly', () => {
+  it('maps Law Lecture Hall (LL) to Law Building correctly', () => {
     const info = parseRoomLocation('LL101', 'SOICT');
-    expect(info.building).toBe('Low Building');
-    expect(info.roomType).toBe('Low Lecture Hall');
-    expect(info.fullDisplay).toBe('LL101 • Low Building');
-    expect(formatRoomLocation('LL101', 'SOICT')).toBe('LL101 • Low Building');
+    expect(info.building).toBe('Law Building');
+    expect(info.roomType).toBe('Law Lecture Hall');
+    expect(info.fullDisplay).toBe('LL101 • Law Building');
+    expect(formatRoomLocation('LL101', 'SOICT')).toBe('LL101 • Law Building');
   });
 
-  it('maps Low Practical Lab (LP) to Low Building correctly', () => {
+  it('maps Law Practical Lab (LP) to Law Building correctly', () => {
     const info = parseRoomLocation('LP103', 'SOICT');
-    expect(info.building).toBe('Low Building');
-    expect(info.roomType).toBe('Low Practical Lab');
-    expect(info.fullDisplay).toContain('Low Building (Low Lab)');
+    expect(info.building).toBe('Law Building');
+    expect(info.roomType).toBe('Law Practical Lab');
+    expect(info.fullDisplay).toContain('Law Building (Law Lab)');
   });
 
   it('maps ICT Practical Lab (IP) to SOICT Building correctly', () => {

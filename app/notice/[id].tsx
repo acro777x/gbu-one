@@ -54,7 +54,9 @@ export default function NoticeDetailScreen() {
     const fileUrl = notice?.fileUrl ?? '';
     if (!isSafePdfUrl(fileUrl)) return 'none';
     if (notice?.fileType === 'image' || looksLikeImageUrl(fileUrl)) return 'image';
-    if (notice?.fileType === 'pdf' || looksLikePdfUrl(fileUrl)) return 'pdf';
+    if (looksLikePdfUrl(fileUrl) || (notice?.fileType === 'pdf' && fileUrl.toLowerCase().includes('.pdf'))) {
+      return 'pdf';
+    }
     return 'link';
   }, [notice]);
 

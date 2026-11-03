@@ -95,6 +95,18 @@ export default function AlarmsScreen() {
     }
   };
 
+  const handleImmediateAlarm = async () => {
+    if (permissionStatus !== 'granted') {
+      await handleRequestPermission();
+    }
+    try {
+      await scheduleTestAlarm(0);
+      showToast('Alarm ringing now! Check notification bar / heads-up banner.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not trigger immediate alarm');
+    }
+  };
+
   const handleTestAlarm = async () => {
     if (permissionStatus !== 'granted') {
       await handleRequestPermission();
@@ -102,7 +114,7 @@ export default function AlarmsScreen() {
     setTestingAlarm(true);
     try {
       await scheduleTestAlarm(5);
-      showToast('Test alarm armed! Put app in background or watch screen — rings in 5 seconds.');
+      showToast('Test alarm armed! You have 5 seconds: press Home or watch screen.');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not schedule test alarm');
     } finally {
@@ -208,16 +220,25 @@ export default function AlarmsScreen() {
 
           {/* Test Alarm Action */}
           <View style={styles.testBtnBox}>
-            <PillButton
-              label={testingAlarm ? 'Firing Alarm in 5 seconds…' : 'Test Alarm Sound Now (5s)'}
-              onPress={handleTestAlarm}
-              variant="primary"
-              size="md"
-              loading={testingAlarm}
-              icon={<BellRing size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
-            />
-            <Text style={[styles.testHint, { color: colors.textTertiary }]}>
-              Tap above to simulate a class alarm firing in 5 seconds with vibration and official audio.
+            <View style={{ gap: 10 }}>
+              <PillButton
+                label="Test Alarm Sound (Fire Immediately)"
+                onPress={handleImmediateAlarm}
+                variant="primary"
+                size="md"
+                icon={<BellRing size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
+              />
+              <PillButton
+                label={testingAlarm ? 'Armed — Rings in 5s…' : 'Arm 5-Second Test Alarm (Background Test)'}
+                onPress={handleTestAlarm}
+                variant="outline"
+                size="md"
+                loading={testingAlarm}
+                icon={<Clock size={16} color={colors.accent} style={{ marginRight: 6 }} />}
+              />
+            </View>
+            <Text style={[styles.testHint, { color: colors.textTertiary, marginTop: 8 }]}>
+              Test immediately to hear the official university ringtone, or arm for 5 seconds to test lockscreen / background wake.
             </Text>
           </View>
         </GlassCard>

@@ -47,6 +47,7 @@ import { GlassCard, PillButton, Toast } from '../../src/components/ui';
 import {
   listCampusEvents,
   createCampusEvent,
+  uploadEventPhoto,
   deleteCampusEvent,
   type CampusEvent,
   type EventCategory,
@@ -162,8 +163,6 @@ export default function AdminScreen() {
     const entered = adminPasscode.trim();
     const validKeys = [
       process.env.EXPO_PUBLIC_ADMIN_PIN,
-      '852096',
-      'GBU@Admin2026',
     ].filter(Boolean);
 
     if (validKeys.includes(entered)) {
@@ -180,7 +179,7 @@ export default function AdminScreen() {
         const adminPass =
           process.env.EXPO_PUBLIC_ADMIN_PASSWORD ||
           process.env.GBU_ADMIN_PASSWORD ||
-          'Ashish@GBU2026';
+          '';
         if (isSupabaseConfigured && adminEmail && adminPass) {
           const { error: signErr } = await supabase.auth.signInWithPassword({
             email: adminEmail,
@@ -265,7 +264,7 @@ export default function AdminScreen() {
           const adminPass =
             process.env.EXPO_PUBLIC_ADMIN_PASSWORD ||
             process.env.GBU_ADMIN_PASSWORD ||
-            'Ashish@GBU2026';
+            '';
           if (isSupabaseConfigured && adminEmail && adminPass) {
             await supabase.auth.signInWithPassword({
               email: adminEmail,
@@ -277,18 +276,33 @@ export default function AdminScreen() {
         // ignore
       }
 
+      let bannerCdn = eventBannerUrl.trim();
+      if (bannerCdn && (bannerCdn.startsWith('file://') || bannerCdn.startsWith('content://'))) {
+        bannerCdn = await uploadEventPhoto(bannerCdn);
+      }
+
+      const uploadedPhotos: string[] = [];
+      for (const p of allPhotos) {
+        if (p.startsWith('file://') || p.startsWith('content://')) {
+          const cdn = await uploadEventPhoto(p);
+          if (cdn) uploadedPhotos.push(cdn);
+        } else if (p) {
+          uploadedPhotos.push(p);
+        }
+      }
+
       const res = await createCampusEvent({
         title: eventTitle.trim(),
         description: eventDesc.trim(),
         category: eventCategory,
         startDate: new Date().toISOString(),
-        endDate: new Date(Date.now() + 86400000 * 2).toISOString(),
+        endDate: new Date(Date.now() + 86400000 * 14).toISOString(),
         venue: eventVenue.trim(),
         isFree: true,
         registrationRequired: Boolean(eventRegUrl.trim()),
         registrationUrl: eventRegUrl.trim() || undefined,
-        imageUrl: eventBannerUrl.trim() || (allPhotos[0] ?? undefined),
-        photos: allPhotos,
+        imageUrl: bannerCdn || (uploadedPhotos[0] ?? undefined),
+        photos: uploadedPhotos.length > 0 ? uploadedPhotos : (bannerCdn ? [bannerCdn] : []),
         audience: ['all'],
       });
 

@@ -136,7 +136,7 @@ function AppShell() {
       )}
 
       {/* Mandatory / Compulsory App Version Update Guard */}
-      {splashFinished ? <MandatoryUpdateModal /> : null}
+      {splashFinished && !isAdminApp() ? <MandatoryUpdateModal /> : null}
 
       {/* The prompt that appears when a class alarm rang. */}
       {splashFinished && alarmLifecycle.ringedAlarm ? (

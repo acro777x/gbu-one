@@ -26,7 +26,7 @@ import {
 } from 'lucide-react-native';
 import { GlassCard, PillButton, Toast, BottomSheet, Chip, EmptyState } from '../../src/components/ui';
 import { useAuthStore } from '../../src/store/useAuthStore';
-import { PYQItem, MOCK_PAPERS, SAMPLE_PAPER_URL, filterPapers, normalizeSemester } from '../../src/features/pyq/pyqService';
+import { PYQItem, MOCK_PAPERS, filterPapers, normalizeSemester } from '../../src/features/pyq/pyqService';
 import { registerDocument } from '../../src/components/pdf/pdfRegistry';
 import { usePyqQuery } from '../../src/features/pyq/usePyqQuery';
 import {

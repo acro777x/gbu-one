@@ -92,5 +92,33 @@ export const WORKER_CONFIG = {
       intervalMinutes: 240,
       timeoutMs: 15000,
     },
+    hostelsNotices: {
+      name: 'GBU Hostel Circulars & Allotment Notices',
+      url: 'https://hostels.gbu.ac.in/notices.php',
+      fallbackUrl: 'https://hostels.gbu.ac.in/',
+      intervalMinutes: 60,
+      timeoutMs: 15000,
+    },
+    nssNotices: {
+      name: 'GBU NSS Community & Volunteering Notices',
+      url: 'https://nss.gbu.ac.in/news.php',
+      fallbackUrl: 'https://nss.gbu.ac.in/',
+      intervalMinutes: 120,
+      timeoutMs: 15000,
+    },
+    gburifAnnouncements: {
+      name: 'GBU Research & Innovation Foundation (AIC-GBU)',
+      url: 'https://gburif.org/announcements.php',
+      fallbackUrl: 'https://gburif.org/',
+      intervalMinutes: 180,
+      timeoutMs: 15000,
+    },
+    mediaPress: {
+      name: 'GBU Media Coverage & Press Clippings',
+      url: 'https://media.gbu.ac.in/index.php',
+      fallbackUrl: 'https://media.gbu.ac.in/',
+      intervalMinutes: 240,
+      timeoutMs: 15000,
+    },
   },
 };

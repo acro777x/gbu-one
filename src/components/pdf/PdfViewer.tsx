@@ -83,8 +83,6 @@ const removeCachedFile = async (path: string | null): Promise<void> => {
 const readDownloadFacts = async (
   path: string,
 ): Promise<{ head: string; size: number }> => {
-  const headPath = `${path}.head`;
-
   let size = 0;
   try {
     const stat = await ReactNativeBlobUtil.fs.stat(path);
@@ -94,6 +92,16 @@ const readDownloadFacts = async (
     return { head: '', size: 0 };
   }
 
+  try {
+    const raw: unknown = await ReactNativeBlobUtil.fs.readFile(path, 'ascii');
+    if (typeof raw === 'string') {
+      return { head: raw.slice(0, HEAD_WINDOW), size };
+    }
+  } catch {
+    // Fallback to slice
+  }
+
+  const headPath = path + '.head';
   try {
     await ReactNativeBlobUtil.fs.slice(path, headPath, 0, HEAD_WINDOW);
     const raw: unknown = await ReactNativeBlobUtil.fs.readFile(headPath, 'ascii');
@@ -226,7 +234,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         // Tolerates fs.slice issues if size is valid, URL is PDF, and not an error page.
         const validPdf =
           isProbablyPdf(head) ||
-          (size >= MIN_PDF_BYTES && looksLikePdfUrl(url) && !looksLikeSoft404(head) && !isPdfErrorPage(head));
+          (size >= MIN_PDF_BYTES && (looksLikePdfUrl(url) || !head) && !looksLikeSoft404(head) && !isPdfErrorPage(head));
         if (!validPdf || size < MIN_PDF_BYTES) {
           await removeCachedFile(target);
           setPhase({ status: 'error', message: describeDownloadProblem(status, head, size) });

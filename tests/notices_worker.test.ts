@@ -58,7 +58,7 @@ describe('Notices Scraper & Parser Worker', () => {
     const parsed = parseMainNoticesHtml(sampleMainHtml);
     expect(parsed).toHaveLength(3);
     expect(parsed[0].rawTitle).toBe('Revised Schedule for Mid Semester Examination Autumn 2026');
-    expect(parsed[0].url).toBe('https://test.gbu.ac.in/Admissions/DownloadFile?nName=MidSemDatesheet2026.pdf');
+    expect(parsed[0].url).toBe('https://www.gbu.ac.in/Admissions/DownloadFile?nName=MidSemDatesheet2026.pdf');
     expect(parsed[0].dateStr).toBe('18/10/2026');
     expect(parsed[1].url).toBe('https://test.gbu.ac.in/Admissions/DownloadFile?nName=Fee_Ext_3.pdf');
   });
@@ -128,7 +128,7 @@ describe('Notices Scraper & Parser Worker', () => {
 
     // URLs are absolute and keep the nName query string intact
     expect(parsed[0].url).toBe(
-      'https://test.gbu.ac.in/Admissions/DownloadFile?nName=-3239624_135ecad8.pdfScan30092026.pdf'
+      'https://www.gbu.ac.in/Admissions/DownloadFile?nName=-3239624_135ecad8.pdfScan30092026.pdf'
     );
 
     // HTML entities are decoded in titles
@@ -170,7 +170,7 @@ describe('Notices Scraper & Parser Worker', () => {
     const parsed = parseMainNoticesHtml(html);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].url).toBe(
-      'https://test.gbu.ac.in/Content/examination/SOBSC_Date%20Sheet_12Jan2022.pdf'
+      'https://www.gbu.ac.in/Content/examination/SOBSC_Date%20Sheet_12Jan2022.pdf'
     );
   });
 

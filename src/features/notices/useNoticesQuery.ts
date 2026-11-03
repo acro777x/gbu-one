@@ -28,7 +28,14 @@ function rowToNotice(r: Record<string, unknown>): NoticeItem {
     cleanTitle: String(r.clean_title ?? r.title ?? ''),
     postedAt: String(r.posted_at ?? new Date().toISOString()),
     fileUrl: String(r.file_url ?? ''),
-    fileType: (r.file_type as NoticeItem['fileType']) ?? 'pdf',
+    fileType: (() => {
+      const u = String(r.file_url ?? '').toLowerCase();
+      if (u.includes('.pdf')) return 'pdf';
+      if (['.jpg', '.jpeg', '.png', '.webp'].some(ext => u.includes(ext))) return 'image';
+      if (r.file_type === 'pdf' && u.includes('.pdf')) return 'pdf';
+      if (r.file_type === 'image') return 'image';
+      return 'html';
+    })(),
     rawText: (r.raw_text as string | undefined) ?? undefined,
     category: (r.category as NoticeItem['category']) ?? 'other',
     audience: aud && typeof aud === 'object' ? aud : {},

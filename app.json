@@ -21,7 +21,15 @@
         "foregroundImage": "./assets/brand/android-adaptive-foreground.png",
         "backgroundColor": "#FFFFFF"
       },
-      "package": "in.gbu.one"
+      "package": "in.gbu.one",
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "WAKE_LOCK",
+        "POST_NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM"
+      ]
     },
     "web": {
       "favicon": "./assets/brand/favicon-32.png",

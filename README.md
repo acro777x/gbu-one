@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="#-verification--quality-guardrails"><img src="https://img.shields.io/badge/tests-427%20passed-brightgreen.svg" alt="Tests" /></a>
-  <a href="#-verification--quality-guardrails"><img src="https://img.shields.io/badge/test%20suites-30%20passed-brightgreen.svg" alt="Test Suites" /></a>
+  <a href="#-verification--quality-guardrails"><img src="https://img.shields.io/badge/tests-482%20passed-brightgreen.svg" alt="Tests" /></a>
+  <a href="#-verification--quality-guardrails"><img src="https://img.shields.io/badge/test%20suites-33%20passed-brightgreen.svg" alt="Test Suites" /></a>
   <a href="https://expo.dev"><img src="https://img.shields.io/badge/Expo-SDK%2052-000.svg" alt="Expo" /></a>
   <a href="https://reactnative.dev"><img src="https://img.shields.io/badge/React%20Native-0.76.7-61DAFB.svg" alt="React Native" /></a>
   <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-Strict-3178C6.svg" alt="TypeScript" /></a>
@@ -257,7 +257,7 @@ Run all automated quality checks before committing:
 # 1. TypeScript Strict Typecheck (0 errors)
 npm run typecheck
 
-# 2. Full Test Suite (30 test suites, 427 tests passing)
+# 2. Full Test Suite (33 test suites, 482 tests passing)
 npm test
 
 # 3. Synchronize Database Schema SQL
@@ -275,11 +275,11 @@ npx tsx worker/run.ts
 
 ### Test Suite Execution Summary
 ```text
-Test Suites: 30 passed, 30 total
-Tests:       427 passed, 427 total
+Test Suites: 33 passed, 33 total
+Tests:       482 passed, 482 total
 Snapshots:   0 total
 Time:        9.554 s
 Ran all test suites.
 ```
 
-All 30 test suites covering Authentication, Timetable Worker, Calendar Parser, Live Notices, Attachment OCR, Push Registration, PYQ Storage, Moderation Security, Result Alerts, and the Version Update Engine are **100% green**.
+All 33 test suites covering Authentication, Timetable Worker, Calendar Parser, Live Notices, Attachment OCR, Push Registration, PYQ Storage, Moderation Security, Result Alerts, and the Version Update Engine are **100% green**.

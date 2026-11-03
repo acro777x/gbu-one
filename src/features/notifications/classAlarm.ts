@@ -92,10 +92,14 @@ export function ensureClassReminderChannel(): Promise<void> {
           CLASS_REMINDER_CHANNEL_ID,
           {
             name: CLASS_REMINDER_CHANNEL_NAME,
-            importance: Notifications.AndroidImportance.HIGH,
+            importance: Notifications.AndroidImportance.MAX,
             vibrationPattern: longVibration(),
             lightColor: '#C2410C',
             sound: CLASS_ALARM_SOUND,
+            enableVibrate: true,
+            showBadge: true,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+            bypassDnd: true,
           },
         );
       } catch {
@@ -151,6 +155,21 @@ export async function scheduleClassAlarm(
 /** Schedules an immediate test alarm for testing sound and banner (defaults to 5 seconds). */
 export async function scheduleTestAlarm(secondsFromNow = 5): Promise<string> {
   await ensureClassReminderChannel();
+  if (secondsFromNow <= 0) {
+    return Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'GBU One Class Alarm Test',
+        body: 'Your class reminder is ringing with the official GBU alarm sound!',
+        data: { type: 'test-alarm' },
+        sound: CLASS_ALARM_SOUND,
+        categoryIdentifier: CLASS_ALARM_CATEGORY,
+        priority: Notifications.AndroidNotificationPriority.MAX,
+      },
+      trigger: {
+        channelId: CLASS_REMINDER_CHANNEL_ID,
+      },
+    });
+  }
   const fireAt = new Date(Date.now() + secondsFromNow * 1000);
   return Notifications.scheduleNotificationAsync({
     content: {
@@ -159,6 +178,7 @@ export async function scheduleTestAlarm(secondsFromNow = 5): Promise<string> {
       data: { type: 'test-alarm' },
       sound: CLASS_ALARM_SOUND,
       categoryIdentifier: CLASS_ALARM_CATEGORY,
+      priority: Notifications.AndroidNotificationPriority.MAX,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,

@@ -2,8 +2,8 @@
  * GBU One — Gautam Buddha University Room & Building Mapping
  *
  * Gautam Buddha University campus room designations:
- *  - LL: Low Lecture Hall (Low Building / School of Law block)
- *  - LP: Low Practical Lab (Low Lab in Low Building)
+ *  - LL: Law Lecture Hall (Law Building / School of Law block)
+ *  - LP: Law Practical Lab (Law Lab in Law Building / School of Law)
  *  - IP: ICT Practical Lab (SOICT Lab in SOICT Building)
  *  - IL... (CLT): ICT Central Lecture Theatre -> "ICT New Building"
  *  - IL: ICT Lecture Hall (SOICT Building)
@@ -49,24 +49,24 @@ export function parseRoomLocation(room?: string | null, fallbackSchool?: string)
     };
   }
 
-  // 2. Low Building: Low Lecture Hall (LL) e.g. LL101, LL102
+  // 2. Law Building: Law Lecture Hall (LL) e.g. LL101, LL102 (School of Law)
   if (/^LL\s*\d+/i.test(upper)) {
     return {
       roomCode: cleanRoom,
-      building: 'Low Building',
-      roomType: 'Low Lecture Hall',
-      fullDisplay: `${cleanRoom} • Low Building`,
+      building: 'Law Building',
+      roomType: 'Law Lecture Hall',
+      fullDisplay: `${cleanRoom} • Law Building`,
       shortDisplay: cleanRoom,
     };
   }
 
-  // 3. Low Building: Low Practical Lab (LP) e.g. LP101, LP103
+  // 3. Law Building: Law Practical Lab (LP) e.g. LP101, LP103 (School of Law)
   if (/^LP\s*\d+/i.test(upper)) {
     return {
       roomCode: cleanRoom,
-      building: 'Low Building',
-      roomType: 'Low Practical Lab',
-      fullDisplay: `${cleanRoom} • Low Building (Low Lab)`,
+      building: 'Law Building',
+      roomType: 'Law Practical Lab',
+      fullDisplay: `${cleanRoom} • Law Building (Law Lab)`,
       shortDisplay: cleanRoom,
     };
   }

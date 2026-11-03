@@ -37,7 +37,9 @@ export interface NoticesWorkerResult {
  * Generates deterministic sourceId hash from source, url, and date
  */
 export function generateSourceId(source: string, url: string, dateStr: string): string {
-  const input = `${source}_${url.trim().toLowerCase()}_${dateStr.trim()}`;
+  // Normalize test.gbu.ac.in mirror to www.gbu.ac.in (they are byte-identical)
+  const normalizedUrl = url.replace(/test\.gbu\.ac\.in/gi, 'www.gbu.ac.in');
+  const input = `${source}_${normalizedUrl.trim().toLowerCase()}_${dateStr.trim()}`;
   let hash = 0;
   for (let i = 0; i < input.length; i++) {
     hash = (hash << 5) - hash + input.charCodeAt(i);
@@ -143,7 +145,7 @@ export function parseMainNoticesHtml(html: string): ScrapedRawNotice[] {
     // GBU sometimes emits `~/Content/...` which 404s - resolve against the root.
     href = href.replace(/^~\//, '/');
     if (!href.startsWith('http')) {
-      href = `https://test.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
+      href = `https://www.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
     }
     const rawTitle = decodeHtmlEntities(linkMatch[2].replace(/<[^>]+>/g, '').trim());
 
