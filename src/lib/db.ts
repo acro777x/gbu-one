@@ -75,7 +75,11 @@ export function readCachedNotices(limit = 300): NoticeItem[] {
       'SELECT payload FROM notices_cache ORDER BY posted_at DESC LIMIT ?;', [limit]);
     return rows
       .map((r) => safeJsonParse<NoticeItem | null>(r.payload, null))
-      .filter((n): n is NoticeItem => !!n && typeof n.sourceId === 'string');
+      .filter((n): n is NoticeItem => !!n && typeof n.sourceId === 'string')
+      .map((n) => ({
+        ...n,
+        audience: (n.audience && typeof n.audience === 'object') ? n.audience : { all: true, schools: [] },
+      }));
   } catch {
     return [];
   }

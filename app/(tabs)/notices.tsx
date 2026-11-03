@@ -51,7 +51,7 @@ export default function NoticesScreen() {
   const availableSchools = useMemo(() => {
     const schools = new Set<string>();
     for (const n of notices) {
-      for (const s of n.audience.schools ?? []) schools.add(s.toUpperCase());
+      for (const s of n.audience?.schools ?? []) schools.add(s.toUpperCase());
     }
     return [...schools].sort();
   }, [notices]);

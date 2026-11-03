@@ -1,3 +1,4 @@
+import { OCT_NOV_REAL_GBU_NOTICES } from './realGbuNotices';
 /**
  * GBU One — Notices query (offline-first: cache, then refresh).
  * Order of truth:
@@ -169,21 +170,22 @@ export function useNoticesQuery() {
         return filteredCached;
       }
 
-      const filteredMocks = MOCK_NOTICES.filter(
+      const filteredReal = OCT_NOV_REAL_GBU_NOTICES.filter(
         (n) => n && n.id && !deletedSet.has(n.id) && !deletedSet.has(n.sourceId)
       );
       setStatus({
         source: 'live',
-        liveCount: filteredMocks.length,
+        liveCount: filteredReal.length,
         sources: ['gbu.ac.in', 'exams.gbu.ac.in'],
         reason: fromUniversity.errors.join('; '),
       });
-      return filteredMocks;
+      return filteredReal;
     },
     // Instant paint: seed the cache synchronously at query creation.
     initialData: () => {
       const cached = readCachedNotices();
-      return cached.length > 0 ? cached : MOCK_NOTICES;
+      const filtered = cached.filter((n) => n && n.id && (!n.postedAt || n.postedAt >= '2026-10-01'));
+      return filtered.length > 0 ? filtered : OCT_NOV_REAL_GBU_NOTICES;
     },
     // The seeded data is treated as stale from the start, so the query really
     // does fetch. Without this the seed counts as fresh for the whole

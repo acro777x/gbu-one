@@ -302,7 +302,7 @@ export function calculateNoticeImportance(params: {
   }
 
   // Mentions specific school or programme -> +2
-  if (params.audience.schools || params.audience.programmes) {
+  if (params.audience?.schools || params.audience?.programmes) {
     score += 2;
   }
 
@@ -404,16 +404,16 @@ export function filterNotices(notices: NoticeItem[], filters: NoticeFilters = {}
     }
 
     if (schools.length > 0) {
-      const noticeSchools = (n.audience.schools ?? []).map((s) => s.toUpperCase());
+      const noticeSchools = (n.audience?.schools ?? []).map((s) => s.toUpperCase());
       if (!noticeSchools.some((s) => schools.includes(s))) return false;
     }
 
     if (semesters.length > 0) {
-      const noticeSemesters = (n.audience.semesters ?? []).map((s) => s.toUpperCase());
+      const noticeSemesters = (n.audience?.semesters ?? []).map((s) => s.toUpperCase());
       if (!noticeSemesters.some((s) => semesters.includes(s))) return false;
     }
 
-    if (filters.forMe && !(n.importance >= 2 || n.audience.all)) {
+    if (filters.forMe && !(n.importance >= 2 || n.audience?.all)) {
       return false;
     }
 

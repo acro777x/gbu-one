@@ -4,11 +4,11 @@
  * Implemented as a pure overlay view (no native Modal) to strictly honor
  * tests/no_native_modal.test.ts and ensure proper touch dispatch on Android.
  *
- * When an update is marked mandatory:
- * - The overlay blocks the entire screen.
- * - Hardware back button is prevented from dismissing.
- * - Tapping outside is disabled.
- * - Student must tap "Update Now" to download & install the latest APK.
+ * When an update is available:
+ * - A clear glass modal presents the new version, highlights, and APK action.
+ * - Students can tap "Download & Install Update".
+ * - Students can dismiss the modal with "Later" or the top-right close button,
+ *   persisting the dismissal so it doesn't repeatedly trap or annoy the user.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -20,8 +20,10 @@ import {
   BackHandler,
   Linking,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
-import { ArrowUpCircle, CheckCircle2, ShieldAlert } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ArrowUpCircle, CheckCircle2, ShieldAlert, X } from 'lucide-react-native';
 import { GlassCard } from './GlassCard';
 import { PillButton } from './PillButton';
 import {
@@ -31,6 +33,8 @@ import {
 import { useAppTheme } from '../../lib/ThemeContext';
 import { theme } from '../../lib/theme';
 
+export const UPDATE_DISMISSED_KEY = '@gbu_one_update_dismissed_until';
+
 export function MandatoryUpdateModal() {
   const { colors, isDark } = useAppTheme();
   const [updateState, setUpdateState] = useState<UpdateCheckResult | null>(null);
@@ -39,25 +43,49 @@ export function MandatoryUpdateModal() {
 
   useEffect(() => {
     let mounted = true;
-    void checkForAppUpdate().then((res) => {
-      if (mounted) {
-        setUpdateState(res);
+    (async () => {
+      try {
+        const dismissedUntil = await AsyncStorage.getItem(UPDATE_DISMISSED_KEY);
+        if (dismissedUntil && Date.now() < Number(dismissedUntil)) {
+          if (mounted) setDismissed(true);
+          return;
+        }
+
+        const res = await checkForAppUpdate();
+        if (mounted) {
+          setUpdateState(res);
+        }
+      } catch {
+        // ignore
       }
-    });
+    })();
 
     return () => {
       mounted = false;
     };
   }, []);
 
-  // Trap Android hardware back button if update is mandatory
+  const handleDismiss = async () => {
+    setDismissed(true);
+    try {
+      // Snooze update prompt for 12 hours so it doesn't keep blocking the user
+      await AsyncStorage.setItem(
+        UPDATE_DISMISSED_KEY,
+        String(Date.now() + 12 * 60 * 60 * 1000),
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  // Android hardware back button handler
   useEffect(() => {
-    if (!updateState?.updateAvailable || !updateState.isMandatory || dismissed) {
+    if (!updateState?.updateAvailable || dismissed) {
       return;
     }
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      // Return true to prevent going back / leaving the mandatory modal
+      void handleDismiss();
       return true;
     });
 
@@ -82,7 +110,6 @@ export function MandatoryUpdateModal() {
         await Linking.openURL('https://github.com/acro777x/gbu-one/releases/latest');
       }
     } catch {
-      // Fallback
       if (Platform.OS === 'android') {
         void Linking.openURL(apkUrl);
       }
@@ -95,11 +122,14 @@ export function MandatoryUpdateModal() {
     <View style={[StyleSheet.absoluteFill, styles.backdrop, { zIndex: 99999 }]}>
       <View style={styles.container}>
         <GlassCard
-          style={[styles.card, { backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.98)' }]}
+          style={[
+            styles.card,
+            { backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.98)' },
+          ]}
           variant="elevated"
         >
-          {/* Header Badge */}
-          <View style={styles.badgeRow}>
+          {/* Header Row: Badge & Close Button */}
+          <View style={styles.topRow}>
             <View
               style={[
                 styles.badge,
@@ -112,39 +142,61 @@ export function MandatoryUpdateModal() {
                 <ArrowUpCircle size={14} color={colors.accent} style={{ marginRight: 6 }} />
               )}
               <Text style={[styles.badgeText, { color: isMandatory ? '#EF4444' : colors.accent }]}>
-                {isMandatory ? 'COMPULSORY UPDATE' : 'NEW VERSION AVAILABLE'}
+                {isMandatory ? 'RECOMMENDED UPDATE' : 'NEW VERSION AVAILABLE'}
               </Text>
             </View>
+
+            <TouchableOpacity
+              onPress={handleDismiss}
+              style={[styles.closeBtn, { backgroundColor: colors.surfaceAlt }]}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss update notice"
+            >
+              <X size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
           </View>
 
           <Text style={[styles.title, { color: colors.textPrimary }]}>
-            {isMandatory ? 'Update Required' : 'A New GBU One is Ready'}
+            {isMandatory ? 'Update Recommended' : 'A New GBU One is Ready'}
           </Text>
 
           <View style={styles.versionRow}>
             <Text style={[styles.versionText, { color: colors.textSecondary }]}>
-              Current: <Text style={{ fontFamily: 'Inter-SemiBold', color: colors.textPrimary }}>v{currentVersion}</Text>
+              Current:{' '}
+              <Text style={{ fontFamily: 'Inter-SemiBold', color: colors.textPrimary }}>
+                v{currentVersion}
+              </Text>
             </Text>
             <Text style={[styles.arrow, { color: colors.textTertiary }]}>→</Text>
             <Text style={[styles.versionText, { color: colors.accent }]}>
-              New: <Text style={{ fontFamily: 'Inter-SemiBold', color: colors.accent }}>v{latestVersion}</Text>
+              New:{' '}
+              <Text style={{ fontFamily: 'Inter-SemiBold', color: colors.accent }}>
+                v{latestVersion}
+              </Text>
             </Text>
           </View>
 
           <Text style={[styles.description, { color: colors.textSecondary }]}>
             {isMandatory
-              ? 'This version includes mandatory security updates, official examination calendar syncing, and live university timetable alerts. You must update to continue.'
+              ? 'This release includes official university examination calendar updates, enhanced real notice scrapers, and 120Hz smooth scrolling.'
               : 'Update to enjoy the latest GBU One enhancements, PYQ library, and campus events.'}
           </Text>
 
           {/* Release Notes */}
           {manifest?.releaseNotes && manifest.releaseNotes.length > 0 && (
             <View style={[styles.notesBox, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
-              <Text style={[styles.notesHeader, { color: colors.textPrimary }]}>What's New in v{latestVersion}:</Text>
+              <Text style={[styles.notesHeader, { color: colors.textPrimary }]}>
+                What's New in v{latestVersion}:
+              </Text>
               <ScrollView style={{ maxHeight: 120 }} showsVerticalScrollIndicator={false}>
                 {manifest.releaseNotes.map((note, index) => (
                   <View key={index} style={styles.noteItem}>
-                    <CheckCircle2 size={13} color={colors.accent} style={{ marginTop: 2, marginRight: 8, flexShrink: 0 }} />
+                    <CheckCircle2
+                      size={13}
+                      color={colors.accent}
+                      style={{ marginTop: 2, marginRight: 8, flexShrink: 0 }}
+                    />
                     <Text style={[styles.noteText, { color: colors.textSecondary }]}>{note}</Text>
                   </View>
                 ))}
@@ -163,15 +215,13 @@ export function MandatoryUpdateModal() {
               onPress={handleUpdatePress}
             />
 
-            {!isMandatory && (
-              <PillButton
-                label="Later"
-                variant="outline"
-                size="md"
-                onPress={() => setDismissed(true)}
-                style={{ marginTop: 8 }}
-              />
-            )}
+            <PillButton
+              label="Later / Continue to App"
+              variant="outline"
+              size="md"
+              onPress={handleDismiss}
+              style={{ marginTop: 8 }}
+            />
           </View>
         </GlassCard>
       </View>
@@ -196,44 +246,54 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
   },
-  badgeRow: {
+  topRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: theme.spacing.md,
   },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
   },
   badgeText: {
     fontSize: 11,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter-SemiBold',
     letterSpacing: 0.5,
   },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   title: {
-    fontSize: 22,
-    fontFamily: 'Poppins-Bold',
+    fontSize: 20,
+    fontFamily: 'PlusJakartaSans-Bold',
     marginBottom: 6,
   },
   versionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
   },
   versionText: {
     fontSize: 13,
     fontFamily: 'Inter-Regular',
   },
   arrow: {
-    fontSize: 14,
+    marginHorizontal: 8,
+    fontSize: 13,
   },
   description: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
     fontFamily: 'Inter-Regular',
+    lineHeight: 19,
     marginBottom: theme.spacing.md,
   },
   notesBox: {
@@ -245,20 +305,20 @@ const styles = StyleSheet.create({
   notesHeader: {
     fontSize: 12,
     fontFamily: 'Inter-SemiBold',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   noteItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 6,
+    marginVertical: 2,
   },
   noteText: {
     fontSize: 12,
-    lineHeight: 17,
     fontFamily: 'Inter-Regular',
+    lineHeight: 17,
     flex: 1,
   },
   actions: {
-    marginTop: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
   },
 });

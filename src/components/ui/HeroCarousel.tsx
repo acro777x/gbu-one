@@ -18,7 +18,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { PillButton } from './PillButton';
-import { WordReveal } from '../motion/WordReveal';
+import { LetterRise } from '../motion/LetterRise';
 import { useAppTheme } from '../../lib/ThemeContext';
 import { theme } from '../../lib/theme';
 
@@ -156,12 +156,11 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
                 {/* Main Headline */}
                 <View style={styles.titleContainer}>
                   {isCurrent ? (
-                    <WordReveal
+                    <LetterRise
                       key={`hero-title-${item.id}-${activeIndex}`}
                       text={item.title}
                       style={[styles.heroTitle, { color: colors.textPrimary }]}
-                      stagger={35}
-                      duration={220}
+                      stagger={16}
                     />
                   ) : (
                     <Text style={[styles.heroTitle, { color: colors.textPrimary }]} numberOfLines={2}>

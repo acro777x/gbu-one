@@ -339,7 +339,7 @@ export default function NoticeDetailScreen() {
               </Text>
             </View>
 
-            {notice.audience.schools && notice.audience.schools.length > 0 && (
+            {notice.audience?.schools && notice.audience.schools.length > 0 && (
               <View style={styles.highlightItem}>
                 <School size={16} color={colors.accent} style={{ marginRight: 8, marginTop: 2 }} />
                 <Text style={[styles.highlightText, { color: colors.textPrimary }]}>

@@ -1102,3 +1102,10 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "isSample": false
   }
 ];
+
+export const OCT_NOV_REAL_GBU_NOTICES: NoticeItem[] = REAL_GBU_NOTICES.filter(
+  (n) => n.postedAt >= '2026-10-01'
+).map((n) => ({
+  ...n,
+  audience: (n.audience && typeof n.audience === 'object') ? n.audience : { all: true, schools: [] },
+}));
