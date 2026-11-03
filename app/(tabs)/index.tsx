@@ -33,6 +33,7 @@ import {
   EmptyState,
 } from '../../src/components/ui';
 import { CountUp } from '../../src/components/motion/CountUp';
+import { TypeWriter } from '../../src/components/motion/TypeWriter';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { useMailStore } from '../../src/store/useMailStore';
 import { Timetable } from '../../src/features/timetable/timetableProvider';
@@ -176,9 +177,17 @@ export default function HomeScreen() {
       <View style={[styles.header, { backgroundColor: colors.bg, borderBottomColor: colors.divider }]}>
         <View style={styles.headerLeft}>
           <LogoMark size={32} />
-          <View style={styles.wordmarkRow}>
-            <Text style={[styles.brandGBU, { color: colors.textPrimary }]}>GBU </Text>
-            <Text style={[styles.brandOne, { color: colors.accent }]}>One</Text>
+          <View style={{ marginLeft: 8 }}>
+            <View style={styles.wordmarkRow}>
+              <Text style={[styles.brandGBU, { color: colors.textPrimary }]}>GBU </Text>
+              <Text style={[styles.brandOne, { color: colors.accent }]}>One</Text>
+            </View>
+            <TypeWriter
+              text="Everything GBU. One app."
+              speed={42}
+              cursor={false}
+              style={{ fontSize: 9.5, fontFamily: 'Inter-Medium', color: colors.textSecondary }}
+            />
           </View>
         </View>
 
@@ -371,6 +380,52 @@ export default function HomeScreen() {
                 <ChevronRight size={16} color={colors.textSecondary} />
               </View>
             </GlassCard>
+          )}
+
+          {/* Latest Campus Notices & Circulars */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Latest Notices</Text>
+            <TouchableOpacity
+              onPress={() => router.push('/notices' as never)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ paddingVertical: 8 }}
+            >
+              <Text style={[styles.seeAllText, { color: colors.accent }]}>View all</Text>
+            </TouchableOpacity>
+          </View>
+
+          {validNotices.length > 0 ? (
+            <View style={{ gap: 10, marginBottom: 18 }}>
+              {validNotices.slice(0, 3).map((notice) => (
+                <GlassCard
+                  key={notice.id}
+                  style={styles.noticeSummaryCard}
+                  variant="subtle"
+                  onPress={() =>
+                    router.push({ pathname: '/notice/[id]', params: { id: notice.id } } as never)
+                  }
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <View style={[styles.noticeBadgePill, { backgroundColor: colors.accentSoft }]}>
+                      <Text style={[styles.noticeBadgePillText, { color: colors.accent }]}>
+                        {notice.source.toUpperCase()} • {notice.category.toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, fontFamily: 'Inter-Regular' }}>
+                      {new Date(notice.postedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                    </Text>
+                  </View>
+                  <Text style={[styles.noticeCardTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+                    {notice.cleanTitle}
+                  </Text>
+                </GlassCard>
+              ))}
+            </View>
+          ) : (
+            <EmptyState
+              title="No campus notices"
+              description="Official university notices will appear here as soon as they are announced."
+            />
           )}
 
           {/* GBU Webmail & Student Dispatch Spotlight */}
@@ -716,6 +771,27 @@ const styles = StyleSheet.create({
   seeAllText: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
+  },
+  noticeSummaryCard: {
+    padding: 14,
+    borderRadius: 16,
+  },
+  noticeBadgePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  noticeBadgePillText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 10,
+    letterSpacing: 0.3,
+  },
+  noticeCardTitle: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 4,
   },
   changeBanner: {
     marginBottom: theme.spacing.lg,

@@ -47,6 +47,11 @@ import {
   FileText,
 } from 'lucide-react-native';
 import { cleanNoticeTitle, type NoticeItem } from '../../src/features/notices/noticeService';
+import {
+  publishNoticeToCampus,
+  deleteNoticeFromCampus,
+  fetchCloudNotices,
+} from '../../src/features/notices/adminNoticesService';
 import { GlassCard, PillButton, Toast } from '../../src/components/ui';
 import {
   listCampusEvents,
@@ -144,30 +149,8 @@ export default function AdminScreen() {
 
   const loadAdminNotices = useCallback(async () => {
     try {
-      if (!isSupabaseConfigured) return;
-      const { data, error } = await supabase
-        .from('notices')
-        .select('*')
-        .order('posted_at', { ascending: false })
-        .limit(25);
-      if (!error && data) {
-        setAdminNoticesList(
-          data.map((r: Record<string, unknown>) => ({
-            id: String(r.id),
-            source: (r.source as NoticeItem['source']) || 'admin',
-            sourceId: String(r.source_id || ''),
-            title: String(r.title || ''),
-            cleanTitle: String(r.clean_title || r.title || ''),
-            postedAt: String(r.posted_at || new Date().toISOString()),
-            fileUrl: String(r.file_url || ''),
-            fileType: (r.file_type as NoticeItem['fileType']) || 'pdf',
-            category: (r.category as NoticeItem['category']) || 'other',
-            audience: (r.audience as NoticeItem['audience']) || {},
-            importance: Number(r.importance || 1),
-            isSample: false,
-          }))
-        );
-      }
+      const res = await fetchCloudNotices();
+      setAdminNoticesList(res.notices);
     } catch {
       // ignore
     }
@@ -499,38 +482,26 @@ export default function AdminScreen() {
 
     try {
       const trimmedTitle = noticeTitle.trim();
-      const cleaned = cleanNoticeTitle(trimmedTitle);
-      const isPdf = noticeFileUrl.toLowerCase().includes('.pdf');
-      const isImg = ['.jpg', '.jpeg', '.png', '.webp'].some((e) =>
-        noticeFileUrl.toLowerCase().includes(e)
-      );
-      const fileType = isPdf ? 'pdf' : isImg ? 'image' : 'html';
-
-      const payload = {
-        source: noticeSource,
-        source_id: `admin_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      const res = await publishNoticeToCampus({
         title: trimmedTitle,
-        clean_title: cleaned,
-        posted_at: new Date().toISOString(),
-        file_url: noticeFileUrl.trim() || 'https://www.gbu.ac.in',
-        file_type: fileType,
-        category: noticeCategory,
-        audience: { all: true },
+        category: noticeCategory as any,
+        source: noticeSource as any,
         importance: noticeImportance,
-        deadline_at: noticeDeadline ? new Date(noticeDeadline).toISOString() : null,
-      };
+        fileUrl: noticeFileUrl,
+        deadlineAt: noticeDeadline,
+      });
 
-      const { error } = await supabase.from('notices').insert(payload);
-      if (error) {
-        showToast(`Failed to publish: ${error.message}`);
-      } else {
+      if (res.ok && res.notice) {
         showToast('Notice published successfully! Visible on student dashboard.');
         setNoticeTitle('');
         setNoticeFileUrl('');
         setNoticeDeadline('');
         setPickedDocName('');
+        setAdminNoticesList((prev) => [res.notice!, ...prev]);
         void loadAdminNotices();
-        queryClient.invalidateQueries({ queryKey: NOTICE_QUERY_KEY });
+        void queryClient.invalidateQueries({ queryKey: NOTICE_QUERY_KEY });
+      } else {
+        showToast(res.error || 'Failed to publish notice.');
       }
     } catch (err: any) {
       showToast(err?.message || 'Error publishing notice.');
@@ -540,17 +511,15 @@ export default function AdminScreen() {
   };
 
   const handleDeleteNotice = async (noticeId: string) => {
-    try {
-      const { error } = await supabase.from('notices').delete().eq('id', noticeId);
-      if (error) {
-        showToast(`Could not delete: ${error.message}`);
-      } else {
-        showToast('Notice unpublished successfully.');
-        setAdminNoticesList((prev) => prev.filter((n) => n.id !== noticeId));
-        queryClient.invalidateQueries({ queryKey: NOTICE_QUERY_KEY });
-      }
-    } catch {
-      showToast('Error removing notice.');
+    setAdminNoticesList((prev) => prev.filter((n) => n.id !== noticeId));
+    showToast('Notice unpublished successfully.');
+    const res = await deleteNoticeFromCampus(noticeId);
+    if (res.ok) {
+      void loadAdminNotices();
+      void queryClient.invalidateQueries({ queryKey: NOTICE_QUERY_KEY });
+    } else {
+      showToast(res.error || 'Could not delete notice.');
+      void loadAdminNotices();
     }
   };
 

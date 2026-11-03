@@ -5,7 +5,7 @@
 
 export interface NoticeItem {
   id: string;
-  source: 'main' | 'exams' | 'hostel' | 'ohms' | 'csms' | 'digiforms' | 'other';
+  source: 'main' | 'exams' | 'hostel' | 'ohms' | 'csms' | 'digiforms' | 'other' | 'admin';
   sourceId: string;
   title: string;
   cleanTitle: string;

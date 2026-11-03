@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, TextStyle, ViewStyle } from 'react-native';
+import { View, StyleSheet, TextStyle, ViewStyle, StyleProp } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -15,8 +15,8 @@ export interface WordRevealProps {
   delay?: number;
   stagger?: number;
   duration?: number;
-  style?: TextStyle;
-  containerStyle?: ViewStyle;
+  style?: StyleProp<TextStyle>;
+  containerStyle?: StyleProp<ViewStyle>;
   reduceMotion?: boolean;
   onDone?: () => void;
 }
@@ -27,7 +27,7 @@ interface AnimatedWordProps {
   delay: number;
   stagger: number;
   duration: number;
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
   reduceMotion: boolean;
   isLast: boolean;
   onDone?: () => void;

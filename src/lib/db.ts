@@ -109,6 +109,16 @@ export function writeCachedNotices(notices: NoticeItem[]): void {
   }
 }
 
+export function deleteCachedNotice(sourceId: string): void {
+  const d = getDb();
+  if (!d || !sourceId) return;
+  try {
+    d.runSync('DELETE FROM notices_cache WHERE source_id = ?;', [sourceId]);
+  } catch {
+    // ignore
+  }
+}
+
 export function getNoticesCacheTime(): number | null {
   const d = getDb();
   if (!d) return null;

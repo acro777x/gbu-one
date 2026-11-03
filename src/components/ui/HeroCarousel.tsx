@@ -18,6 +18,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { PillButton } from './PillButton';
+import { WordReveal } from '../motion/WordReveal';
 import { useAppTheme } from '../../lib/ThemeContext';
 import { theme } from '../../lib/theme';
 
@@ -107,6 +108,16 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
         showsHorizontalScrollIndicator={false}
         initialNumToRender={2}
         windowSize={3}
+        getItemLayout={(_, index) => ({
+          length: screenWidth,
+          offset: screenWidth * index,
+          index,
+        })}
+        onScrollToIndexFailed={(info) => {
+          setTimeout(() => {
+            flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+          }, 100);
+        }}
         removeClippedSubviews={Platform.OS === 'android'}
         onTouchStart={() => {
           isInteracting.current = true;
@@ -144,11 +155,19 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
 
                 {/* Main Headline */}
                 <View style={styles.titleContainer}>
-                  <HeroTitleRise
-                    text={item.title}
-                    style={[styles.heroTitle, { color: colors.textPrimary }]}
-                    isCurrent={isCurrent}
-                  />
+                  {isCurrent ? (
+                    <WordReveal
+                      key={`hero-title-${item.id}-${activeIndex}`}
+                      text={item.title}
+                      style={[styles.heroTitle, { color: colors.textPrimary }]}
+                      stagger={35}
+                      duration={220}
+                    />
+                  ) : (
+                    <Text style={[styles.heroTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+                      {item.title}
+                    </Text>
+                  )}
                 </View>
 
                 {/* Action button */}

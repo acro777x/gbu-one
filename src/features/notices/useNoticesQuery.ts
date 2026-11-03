@@ -16,6 +16,7 @@ import { toNoticeItems } from './liveNoticeMapping';
 import { useNoticesStatusStore } from './noticesStatus';
 import { readCachedNotices, writeCachedNotices } from '../../lib/db';
 import { NOTICE_QUERY_KEY } from '../../lib/queryClient';
+import { fetchCloudNotices, getLocalDeletedNoticeIds } from './adminNoticesService';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 function rowToNotice(r: Record<string, unknown>): NoticeItem {
@@ -97,42 +98,87 @@ export function useNoticesQuery() {
   return useQuery<NoticeItem[]>({
     queryKey: NOTICE_QUERY_KEY,
     queryFn: async () => {
+      // 1. Fetch cloud admin notices (Storage CDN + direct Postgres)
+      let cloudPayload = { notices: [] as NoticeItem[], deletedIds: [] as string[] };
+      try {
+        cloudPayload = await fetchCloudNotices();
+      } catch {
+        // ignore
+      }
+      const deletedSet = new Set(cloudPayload.deletedIds);
+      const localDeleted = await getLocalDeletedNoticeIds();
+      localDeleted.forEach((id) => deletedSet.add(id));
+
+      // 2. Fetch live notices from Supabase Postgres
       const live = await fetchNoticesLive();
-      if (live && live.length > 0) {
-        writeCachedNotices(live);
-        setStatus({ source: 'live', liveCount: live.length });
-        return live;
+
+      // 3. Fetch scraped notices straight from university web pages
+      const fromUniversity = await fetchNoticesFromUniversity();
+
+      // 4. Combine all sources with strict deduplication and tombstone filtering
+      const combinedMap = new Map<string, NoticeItem>();
+
+      // Admin notices have highest priority
+      for (const n of cloudPayload.notices) {
+        if (!n || !n.id || deletedSet.has(n.id) || deletedSet.has(n.sourceId)) continue;
+        combinedMap.set(n.id, n);
       }
 
-      // No backend yet, so read the university's own pages.
-      const fromUniversity = await fetchNoticesFromUniversity();
+      if (live && live.length > 0) {
+        for (const n of live) {
+          if (!n || !n.id || deletedSet.has(n.id) || deletedSet.has(n.sourceId)) continue;
+          if (!combinedMap.has(n.id) && !combinedMap.has(n.sourceId)) {
+            combinedMap.set(n.id, n);
+          }
+        }
+      }
+
       if (fromUniversity.notices.length > 0) {
-        writeCachedNotices(fromUniversity.notices);
+        for (const n of fromUniversity.notices) {
+          if (!n || !n.id || deletedSet.has(n.id) || deletedSet.has(n.sourceId)) continue;
+          if (!combinedMap.has(n.id) && !combinedMap.has(n.sourceId)) {
+            combinedMap.set(n.id, n);
+          }
+        }
+      }
+
+      const mergedNotices = Array.from(combinedMap.values()).sort(
+        (a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()
+      );
+
+      if (mergedNotices.length > 0) {
+        writeCachedNotices(mergedNotices);
         setStatus({
           source: 'live',
-          liveCount: fromUniversity.notices.length,
+          liveCount: mergedNotices.length,
           sources: fromUniversity.sources,
         });
-        return fromUniversity.notices;
+        return mergedNotices;
       }
 
       const cached = readCachedNotices();
-      if (cached.length > 0) {
+      const filteredCached = cached.filter(
+        (n) => n && n.id && !deletedSet.has(n.id) && !deletedSet.has(n.sourceId)
+      );
+      if (filteredCached.length > 0) {
         setStatus({
           source: 'cache',
-          liveCount: cached.length,
+          liveCount: filteredCached.length,
           reason: fromUniversity.errors.join('; '),
         });
-        return cached;
+        return filteredCached;
       }
 
+      const filteredMocks = MOCK_NOTICES.filter(
+        (n) => n && n.id && !deletedSet.has(n.id) && !deletedSet.has(n.sourceId)
+      );
       setStatus({
         source: 'live',
-        liveCount: MOCK_NOTICES.length,
+        liveCount: filteredMocks.length,
         sources: ['gbu.ac.in', 'exams.gbu.ac.in'],
         reason: fromUniversity.errors.join('; '),
       });
-      return MOCK_NOTICES;
+      return filteredMocks;
     },
     // Instant paint: seed the cache synchronously at query creation.
     initialData: () => {
