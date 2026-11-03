@@ -31,6 +31,9 @@ import { CountUp } from '../src/components/motion/CountUp';
 import {
   calculateExamCountdown,
   MOCK_END_SEM_DATESHEET,
+  MOCK_PRACTICALS_DATESHEET,
+  MOCK_BACK_PAPER_DATESHEET,
+  MOCK_DATESHEET,
 } from '../src/features/exams/examService';
 import {
   PUBLIC_RESULT_SHEETS,
@@ -49,7 +52,7 @@ export default function ExamsScreen() {
   const { user, classSelection } = useAuthStore();
   const { colors, isDark } = useAppTheme();
   const [activeTab, setActiveTab] = useState<'datesheet' | 'results'>('datesheet');
-  const [examPhase, setExamPhase] = useState<'end' | 'mid'>('end');
+  const [examPhase, setExamPhase] = useState<'end' | 'practicals' | 'back' | 'mid'>('end');
   const [rollQuery, setRollQuery] = useState(user?.rollNo || '22/ICS/042');
   const [admitCardReminder, setAdmitCardReminder] = useState(true);
   const [resultsWatch, setResultsWatch] = useState(false);
@@ -57,15 +60,27 @@ export default function ExamsScreen() {
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
 
-  const countdownDays = examPhase === 'end'
-    ? calculateExamCountdown('2026-12-14T04:00:00.000Z')
-    : calculateExamCountdown('2026-11-03T04:00:00.000Z');
+  const countdownDays =
+    examPhase === 'end'
+      ? calculateExamCountdown('2026-12-14T04:00:00.000Z')
+      : examPhase === 'practicals'
+        ? calculateExamCountdown('2026-11-30T04:00:00.000Z')
+        : examPhase === 'back'
+          ? calculateExamCountdown('2026-12-07T04:00:00.000Z')
+          : 0;
 
   // The date sheet comes from the backend; the bundled seed is the fallback.
   const programmeCode = classSelection?.programmeCode || 'BCS';
   const semester = classSelection?.semester || 'II';
   const { data: datesheet } = useDatesheetQuery(programmeCode, semester);
-  const activeDatesheet = examPhase === 'end' ? MOCK_END_SEM_DATESHEET : datesheet;
+  const activeDatesheet =
+    examPhase === 'end'
+      ? MOCK_END_SEM_DATESHEET
+      : examPhase === 'practicals'
+        ? MOCK_PRACTICALS_DATESHEET
+        : examPhase === 'back'
+          ? MOCK_BACK_PAPER_DATESHEET
+          : datesheet || MOCK_DATESHEET;
 
   const handleOpenResultSheet = (sheet?: ResultSheet) => {
     const target =
@@ -193,8 +208,8 @@ export default function ExamsScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {activeTab === 'datesheet' ? (
           <>
-            {/* Exam Phase Toggle (End Sem vs Mid Sem) */}
-            <View style={styles.phaseToggleRow}>
+            {/* Exam Phase Toggle (End Sem, Practicals, Back Papers, Mid Sem) */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.phaseScroll}>
               <TouchableOpacity
                 style={[
                   styles.phaseToggleBtn,
@@ -215,6 +230,40 @@ export default function ExamsScreen() {
               <TouchableOpacity
                 style={[
                   styles.phaseToggleBtn,
+                  examPhase === 'practicals' && { backgroundColor: colors.accentFill },
+                ]}
+                onPress={() => setExamPhase('practicals')}
+              >
+                <Text
+                  style={[
+                    styles.phaseToggleText,
+                    { color: colors.textSecondary },
+                    examPhase === 'practicals' && { color: colors.onAccent, fontFamily: 'Inter-Bold' },
+                  ]}
+                >
+                  Practicals (30 Nov - 4 Dec)
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.phaseToggleBtn,
+                  examPhase === 'back' && { backgroundColor: colors.accentFill },
+                ]}
+                onPress={() => setExamPhase('back')}
+              >
+                <Text
+                  style={[
+                    styles.phaseToggleText,
+                    { color: colors.textSecondary },
+                    examPhase === 'back' && { color: colors.onAccent, fontFamily: 'Inter-Bold' },
+                  ]}
+                >
+                  Back Papers (7-12 Dec)
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.phaseToggleBtn,
                   examPhase === 'mid' && { backgroundColor: colors.accentFill },
                 ]}
                 onPress={() => setExamPhase('mid')}
@@ -226,23 +275,39 @@ export default function ExamsScreen() {
                     examPhase === 'mid' && { color: colors.onAccent, fontFamily: 'Inter-Bold' },
                   ]}
                 >
-                  Mid Sem (3 Nov)
+                  Mid Sem (Completed)
                 </Text>
               </TouchableOpacity>
-            </View>
+            </ScrollView>
 
             {/* Exam Countdown Card */}
             <GlassCard style={[styles.countdownCard, { backgroundColor: colors.accentSoft }]} accentBorder>
               <View style={styles.countdownRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.countdownBadge, { color: colors.accent }]}>AUTUMN SEMESTER 2026</Text>
+                  <Text style={[styles.countdownBadge, { color: colors.accent }]}>
+                    {examPhase === 'mid'
+                      ? 'AUTUMN SEMESTER 2026 • COMPLETED'
+                      : examPhase === 'end'
+                        ? 'AUTUMN SEMESTER 2026 • MAJOR EXAM'
+                        : 'AUTUMN SEMESTER 2026 • UPCOMING'}
+                  </Text>
                   <Text style={[styles.countdownTitle, { color: colors.textPrimary }]}>
-                    {examPhase === 'end' ? 'End Semester Exams' : 'Mid Semester Exams'}
+                    {examPhase === 'end'
+                      ? 'End Semester Theory Exams'
+                      : examPhase === 'practicals'
+                        ? 'Practical Examinations'
+                        : examPhase === 'back'
+                          ? 'Back Paper Examinations'
+                          : 'Mid Semester Exams (Completed)'}
                   </Text>
                   <Text style={[styles.countdownSub, { color: colors.textSecondary }]}>
                     {examPhase === 'end'
                       ? 'Starts Monday, 14 Dec 2026 • GBU Academic Calendar'
-                      : 'Starts Monday, 3 Nov 2026'}
+                      : examPhase === 'practicals'
+                        ? 'Starts Monday, 30 Nov 2026 • Lab Evaluations & Viva'
+                        : examPhase === 'back'
+                          ? 'Starts Monday, 7 Dec 2026 • University Exam Halls'
+                          : 'Conducted 7 Oct - 16 Oct 2026 • Papers in PYQ'}
                   </Text>
                 </View>
                 <View
@@ -255,8 +320,17 @@ export default function ExamsScreen() {
                     },
                   ]}
                 >
-                  <CountUp value={countdownDays} style={[styles.countdownNumber, { color: colors.accent }]} />
-                  <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>DAYS LEFT</Text>
+                  {examPhase === 'mid' ? (
+                    <>
+                      <Text style={[styles.countdownNumber, { color: colors.success, fontSize: 18 }]}>DONE</Text>
+                      <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>OCT 7-16</Text>
+                    </>
+                  ) : (
+                    <>
+                      <CountUp value={countdownDays} style={[styles.countdownNumber, { color: colors.accent }]} />
+                      <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>DAYS LEFT</Text>
+                    </>
+                  )}
                 </View>
               </View>
             </GlassCard>
@@ -536,8 +610,13 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
     marginBottom: theme.spacing.md,
   },
+  phaseScroll: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
   phaseToggleBtn: {
-    flex: 1,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: theme.radius.pill,
     alignItems: 'center',

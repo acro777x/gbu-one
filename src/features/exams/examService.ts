@@ -31,14 +31,14 @@ export interface StudentResultRecord {
   }>;
 }
 
-export const MOCK_DATESHEET: DatesheetEntry[] = [
+export const MOCK_MID_SEM_DATESHEET: DatesheetEntry[] = [
   {
     id: 'ds_1',
     programmeCode: 'BCS',
     semester: 'II',
     subjectCode: 'CSE205',
     subjectName: 'Data Structures & Algorithms',
-    examDate: '2026-11-03T04:00:00.000Z',
+    examDate: '2026-10-07T04:00:00.000Z',
     examTime: '09:30 AM - 12:30 PM',
     shift: 'Morning',
     roomBlock: 'SOICT Block B',
@@ -49,7 +49,7 @@ export const MOCK_DATESHEET: DatesheetEntry[] = [
     semester: 'II',
     subjectCode: 'CSE209',
     subjectName: 'Operating Systems',
-    examDate: '2026-11-05T04:00:00.000Z',
+    examDate: '2026-10-09T04:00:00.000Z',
     examTime: '09:30 AM - 12:30 PM',
     shift: 'Morning',
     roomBlock: 'SOICT Block B',
@@ -60,7 +60,7 @@ export const MOCK_DATESHEET: DatesheetEntry[] = [
     semester: 'II',
     subjectCode: 'BAS201',
     subjectName: 'Discrete Mathematics',
-    examDate: '2026-11-07T04:00:00.000Z',
+    examDate: '2026-10-13T04:00:00.000Z',
     examTime: '09:30 AM - 12:30 PM',
     shift: 'Morning',
     roomBlock: 'SOICT Block A',
@@ -71,9 +71,83 @@ export const MOCK_DATESHEET: DatesheetEntry[] = [
     semester: 'II',
     subjectCode: 'CSE211',
     subjectName: 'Database Management Systems',
-    examDate: '2026-11-10T04:00:00.000Z',
+    examDate: '2026-10-16T04:00:00.000Z',
     examTime: '09:30 AM - 12:30 PM',
     shift: 'Morning',
+    roomBlock: 'SOICT Block B',
+  },
+];
+
+/** End Semester Practical Examinations (30 Nov - 4 Dec 2026). */
+export const MOCK_PRACTICALS_DATESHEET: DatesheetEntry[] = [
+  {
+    id: 'ds_prac_1',
+    programmeCode: 'BCS',
+    semester: 'II',
+    subjectCode: 'CSE205P',
+    subjectName: 'Data Structures Lab & Viva',
+    examDate: '2026-11-30T04:00:00.000Z',
+    examTime: '09:30 AM - 01:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Practical Lab LP101',
+  },
+  {
+    id: 'ds_prac_2',
+    programmeCode: 'BCS',
+    semester: 'II',
+    subjectCode: 'CSE209P',
+    subjectName: 'Operating Systems Linux Lab',
+    examDate: '2026-12-02T04:00:00.000Z',
+    examTime: '09:30 AM - 01:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Practical Lab LP102',
+  },
+  {
+    id: 'ds_prac_3',
+    programmeCode: 'BCS',
+    semester: 'II',
+    subjectCode: 'CSE211P',
+    subjectName: 'Database Management Systems Lab',
+    examDate: '2026-12-04T04:00:00.000Z',
+    examTime: '09:30 AM - 01:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Practical Lab LP103',
+  },
+];
+
+/** Monsoon Semester Back Paper Examinations (7 Dec - 12 Dec 2026). */
+export const MOCK_BACK_PAPER_DATESHEET: DatesheetEntry[] = [
+  {
+    id: 'ds_back_1',
+    programmeCode: 'BCS',
+    semester: 'II',
+    subjectCode: 'BAS101',
+    subjectName: 'Engineering Mathematics I (Back Paper)',
+    examDate: '2026-12-07T04:00:00.000Z',
+    examTime: '02:00 PM - 05:00 PM',
+    shift: 'Evening',
+    roomBlock: 'SOICT Block A',
+  },
+  {
+    id: 'ds_back_2',
+    programmeCode: 'BCS',
+    semester: 'II',
+    subjectCode: 'CSE101',
+    subjectName: 'Problem Solving Using C (Back Paper)',
+    examDate: '2026-12-09T04:00:00.000Z',
+    examTime: '02:00 PM - 05:00 PM',
+    shift: 'Evening',
+    roomBlock: 'SOICT Block B',
+  },
+  {
+    id: 'ds_back_3',
+    programmeCode: 'BCS',
+    semester: 'II',
+    subjectCode: 'EC101',
+    subjectName: 'Basic Electronics (Back Paper)',
+    examDate: '2026-12-12T04:00:00.000Z',
+    examTime: '02:00 PM - 05:00 PM',
+    shift: 'Evening',
     roomBlock: 'SOICT Block B',
   },
 ];
@@ -124,6 +198,13 @@ export const MOCK_END_SEM_DATESHEET: DatesheetEntry[] = [
     shift: 'Morning',
     roomBlock: 'SOICT Block B (Main Hall)',
   },
+];
+
+/** Active Datesheet defaulting to upcoming practicals, back papers and end sem examinations. */
+export const MOCK_DATESHEET: DatesheetEntry[] = [
+  ...MOCK_PRACTICALS_DATESHEET,
+  ...MOCK_BACK_PAPER_DATESHEET,
+  ...MOCK_END_SEM_DATESHEET,
 ];
 
 export const MOCK_STUDENT_RESULTS: StudentResultRecord[] = [

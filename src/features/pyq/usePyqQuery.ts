@@ -5,7 +5,7 @@
  * unavailable the bundled seed keeps the screen usable.
  */
 import { useQuery } from '@tanstack/react-query';
-import { FULL_CATALOGUE_PAPERS, type PYQItem } from './pyqService';
+import { FULL_CATALOGUE_PAPERS, normalizeSemester, type PYQItem } from './pyqService';
 import { listApprovedPapers, type PyqPaperRecord } from './pyqRepository';
 
 export const PYQ_QUERY_KEY = ['pyq-papers'] as const;
@@ -16,7 +16,7 @@ export function paperRecordToItem(record: PyqPaperRecord): PYQItem {
     id: record.id,
     school: record.school,
     programme: record.programmeCode,
-    semester: record.semester,
+    semester: normalizeSemester(record.semester),
     subjectCode: record.subjectCode,
     subjectName: record.subjectName,
     year: record.year,
@@ -24,6 +24,7 @@ export function paperRecordToItem(record: PyqPaperRecord): PYQItem {
     downloads: record.downloads,
     status: record.status === 'approved' ? 'approved' : 'pending',
     fileUrl: record.fileUrl,
+    hasFile: Boolean(record.fileUrl && record.fileUrl.startsWith('http')),
   };
 }
 

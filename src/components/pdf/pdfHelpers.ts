@@ -158,7 +158,11 @@ export function buildCacheFileName(url: string, discriminator?: string | number)
     hash = ((hash << 5) + hash + url.charCodeAt(index)) >>> 0;
   }
   const suffix = discriminator === undefined ? '' : `-${discriminator}`;
-  const ext = looksLikeImageUrl(url) ? (url.toLowerCase().indexOf('.png') !== -1 ? '.png' : '.jpg') : '.pdf';
+  const ext = looksLikeDocUrl(url)
+    ? (url.toLowerCase().indexOf('.docx') !== -1 ? '.docx' : '.doc')
+    : looksLikeImageUrl(url)
+      ? (url.toLowerCase().indexOf('.png') !== -1 ? '.png' : '.jpg')
+      : '.pdf';
   return `gbu-document-${hash.toString(16)}${suffix}${ext}`;
 }
 
@@ -190,6 +194,27 @@ export function hostOfUrl(url: string): string {
 export function looksLikePdfUrl(url: string): boolean {
   if (!url) return false;
   return url.toLowerCase().indexOf('.pdf') !== -1;
+}
+
+/** True when the URL points at a Microsoft Word document (.doc or .docx). */
+export function looksLikeDocUrl(url: string): boolean {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return lower.indexOf('.docx') !== -1 || lower.indexOf('.doc') !== -1;
+}
+
+/** True when the bytes look like a Word document (Zip/DOCX or Compound File/DOC). */
+export function isProbablyDoc(bytes: string): boolean {
+  if (!bytes || bytes.length < 4) return false;
+  // DOCX (Zip archive): PK\x03\x04
+  if (bytes.charCodeAt(0) === 0x50 && bytes.charCodeAt(1) === 0x4b && bytes.charCodeAt(2) === 0x03 && bytes.charCodeAt(3) === 0x04) {
+    return true;
+  }
+  // DOC (Compound File Binary Format): \xD0\xCF\x11\xE0
+  if (bytes.charCodeAt(0) === 0xd0 && bytes.charCodeAt(1) === 0xcf && bytes.charCodeAt(2) === 0x11 && bytes.charCodeAt(3) === 0xe0) {
+    return true;
+  }
+  return false;
 }
 
 /** True when the URL points at a raster image rather than a document. */

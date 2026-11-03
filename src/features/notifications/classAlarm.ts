@@ -148,6 +148,26 @@ export async function scheduleClassAlarm(
   });
 }
 
+/** Schedules an immediate test alarm for testing sound and banner (defaults to 5 seconds). */
+export async function scheduleTestAlarm(secondsFromNow = 5): Promise<string> {
+  await ensureClassReminderChannel();
+  const fireAt = new Date(Date.now() + secondsFromNow * 1000);
+  return Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'GBU One Class Alarm Test',
+      body: 'Your class reminder is ringing with the official GBU alarm sound!',
+      data: { type: 'test-alarm' },
+      sound: CLASS_ALARM_SOUND,
+      categoryIdentifier: CLASS_ALARM_CATEGORY,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: fireAt,
+      channelId: CLASS_REMINDER_CHANNEL_ID,
+    },
+  });
+}
+
 /** The data a snoozed alarm carries, so it can be scheduled again. */
 export interface ClassAlarmData {
   type?: string;

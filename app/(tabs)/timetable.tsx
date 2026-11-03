@@ -19,6 +19,7 @@ import {
   Clock,
   Sparkles,
   Bell,
+  BellRing,
   Check,
   CheckCircle,
   XCircle,
@@ -26,8 +27,10 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
+import { router } from 'expo-router';
 import { GlassCard, Skeleton, EmptyState, Chip, SheetOverlay, PillButton } from '../../src/components/ui';
 import { AlarmStateRow } from '../../src/components/notifications/AlarmStateRow';
+import { formatRoomLocation, parseRoomLocation } from '../../src/features/timetable/roomMapping';
 import {
   Timetable,
   Slot,
@@ -266,7 +269,7 @@ export default function TimetableScreen() {
     }
 
     const current = new Date();
-    const classDate =
+    let classDate =
       slot.day === dayIndexForDate(current)
         ? slotStartToday(slot, current)
         : nextSlotDate(slot, current);
@@ -275,7 +278,16 @@ export default function TimetableScreen() {
       return;
     }
 
-    const fireAt = fireAtFor(classDate, leadMinutes);
+    let fireAt = fireAtFor(classDate, leadMinutes);
+    // If today's class time or lead trigger has already passed, seamlessly schedule for next week's occurrence
+    if (fireAt.getTime() <= current.getTime()) {
+      const nextDate = nextSlotDate(slot, current);
+      if (nextDate) {
+        classDate = nextDate;
+        fireAt = fireAtFor(classDate, leadMinutes);
+      }
+    }
+
     const check = canScheduleReminder(classDate, fireAt, current);
     if (!check.ok) {
       showToast(
@@ -364,26 +376,36 @@ export default function TimetableScreen() {
           </Text>
         </View>
 
-        {/* View Mode Toggle: Day / Week / Compact */}
-        <View style={[styles.toggleGroup, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <TouchableOpacity
-            style={[styles.toggleBtn, viewMode === 'day' && { backgroundColor: colors.accentFill }]}
-            onPress={() => setViewMode('day')}
+            style={[styles.alarmNavBtn, { backgroundColor: colors.accentSoft }]}
+            onPress={() => router.push('/alarms')}
+            accessibilityLabel="Manage class alarms and test ringtones"
           >
-            <Text style={[styles.toggleText, { color: viewMode === 'day' ? colors.onAccent : colors.textSecondary }]}>Day</Text>
+            <BellRing size={16} color={colors.accent} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleBtn, viewMode === 'week' && { backgroundColor: colors.accentFill }]}
-            onPress={() => setViewMode('week')}
-          >
-            <Text style={[styles.toggleText, { color: viewMode === 'week' ? colors.onAccent : colors.textSecondary }]}>Week</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleBtn, viewMode === 'compact' && { backgroundColor: colors.accentFill }]}
-            onPress={() => setViewMode('compact')}
-          >
-            <Text style={[styles.toggleText, { color: viewMode === 'compact' ? colors.onAccent : colors.textSecondary }]}>Compact</Text>
-          </TouchableOpacity>
+
+          {/* View Mode Toggle: Day / Week / Compact */}
+          <View style={[styles.toggleGroup, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
+            <TouchableOpacity
+              style={[styles.toggleBtn, viewMode === 'day' && { backgroundColor: colors.accentFill }]}
+              onPress={() => setViewMode('day')}
+            >
+              <Text style={[styles.toggleText, { color: viewMode === 'day' ? colors.onAccent : colors.textSecondary }]}>Day</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleBtn, viewMode === 'week' && { backgroundColor: colors.accentFill }]}
+              onPress={() => setViewMode('week')}
+            >
+              <Text style={[styles.toggleText, { color: viewMode === 'week' ? colors.onAccent : colors.textSecondary }]}>Week</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleBtn, viewMode === 'compact' && { backgroundColor: colors.accentFill }]}
+              onPress={() => setViewMode('compact')}
+            >
+              <Text style={[styles.toggleText, { color: viewMode === 'compact' ? colors.onAccent : colors.textSecondary }]}>Compact</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -484,12 +506,20 @@ export default function TimetableScreen() {
         {!loading && (
           <GlassCard style={styles.alarmsCard}>
             <View style={styles.alarmsHeader}>
-              <Bell size={16} color={colors.accent} />
-              <Text style={[styles.alarmsTitle, { color: colors.textPrimary }]}>Class alarms</Text>
-              <Text style={[styles.alarmsCount, { color: colors.textSecondary }]}>
-                {selectedDayLabel} - {dayReminders.length}{' '}
-                {dayReminders.length === 1 ? 'alarm' : 'alarms'}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Bell size={16} color={colors.accent} />
+                <Text style={[styles.alarmsTitle, { color: colors.textPrimary }]}>Class alarms</Text>
+                <Text style={[styles.alarmsCount, { color: colors.textSecondary }]}>
+                  {selectedDayLabel} ({dayReminders.length})
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => router.push('/alarms')}
+                style={[styles.manageAlarmsBtn, { backgroundColor: colors.accentSoft }]}
+                accessibilityLabel="Manage all class alarms and test ringtones"
+              >
+                <Text style={[styles.manageAlarmsBtnText, { color: colors.accent }]}>Manage & Test</Text>
+              </TouchableOpacity>
             </View>
 
             {dayReminders.length === 0 ? (
@@ -577,7 +607,7 @@ export default function TimetableScreen() {
                         {slot.subject}
                       </Text>
                       <Text style={[styles.compactRoom, { color: colors.textSecondary }]}>
-                        {slot.room ? `${slot.room} - ` : ''}
+                        {slot.room ? `${formatRoomLocation(slot.room, classSelection?.school)} • ` : ''}
                         {slot.faculty || 'Department Faculty'}
                       </Text>
                     </View>
@@ -629,7 +659,7 @@ export default function TimetableScreen() {
                               <Text style={[styles.compactChangedBadgeText, { color: colors.warning }]}>Changed</Text>
                             </View>
                           ) : (
-                            <Text style={[styles.compactRoom, { color: colors.textSecondary }]}>{slot.room || 'TBD'}</Text>
+                            <Text style={[styles.compactRoom, { color: colors.textSecondary }]}>{formatRoomLocation(slot.room, classSelection?.school)}</Text>
                           )}
                         </View>
                         <Text style={[styles.compactSubject, { color: colors.textPrimary }]} numberOfLines={1}>
@@ -807,7 +837,7 @@ export default function TimetableScreen() {
                           <View style={styles.expandedRow}>
                             <MapPin size={14} color={colors.textSecondary} />
                             <Text style={[styles.expandedText, { color: colors.textPrimary }]}>
-                              {slot.room || 'Room to be announced'}
+                              {formatRoomLocation(slot.room, classSelection?.school)}
                             </Text>
                           </View>
 
@@ -927,10 +957,9 @@ export default function TimetableScreen() {
                   <View style={styles.gridItem}>
                     <MapPin size={16} color={colors.accent} />
                     <View style={{ marginLeft: 10 }}>
-                      <Text style={[styles.gridLabel, { color: colors.textSecondary }]}>Lecture Room</Text>
+                      <Text style={[styles.gridLabel, { color: colors.textSecondary }]}>Room & Building</Text>
                       <Text style={[styles.gridValue, { color: colors.textPrimary }]}>
-                        {selectedSlot.room || 'TBD'}
-                        {classSelection?.school ? ` - ${classSelection.school} Building` : ''}
+                        {formatRoomLocation(selectedSlot.room, classSelection?.school)}
                       </Text>
                     </View>
                   </View>
@@ -1092,6 +1121,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 13,
     marginTop: 2,
+  },
+  alarmNavBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manageAlarmsBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  manageAlarmsBtnText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 11,
   },
   toggleGroup: {
     flexDirection: 'row',

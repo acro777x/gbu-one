@@ -68,8 +68,8 @@ export async function fetchNoticesFromUniversity(): Promise<{
   sources: string[];
   errors: string[];
 }> {
-  await new Promise((resolve) => setTimeout(resolve, 900));
-  const result = await fetchLiveNotices({ timeoutMs: 30000 });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const result = await fetchLiveNotices({ timeoutMs: 4000 });
   if (result.errors.length > 0) {
     // The app shows the sample instead, so say why in the log.
     console.warn(`GBU One: the university pages did not answer - ${result.errors.join('; ')}`);

@@ -17,6 +17,7 @@ import {
   Clock,
   FileText,
   Inbox,
+  Eye,
 } from 'lucide-react-native';
 import { GlassCard, PillButton, Toast, EmptyState, BottomSheet } from '../src/components/ui';
 import { useAuthStore } from '../src/store/useAuthStore';
@@ -25,9 +26,11 @@ import {
   approveAllPending,
   listPendingPapers,
   moderatorStatus,
+  getPendingPaperUrl,
   type ModeratorStatus,
   type PyqPaperRecord,
 } from '../src/features/pyq/pyqRepository';
+import { registerDocument } from '../src/components/pdf/pdfRegistry';
 import { moderationActionLabel, type ModerationAction } from '../src/features/pyq/pyqStorage';
 import { useAppTheme } from '../src/lib/ThemeContext';
 import { spacing } from '../src/lib/theme';
@@ -104,6 +107,33 @@ export default function ModerationQueueScreen() {
         : `${approved} approved, ${failed} could not be published. The first error is above the list.`,
     );
     void load();
+  };
+
+  const getFileExtensionBadge = (filePath: string) => {
+    const clean = filePath.split('?')[0];
+    const ext = clean.split('.').pop()?.toUpperCase() || 'PDF';
+    return ext;
+  };
+
+  const handleInspectPaper = async (paper: PyqPaperRecord) => {
+    try {
+      let targetUrl = paper.fileUrl;
+      if (!targetUrl.startsWith('http')) {
+        const signed = await getPendingPaperUrl(paper.fileUrl);
+        if (signed) targetUrl = signed;
+      }
+      if (targetUrl.startsWith('http')) {
+        const docId = registerDocument(targetUrl, `${paper.subjectCode} - ${paper.subjectName}`);
+        router.push({
+          pathname: '/pdf',
+          params: { id: docId, url: targetUrl, title: `${paper.subjectCode} (${paper.examType})` },
+        });
+      } else {
+        showToast('Storage preview link unavailable for inspection.');
+      }
+    } catch {
+      showToast('Could not open paper preview.');
+    }
   };
 
   return (
@@ -185,58 +215,81 @@ export default function ModerationQueueScreen() {
               />
             </GlassCard>
 
-            {papers.map((paper) => (
-            <GlassCard key={paper.id} style={styles.card}>
-              <View style={styles.cardHeader}>
-                <View
-                  style={[
-                    styles.badge,
-                    { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.08)' },
-                  ]}
-                >
-                  <Text style={[styles.badgeText, { color: colors.accent }]}>
-                    {paper.subjectCode}
+            {papers.map((paper) => {
+              const ext = getFileExtensionBadge(paper.fileUrl);
+              return (
+                <GlassCard key={paper.id} style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View
+                        style={[
+                          styles.badge,
+                          { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.08)' },
+                        ]}
+                      >
+                        <Text style={[styles.badgeText, { color: colors.accent }]}>
+                          {paper.subjectCode}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.badge,
+                          { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(17,24,39,0.06)', paddingHorizontal: 6 },
+                        ]}
+                      >
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter-Bold', color: colors.textSecondary }}>
+                          [{ext}]
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.pendingTag}>
+                      <Clock size={11} color={colors.warning} />
+                      <Text style={[styles.pendingText, { color: colors.warning }]}>Pending</Text>
+                    </View>
+                  </View>
+
+                  <Text style={[styles.subjectName, { color: colors.textPrimary }]}>
+                    {paper.subjectName}
                   </Text>
-                </View>
-                <View style={styles.pendingTag}>
-                  <Clock size={11} color={colors.warning} />
-                  <Text style={[styles.pendingText, { color: colors.warning }]}>Pending</Text>
-                </View>
-              </View>
 
-              <Text style={[styles.subjectName, { color: colors.textPrimary }]}>
-                {paper.subjectName}
-              </Text>
+                  <View style={styles.metaRow}>
+                    <FileText size={12} color={colors.textSecondary} />
+                    <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+                      {paper.year} · {paper.examType} · {paper.school} {paper.programmeCode} Sem{' '}
+                      {paper.semester}
+                    </Text>
+                  </View>
 
-              <View style={styles.metaRow}>
-                <FileText size={12} color={colors.textSecondary} />
-                <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                  {paper.year} · {paper.examType} · {paper.school} {paper.programmeCode} Sem{' '}
-                  {paper.semester}
-                </Text>
-              </View>
-
-              <View style={styles.actionRow}>
-                <PillButton
-                  label={busyId === paper.id ? 'Working…' : moderationActionLabel('approve')}
-                  onPress={() => void handleAction(paper, 'approve')}
-                  loading={busyId === paper.id}
-                  variant="primary"
-                  size="sm"
-                  style={styles.actionButton}
-                  icon={<Check size={14} color={colors.onAccent} style={{ marginRight: 4 }} />}
-                />
-                <PillButton
-                  label={moderationActionLabel('reject')}
-                  onPress={() => void handleAction(paper, 'reject')}
-                  variant="outline"
-                  size="sm"
-                  style={styles.actionButton}
-                  icon={<X size={14} color={colors.textPrimary} style={{ marginRight: 4 }} />}
-                />
-              </View>
-            </GlassCard>
-            ))}
+                  <View style={styles.actionRow}>
+                    <PillButton
+                      label={`Inspect [${ext}]`}
+                      onPress={() => void handleInspectPaper(paper)}
+                      variant="outline"
+                      size="sm"
+                      style={{ ...styles.actionButton, marginRight: 6 }}
+                      icon={<Eye size={13} color={colors.accent} style={{ marginRight: 4 }} />}
+                    />
+                    <PillButton
+                      label={busyId === paper.id ? 'Working…' : moderationActionLabel('approve')}
+                      onPress={() => void handleAction(paper, 'approve')}
+                      loading={busyId === paper.id}
+                      variant="primary"
+                      size="sm"
+                      style={{ ...styles.actionButton, marginRight: 6 }}
+                      icon={<Check size={14} color={colors.onAccent} style={{ marginRight: 4 }} />}
+                    />
+                    <PillButton
+                      label={moderationActionLabel('reject')}
+                      onPress={() => void handleAction(paper, 'reject')}
+                      variant="outline"
+                      size="sm"
+                      style={styles.actionButton}
+                      icon={<X size={14} color={colors.textPrimary} style={{ marginRight: 4 }} />}
+                    />
+                  </View>
+                </GlassCard>
+              );
+            })}
           </>
         )}
       </ScrollView>

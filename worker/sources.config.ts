@@ -17,8 +17,8 @@ export const WORKER_CONFIG = {
   sources: {
     mainNotices: {
       name: 'GBU Main Notices',
-      url: 'https://test.gbu.ac.in/page/notices',
-      fallbackUrl: 'https://www.gbu.ac.in/page/notices',
+      url: 'https://www.gbu.ac.in/page/notices',
+      fallbackUrl: 'https://test.gbu.ac.in/page/notices',
       rateLimitMs: 1000,
       intervalMinutes: 15,
       timeoutMs: 15000,
@@ -57,13 +57,14 @@ export const WORKER_CONFIG = {
     academicCalendar: {
       name: 'Academic Calendar PDF',
       url: 'https://exams.gbu.ac.in/uploads/imp_link/Academic%20Calendar%202026-27.pdf',
-      fallbackUrl: 'https://test.gbu.ac.in/page/academicCalender',
+      fallbackUrl: 'https://www.gbu.ac.in/page/academicCalender',
       intervalMinutes: 720,
       timeoutMs: 30000,
     },
     holidays: {
       name: 'Vacation & Holiday List 2026',
-      url: 'https://test.gbu.ac.in/Content/gbudata/General/List%20of%20Vacation-2026.pdf',
+      url: 'https://www.gbu.ac.in/Content/gbudata/General/List%20of%20Vacation-2026.pdf',
+      fallbackUrl: 'https://test.gbu.ac.in/Content/gbudata/General/List%20of%20Vacation-2026.pdf',
       intervalMinutes: 1440,
       timeoutMs: 30000,
     },

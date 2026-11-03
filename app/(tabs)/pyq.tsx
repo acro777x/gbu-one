@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -116,7 +116,11 @@ export default function PYQScreen() {
 
   const handleSingleDownload = (paper: PYQItem) => {
     setDetailSheetVisible(false);
-    const targetUrl = paper.fileUrl || SAMPLE_PAPER_URL;
+    if (!paper.fileUrl) {
+      showToast(`No question paper uploaded for ${paper.subjectCode} yet. Tap Upload to contribute!`);
+      return;
+    }
+    const targetUrl = paper.fileUrl;
     const title = `${paper.subjectCode} - ${paper.subjectName}`;
     const docId = registerDocument(targetUrl, title);
     router.push({
@@ -264,8 +268,14 @@ export default function PYQScreen() {
   }, [papers, selectedSchool, selectedSemester]);
 
   const displayedSubjectChips = useMemo(() => {
-    return availableSubjects;
-  }, [availableSubjects]);
+    if (availableSubjects.length <= 25) return availableSubjects;
+    const top = availableSubjects.slice(0, 25);
+    if (selectedSubject !== 'All' && !top.some((s) => s.code === selectedSubject)) {
+      const cur = availableSubjects.find((s) => s.code === selectedSubject);
+      if (cur) return [...top, cur];
+    }
+    return top;
+  }, [availableSubjects, selectedSubject]);
 
   useEffect(() => {
     if (selectedSubject !== 'All' && !availableSubjects.some((s) => s.code === selectedSubject)) {
@@ -273,160 +283,212 @@ export default function PYQScreen() {
     }
   }, [availableSubjects, selectedSubject]);
 
-  const filteredPapers = filterPapers(
-    papers,
-    searchQuery,
-    selectedSchool,
-    selectedSemester,
-    examTab,
-    selectedSubject,
-  );
-
-  const trendingPapers = [...papers].sort((a, b) => b.downloads - a.downloads).slice(0, 3);
-
-  const renderPaperItem = ({ item: paper }: { item: PYQItem }) => {
-    const isSelected = selectedIds.includes(paper.id);
-
-    return (
-      <GlassCard
-        key={paper.id}
-        style={[styles.card, isSelected && { backgroundColor: colors.accentSoft }]}
-        accentBorder={isSelected}
-        onPress={() => {
-          setDetailPaper(paper);
-          setDetailSheetVisible(true);
-        }}
-      >
-        <View style={styles.cardHeader}>
-          <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
-            <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <TouchableOpacity
-              onPress={(e) => {
-                e.stopPropagation();
-                handleOpenReport(paper);
-              }}
-              hitSlop={8}
-              style={styles.reportButton}
-              accessibilityRole="button"
-              accessibilityLabel={`Report ${paper.subjectCode}`}
-            >
-              <Flag size={13} color={colors.textTertiary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={(e) => {
-                e.stopPropagation();
-                toggleSelect(paper.id);
-              }}
-              hitSlop={8}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: isSelected }}
-              accessibilityLabel={`Select ${paper.subjectCode}`}
-            >
-              <CheckCircle2 size={16} color={isSelected ? colors.accent : colors.textTertiary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <Text style={[styles.subjectName, { color: colors.textPrimary }]} numberOfLines={2}>
-          {paper.subjectName}
-        </Text>
-
-        <View style={styles.metaRow}>
-          <Text style={[styles.typeText, { color: colors.textSecondary }]}>
-            {paper.year} • {paper.examType}
-          </Text>
-          <Text style={[styles.programmeTag, { color: colors.textTertiary }]}>
-            {paper.programme} ({paper.semester})
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.downloadRow}
-          onPress={(e) => {
-            e.stopPropagation();
-            handleSingleDownload(paper);
-          }}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={`Download ${paper.subjectCode}`}
-        >
-          <Download size={13} color={colors.accent} />
-          <Text style={[styles.downloadCount, { color: colors.accent, fontWeight: '600' }]}>Download ({paper.downloads})</Text>
-        </TouchableOpacity>
-      </GlassCard>
+  const filteredPapers = useMemo(() => {
+    return filterPapers(
+      papers,
+      searchQuery,
+      selectedSchool,
+      selectedSemester,
+      examTab,
+      selectedSubject,
     );
-  };
+  }, [papers, searchQuery, selectedSchool, selectedSemester, examTab, selectedSubject]);
 
-  const renderHeader = () => (
-    <View>
-      {/* Trending Spotlight */}
-      {searchQuery === '' && selectedSchool === 'All' && selectedSemester === 'All' && examTab === 'All' && (
-        <View style={styles.trendingSection}>
-          <View style={styles.sectionHeaderRow}>
-            <Flame size={16} color={colors.accent} />
-            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Trending Papers</Text>
+  const trendingPapers = useMemo(() => {
+    return [...papers].sort((a, b) => b.downloads - a.downloads).slice(0, 4);
+  }, [papers]);
+
+  const renderPaperItem = useCallback(
+    ({ item: paper }: { item: PYQItem }) => {
+      const isSelected = selectedIds.includes(paper.id);
+      const hasAuthenticFile = Boolean(paper.fileUrl);
+
+      return (
+        <GlassCard
+          key={paper.id}
+          style={[styles.card, isSelected && { backgroundColor: colors.accentSoft }]}
+          accentBorder={isSelected}
+          onPress={() => {
+            setDetailPaper(paper);
+            setDetailSheetVisible(true);
+          }}
+        >
+          <View style={styles.cardHeader}>
+            <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
+              <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {hasAuthenticFile ? (
+                <View style={[styles.fileStatusPill, { backgroundColor: colors.successSoft }]}>
+                  <CheckCircle2 size={10} color={colors.success} />
+                  <Text style={[styles.fileStatusText, { color: colors.success }]}>Available</Text>
+                </View>
+              ) : (
+                <View style={[styles.fileStatusPill, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15, 23, 42, 0.06)' }]}>
+                  <Text style={[styles.fileStatusText, { color: colors.textTertiary }]}>No paper</Text>
+                </View>
+              )}
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleOpenReport(paper);
+                }}
+                hitSlop={8}
+                style={styles.reportButton}
+                accessibilityRole="button"
+                accessibilityLabel={`Report ${paper.subjectCode}`}
+              >
+                <Flag size={13} color={colors.textTertiary} />
+              </TouchableOpacity>
+              {hasAuthenticFile && (
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    toggleSelect(paper.id);
+                  }}
+                  hitSlop={8}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: isSelected }}
+                  accessibilityLabel={`Select ${paper.subjectCode}`}
+                >
+                  <CheckCircle2 size={16} color={isSelected ? colors.accent : colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendingScroll}>
-            {trendingPapers.map((paper) => (
-              <GlassCard
-                key={`trend_${paper.id}`}
-                style={styles.trendingCard}
-                onPress={() => toggleSelect(paper.id)}
-              >
-                <View style={styles.cardHeader}>
-                  <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
-                    <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
-                  </View>
-                  <Text style={[styles.trendDownloads, { color: colors.accent }]}>{paper.downloads} dl</Text>
-                </View>
-                <Text style={[styles.trendTitle, { color: colors.textPrimary }]} numberOfLines={2}>{paper.subjectName}</Text>
-                <Text style={[styles.typeText, { color: colors.textSecondary }]}>{paper.year} • {paper.examType}</Text>
-              </GlassCard>
-            ))}
-          </ScrollView>
-        </View>
-      )}
+          <Text style={[styles.subjectName, { color: colors.textPrimary }]} numberOfLines={2}>
+            {paper.subjectName}
+          </Text>
 
-      {/* Papers Grid Header */}
-      <View style={styles.allPapersHeaderRow}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>All Question Papers</Text>
-          {selectedSubject !== 'All' && (
+          <View style={styles.metaRow}>
+            <Text style={[styles.typeText, { color: colors.textSecondary }]}>
+              {paper.year} • {paper.examType}
+            </Text>
+            <Text style={[styles.programmeTag, { color: colors.textTertiary }]}>
+              {paper.programme} ({paper.semester})
+            </Text>
+          </View>
+
+          {hasAuthenticFile ? (
             <TouchableOpacity
-              onPress={() => setSelectedSubject('All')}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                backgroundColor: colors.accentSoft,
-                paddingHorizontal: 8,
-                paddingVertical: 2,
-                borderRadius: 12,
-                gap: 4,
+              style={styles.downloadRow}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleSingleDownload(paper);
               }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Download ${paper.subjectCode}`}
             >
-              <Text style={{ fontSize: 11, color: colors.accent, fontWeight: '600' }}>
-                Subject: {selectedSubject}
+              <Download size={13} color={colors.accent} />
+              <Text style={[styles.downloadCount, { color: colors.accent, fontWeight: '600' }]}>
+                Download ({paper.downloads})
               </Text>
-              <X size={12} color={colors.accent} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.downloadRow}
+              onPress={(e) => {
+                e.stopPropagation();
+                setUploadSubjectCode(paper.subjectCode);
+                setUploadSubjectName(paper.subjectName);
+                setUploadSchool(paper.school || 'SOICT');
+                setUploadProgramme(paper.programme || 'BCS');
+                setUploadSemester(paper.semester.replace(/^Sem\s*/i, '') || 'I');
+                setUploadExamType(paper.examType || 'Mid Sem');
+                setUploadSheetVisible(true);
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Upload ${paper.subjectCode}`}
+            >
+              <UploadCloud size={13} color={colors.accent} />
+              <Text style={[styles.downloadCount, { color: colors.accent, fontWeight: '600' }]}>
+                Upload Paper
+              </Text>
             </TouchableOpacity>
           )}
-        </View>
-        <Text style={[styles.resultsCount, { color: colors.textSecondary }]}>
-          {isFetching ? 'Syncing…' : `${filteredPapers.length} paper${filteredPapers.length === 1 ? '' : 's'}`}
-        </Text>
-      </View>
-    </View>
+        </GlassCard>
+      );
+    },
+    [selectedIds, colors, isDark],
   );
 
-  const renderFooter = () => (
-    <View style={[styles.takedownSection, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
-      <Text style={[styles.takedownText, { color: colors.textSecondary }]}>
-        DMCA & University Copyright Notice: Question papers uploaded are submitted by students for academic non-commercial revision. Gautam Buddha University holds official curriculum copyright.
-      </Text>
-    </View>
+  const renderHeader = useCallback(
+    () => (
+      <View>
+        {/* Trending Spotlight */}
+        {searchQuery === '' && selectedSchool === 'All' && selectedSemester === 'All' && examTab === 'All' && (
+          <View style={styles.trendingSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Flame size={16} color={colors.accent} />
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Trending Papers</Text>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendingScroll}>
+              {trendingPapers.map((paper) => (
+                <GlassCard
+                  key={`trend_${paper.id}`}
+                  style={styles.trendingCard}
+                  onPress={() => toggleSelect(paper.id)}
+                >
+                  <View style={styles.cardHeader}>
+                    <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
+                      <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
+                    </View>
+                    <Text style={[styles.trendDownloads, { color: colors.accent }]}>{paper.downloads} dl</Text>
+                  </View>
+                  <Text style={[styles.trendTitle, { color: colors.textPrimary }]} numberOfLines={2}>{paper.subjectName}</Text>
+                  <Text style={[styles.typeText, { color: colors.textSecondary }]}>{paper.year} • {paper.examType}</Text>
+                </GlassCard>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Papers Grid Header */}
+        <View style={styles.allPapersHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>All Question Papers</Text>
+            {selectedSubject !== 'All' && (
+              <TouchableOpacity
+                onPress={() => setSelectedSubject('All')}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: colors.accentSoft,
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                  borderRadius: 12,
+                  gap: 4,
+                }}
+              >
+                <Text style={{ fontSize: 11, color: colors.accent, fontWeight: '600' }}>
+                  Subject: {selectedSubject}
+                </Text>
+                <X size={12} color={colors.accent} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={[styles.resultsCount, { color: colors.textSecondary }]}>
+            {isFetching ? 'Syncing…' : `${filteredPapers.length} paper${filteredPapers.length === 1 ? '' : 's'}`}
+          </Text>
+        </View>
+      </View>
+    ),
+    [searchQuery, selectedSchool, selectedSemester, examTab, trendingPapers, selectedSubject, colors, isDark, isFetching, filteredPapers.length],
+  );
+
+  const renderFooter = useCallback(
+    () => (
+      <View style={[styles.takedownSection, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
+        <Text style={[styles.takedownText, { color: colors.textSecondary }]}>
+          DMCA & University Copyright Notice: Question papers uploaded are submitted by students for academic non-commercial revision. Gautam Buddha University holds official curriculum copyright.
+        </Text>
+      </View>
+    ),
+    [colors],
   );
 
   return (
@@ -658,7 +720,7 @@ export default function PYQScreen() {
 
           <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>School</Text>
           <View style={styles.formChipRow}>
-            {['SOICT', 'SOM', 'SOBT', 'SOE'].map((s) => (
+            {['SOICT', 'SOE', 'SOBT', 'SOM', 'SOL', 'SOVSAS', 'SOHSS'].map((s) => (
               <Chip
                 key={s}
                 label={s}
@@ -684,7 +746,7 @@ export default function PYQScreen() {
 
           <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Programme & Semester</Text>
           <View style={styles.formChipRow}>
-            {['BCS', 'ECE', 'IT', 'MIT'].map((p) => (
+            {['BCS', 'ECE', 'IT', 'MIT', 'BCA', 'MCA', 'UFS', 'MBA', 'LAW'].map((p) => (
               <Chip
                 key={p}
                 label={p}
@@ -693,7 +755,7 @@ export default function PYQScreen() {
                 style={styles.formChip}
               />
             ))}
-            {['I', 'II', 'III', 'IV'].map((s) => (
+            {['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'].map((s) => (
               <Chip
                 key={`sem_${s}`}
                 label={`Sem ${s}`}
@@ -714,7 +776,7 @@ export default function PYQScreen() {
             style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.borderGlass, color: colors.textPrimary }]}
           />
 
-          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Paper File</Text>
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Paper File (PDF, Images, Word Docs)</Text>
           <TouchableOpacity
             onPress={handlePickFile}
             style={[
@@ -737,7 +799,7 @@ export default function PYQScreen() {
             >
               {pickedFile
                 ? `${pickedFile.name} (${Math.round(pickedFile.size / 1024)} KB)`
-                : 'Choose PDF, JPG or PNG (max 20 MB)'}
+                : 'Choose PDF, JPG, PNG, DOC or DOCX (max 20 MB)'}
             </Text>
           </TouchableOpacity>
 
@@ -802,36 +864,68 @@ export default function PYQScreen() {
               </Text>
             </View>
 
-            <View style={{ marginTop: 16, gap: 10 }}>
-              <PillButton
-                label="Download & View Paper"
-                variant="primary"
-                size="md"
-                icon={<Download size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
-                onPress={() => handleSingleDownload(detailPaper)}
-              />
+            {detailPaper.fileUrl ? (
+              <View style={{ marginTop: 16, gap: 10 }}>
+                <PillButton
+                  label="Download & View Paper"
+                  variant="primary"
+                  size="md"
+                  icon={<Download size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
+                  onPress={() => handleSingleDownload(detailPaper)}
+                />
 
-              <PillButton
-                label={selectedIds.includes(detailPaper.id) ? "Deselect for Batch Download" : "Select for Batch Download"}
-                variant={selectedIds.includes(detailPaper.id) ? "outline" : "primary"}
-                size="md"
-                onPress={() => {
-                  toggleSelect(detailPaper.id);
-                  setDetailSheetVisible(false);
-                  showToast(selectedIds.includes(detailPaper.id) ? "Removed from download queue" : "Added to download queue");
-                }}
-              />
+                <PillButton
+                  label={selectedIds.includes(detailPaper.id) ? "Deselect for Batch Download" : "Select for Batch Download"}
+                  variant={selectedIds.includes(detailPaper.id) ? "outline" : "primary"}
+                  size="md"
+                  onPress={() => {
+                    toggleSelect(detailPaper.id);
+                    setDetailSheetVisible(false);
+                    showToast(selectedIds.includes(detailPaper.id) ? "Removed from download queue" : "Added to download queue");
+                  }}
+                />
 
-              <PillButton
-                label="Report Incorrect Paper"
-                variant="outline"
-                size="md"
-                onPress={() => {
-                  setDetailSheetVisible(false);
-                  handleOpenReport(detailPaper);
-                }}
-              />
-            </View>
+                <PillButton
+                  label="Report Incorrect Paper"
+                  variant="outline"
+                  size="md"
+                  onPress={() => {
+                    setDetailSheetVisible(false);
+                    handleOpenReport(detailPaper);
+                  }}
+                />
+              </View>
+            ) : (
+              <View style={{ marginTop: 14 }}>
+                <View style={[styles.notUploadedNotice, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
+                  <Text style={[styles.notUploadedNoticeTitle, { color: colors.textPrimary }]}>
+                    Paper Not Uploaded Yet
+                  </Text>
+                  <Text style={[styles.notUploadedNoticeDesc, { color: colors.textSecondary }]}>
+                    No student has uploaded the question paper for {detailPaper.subjectCode} yet. If you have this paper, contribute it now to earn contributor credits and help your fellow students!
+                  </Text>
+                </View>
+
+                <PillButton
+                  label="Upload This Paper Now"
+                  variant="primary"
+                  size="md"
+                  icon={<UploadCloud size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
+                  onPress={() => {
+                    setDetailSheetVisible(false);
+                    setUploadSubjectCode(detailPaper.subjectCode);
+                    setUploadSubjectName(detailPaper.subjectName);
+                    setUploadSchool(detailPaper.school || 'SOICT');
+                    setUploadProgramme(detailPaper.programme || 'BCS');
+                    const cleanSem = detailPaper.semester.replace(/^Sem\s*/i, '');
+                    setUploadSemester(cleanSem || 'I');
+                    setUploadExamType(detailPaper.examType || 'Mid Sem');
+                    setUploadSheetVisible(true);
+                  }}
+                  style={{ marginTop: 12 }}
+                />
+              </View>
+            )}
           </View>
         )}
       </BottomSheet>
@@ -1250,5 +1344,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'center',
     marginTop: 10,
+  },
+  fileStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  fileStatusText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 10,
+  },
+  notUploadedNotice: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+  notUploadedNoticeTitle: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  notUploadedNoticeDesc: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

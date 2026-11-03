@@ -296,7 +296,13 @@ export function classifyLiveNotice(title: string): LiveNoticeCategory {
   ) {
     return 'exam';
   }
-  if (lower.includes('hostel') || lower.includes('mess') || lower.includes('room allotment')) {
+  if (
+    lower.includes('hostel') ||
+    lower.includes('mess') ||
+    lower.includes('room allotment') ||
+    lower.includes('ohms') ||
+    lower.includes('warden')
+  ) {
     return 'hostel';
   }
   if (
@@ -774,7 +780,7 @@ export interface FetchLiveNoticesOptions {
 export async function fetchLiveNotices(
   options?: FetchLiveNoticesOptions
 ): Promise<FetchLiveNoticesResult> {
-  const timeoutMs = options?.timeoutMs ?? 15000;
+  const timeoutMs = options?.timeoutMs ?? 4000;
   const fetchImpl = options?.fetchImpl ?? (typeof fetch === 'function' ? fetch : undefined);
   const notices: LiveNotice[] = [];
   const sources: string[] = [];
@@ -784,40 +790,42 @@ export async function fetchLiveNotices(
     return { notices, sources, errors: ['No fetch implementation available'] };
   }
 
-  const mainCandidates = [MAIN_NOTICES_URL, MAIN_NOTICES_MIRROR_URL];
-  let mainLoaded = false;
-  for (const candidate of mainCandidates) {
-    try {
-      const html = await fetchHtml(candidate, timeoutMs, fetchImpl);
-      const parsed = parseMainNoticesHtml(html, candidate);
-      if (parsed.length === 0) {
-        errors.push(`${candidate}: no notices found in page`);
-        continue;
+  const fetchMain = async () => {
+    const mainCandidates = [MAIN_NOTICES_URL, MAIN_NOTICES_MIRROR_URL];
+    for (const candidate of mainCandidates) {
+      try {
+        const html = await fetchHtml(candidate, timeoutMs, fetchImpl);
+        const parsed = parseMainNoticesHtml(html, candidate);
+        if (parsed.length === 0) {
+          errors.push(`${candidate}: no notices found in page`);
+          continue;
+        }
+        notices.push(...parsed);
+        sources.push(candidate);
+        return;
+      } catch (error) {
+        errors.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
       }
-      notices.push(...parsed);
-      sources.push(candidate);
-      mainLoaded = true;
-      break;
-    } catch (error) {
-      errors.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }
-  if (!mainLoaded) {
     errors.push('Main notices unavailable from every known host');
-  }
+  };
 
-  try {
-    const html = await fetchHtml(EXAM_NOTICES_URL, timeoutMs, fetchImpl);
-    const parsed = parseExamNoticesHtml(html, EXAM_NOTICES_URL);
-    if (parsed.length === 0) {
-      errors.push(`${EXAM_NOTICES_URL}: no notices found in page`);
-    } else {
-      notices.push(...parsed);
-      sources.push(EXAM_NOTICES_URL);
+  const fetchExams = async () => {
+    try {
+      const html = await fetchHtml(EXAM_NOTICES_URL, timeoutMs, fetchImpl);
+      const parsed = parseExamNoticesHtml(html, EXAM_NOTICES_URL);
+      if (parsed.length === 0) {
+        errors.push(`${EXAM_NOTICES_URL}: no notices found in page`);
+      } else {
+        notices.push(...parsed);
+        sources.push(EXAM_NOTICES_URL);
+      }
+    } catch (error) {
+      errors.push(`${EXAM_NOTICES_URL}: ${error instanceof Error ? error.message : String(error)}`);
     }
-  } catch (error) {
-    errors.push(`${EXAM_NOTICES_URL}: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  };
+
+  await Promise.allSettled([fetchMain(), fetchExams()]);
 
   const deduped: LiveNotice[] = [];
   const seen = new Set<string>();

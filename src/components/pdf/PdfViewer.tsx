@@ -12,7 +12,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { AlertCircle, ChevronLeft, ChevronRight, X, Download } from 'lucide-react-native';
+import { AlertCircle, ChevronLeft, ChevronRight, X, Download, FileText, ExternalLink } from 'lucide-react-native';
 import Pdf from 'react-native-pdf';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { useAppTheme } from '../../lib/ThemeContext';
@@ -21,10 +21,15 @@ import { PillButton } from '../ui/PillButton';
 import {
   buildCacheFileName,
   describeDownloadProblem,
+  isPdfErrorPage,
+  isProbablyDoc,
   isProbablyImage,
   isProbablyPdf,
   isSafePdfUrl,
+  looksLikeDocUrl,
   looksLikeImageUrl,
+  looksLikePdfUrl,
+  looksLikeSoft404,
   MIN_PDF_BYTES,
   PDF_MIME_TYPE,
 } from './pdfHelpers';
@@ -114,6 +119,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
   const [phase, setPhase] = useState<ViewerPhase>({ status: 'downloading', progress: 0 });
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [isImageDoc, setIsImageDoc] = useState(false);
+  const [isDocDoc, setIsDocDoc] = useState(false);
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -144,6 +150,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
     setHandoffError(null);
     setFileUri(null);
     setIsImageDoc(false);
+    setIsDocDoc(false);
     setPage(1);
     setTotalPages(0);
 
@@ -192,7 +199,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
       }
 
       const isImg = looksLikeImageUrl(url) || isProbablyImage(head);
+      const isDoc = looksLikeDocUrl(url) || isProbablyDoc(head);
       setIsImageDoc(isImg);
+      setIsDocDoc(isDoc);
 
       if (isImg) {
         if (size < 100) {
@@ -203,10 +212,22 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
           });
           return;
         }
+      } else if (isDoc) {
+        if (size < 100) {
+          await removeCachedFile(target);
+          setPhase({
+            status: 'error',
+            message: 'The Word document could not be downloaded or was empty.',
+          });
+          return;
+        }
       } else {
         // A real document starts with the PDF magic and is big enough to be one.
-        // Anything else is one of the portal's error pages.
-        if (!isProbablyPdf(head) || size < MIN_PDF_BYTES) {
+        // Tolerates fs.slice issues if size is valid, URL is PDF, and not an error page.
+        const validPdf =
+          isProbablyPdf(head) ||
+          (size >= MIN_PDF_BYTES && looksLikePdfUrl(url) && !looksLikeSoft404(head) && !isPdfErrorPage(head));
+        if (!validPdf || size < MIN_PDF_BYTES) {
           await removeCachedFile(target);
           setPhase({ status: 'error', message: describeDownloadProblem(status, head, size) });
           return;
@@ -266,11 +287,22 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
     const path = filePathRef.current;
     try {
       if (path && Platform.OS === 'android') {
-        const mime = isImageDoc ? 'image/*' : PDF_MIME_TYPE;
+        let mime = PDF_MIME_TYPE;
+        let prompt = 'Open document with';
+        if (isImageDoc) {
+          mime = 'image/*';
+          prompt = 'Open image with';
+        } else if (isDocDoc) {
+          const isDocx = (path.toLowerCase() || url.toLowerCase()).endsWith('.docx');
+          mime = isDocx
+            ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            : 'application/msword';
+          prompt = 'Open Word document with';
+        }
         const opened = await ReactNativeBlobUtil.android.actionViewIntent(
           path,
           mime,
-          isImageDoc ? 'Open image with' : 'Open document with',
+          prompt,
         );
         if (opened === false || opened === null) {
           throw new Error('No application accepted the document.');
@@ -283,7 +315,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         'No app on this device could open the document. Try the original link on the university website instead.',
       );
     }
-  }, [url, isImageDoc]);
+  }, [url, isImageDoc, isDocDoc]);
 
   /**
    * Saves the document directly to the student's device storage in DownloadDir
@@ -302,9 +334,19 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
           .replace(/[/\\?%*:|"<>]/g, '_')
           .replace(/\s+/g, '_')
           .slice(0, 50);
-        const ext = isImageDoc ? (path.toLowerCase().endsWith('.png') ? '.png' : '.jpg') : '.pdf';
+        let ext = '.pdf';
+        let mime = PDF_MIME_TYPE;
+        if (isImageDoc) {
+          ext = path.toLowerCase().endsWith('.png') ? '.png' : '.jpg';
+          mime = ext === '.png' ? 'image/png' : 'image/jpeg';
+        } else if (isDocDoc) {
+          const isDocx = (path.toLowerCase() || url.toLowerCase()).endsWith('.docx');
+          ext = isDocx ? '.docx' : '.doc';
+          mime = isDocx
+            ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            : 'application/msword';
+        }
         const targetFileName = `${safeName}${ext}`;
-        const mime = isImageDoc ? 'image/jpeg' : PDF_MIME_TYPE;
 
         let saved = false;
         // 1. Android MediaStore copy (Works on modern Android 10+ without storage permission)
@@ -353,7 +395,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
       console.warn('Failed to save to device downloads:', err);
       void openExternally();
     }
-  }, [title, isImageDoc, openExternally]);
+  }, [title, isImageDoc, isDocDoc, url, openExternally]);
 
   const goToPage = useCallback(
     (next: number) => {
@@ -500,6 +542,41 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
                 resizeMode="contain"
               />
             </ScrollView>
+          ) : isDocDoc ? (
+            <View style={styles.docPreviewCard}>
+              <View style={[styles.docIconWrapper, { backgroundColor: colors.accentSoft }]}>
+                <FileText size={48} color={colors.accent} />
+              </View>
+              <Text style={[styles.docPreviewTitle, { color: colors.textPrimary }]}>
+                {title || 'Microsoft Word Document'}
+              </Text>
+              <View style={[styles.docBadge, { borderColor: colors.accent, backgroundColor: colors.accentSoft }]}>
+                <Text style={[styles.docBadgeText, { color: colors.accent }]}>
+                  {url.toLowerCase().indexOf('.docx') !== -1 ? 'DOCX DOCUMENT' : 'DOC DOCUMENT'}
+                </Text>
+              </View>
+              <Text style={[styles.docPreviewDesc, { color: colors.textSecondary }]}>
+                This question paper is in Microsoft Word format. You can open and view it in Microsoft 365, Google Docs, WPS Office, or save it to your device Downloads folder.
+              </Text>
+              <View style={styles.docActionCol}>
+                <PillButton
+                  label="Open in Office / Word"
+                  onPress={() => void openExternally()}
+                  variant="primary"
+                  size="md"
+                  icon={<ExternalLink size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
+                  style={{ width: '100%', marginBottom: 10 }}
+                />
+                <PillButton
+                  label="Save to Downloads"
+                  onPress={() => void saveToDevice()}
+                  variant="outline"
+                  size="md"
+                  icon={<Download size={16} color={colors.textPrimary} style={{ marginRight: 6 }} />}
+                  style={{ width: '100%' }}
+                />
+              </View>
+            </View>
           ) : (
             <Pdf
               source={{ uri: fileUri }}
@@ -526,7 +603,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
       </View>
 
       {/* Page controls */}
-      {phase.status === 'ready' && !isImageDoc ? (
+      {phase.status === 'ready' && !isImageDoc && !isDocDoc ? (
         <View style={[styles.footer, { backgroundColor: colors.surface, borderTopColor: colors.borderGlass }]}>
           <Pressable
             onPress={() => goToPage(page - 1)}
@@ -702,6 +779,50 @@ const styles = StyleSheet.create({
   downloadToastText: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
+  },
+  docPreviewCard: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  docIconWrapper: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
+  docPreviewTitle: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  docBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 3,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    marginBottom: spacing.md,
+  },
+  docBadgeText: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  docPreviewDesc: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    maxWidth: 320,
+    marginBottom: spacing.xl,
+  },
+  docActionCol: {
+    width: '100%',
+    maxWidth: 280,
   },
 });
 

@@ -33,6 +33,7 @@ import {
   type CampusEvent,
 } from '../src/features/events/eventsService';
 import { useEventsQuery } from '../src/features/events/useEventsQuery';
+import { useAppTheme } from '../src/lib/ThemeContext';
 import { theme } from '../src/lib/theme';
 
 const DATE_OPTIONS: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric' };
@@ -99,6 +100,7 @@ function EventImage({
 }
 
 export default function EventsScreen() {
+  const { colors, isDark } = useAppTheme();
   const { data: allEvents, isLoading, isFetching } = useEventsQuery();
 
   const [category, setCategory] = useState<typeof EVENT_CATEGORIES[0]['id']>('all');
@@ -185,22 +187,22 @@ export default function EventsScreen() {
             </View>
           )}
         </View>
-        <Text style={styles.eventTitle}>{event.title}</Text>
+        <Text style={[styles.eventTitle, { color: colors.textPrimary }]}>{event.title}</Text>
         <View style={styles.eventMeta}>
           <View style={styles.metaItem}>
-            <Calendar size={14} color={theme.colors.textSecondary} />
-            <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>
+            <Calendar size={14} color={colors.textSecondary} />
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
               {formatDate(event.startDate)}{event.endDate !== event.startDate ? ` • ${formatDate(event.endDate)}` : ''}
             </Text>
           </View>
           <View style={styles.metaItem}>
-            <Ticket size={14} color={theme.colors.textSecondary} />
-            <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>{event.venue}</Text>
+            <Ticket size={14} color={colors.textSecondary} />
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{event.venue}</Text>
           </View>
           {event.registrationRequired && (
             <View style={[styles.metaItem, { marginLeft: theme.spacing.sm }]}>
-              <Ticket size={14} color={theme.colors.warning} />
-              <Text style={[styles.metaText, { color: theme.colors.warning }]}>Registration required</Text>
+              <Ticket size={14} color={colors.warning} />
+              <Text style={[styles.metaText, { color: colors.warning }]}>Registration required</Text>
             </View>
           )}
         </View>
@@ -217,19 +219,19 @@ export default function EventsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.bg }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}
           accessibilityLabel="Back"
         >
-          <ArrowLeft size={22} color={theme.colors.textPrimary} />
+          <ArrowLeft size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>What's On</Text>
-          <Text style={styles.headerSub}>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>What's On</Text>
+          <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
             Campus events, workshops, fests &amp; more
           </Text>
         </View>
@@ -237,14 +239,14 @@ export default function EventsScreen() {
 
       {/* Search */}
       <View style={styles.searchContainer}>
-        <View style={styles.searchBox}>
-          <Search size={18} color={theme.colors.textSecondary} />
+        <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
+          <Search size={18} color={colors.textSecondary} />
           <TextInput
             placeholder="Search events…"
-            placeholderTextColor={theme.colors.textTertiary}
+            placeholderTextColor={colors.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
             returnKeyType="done"
             onSubmitEditing={() => {}}
           />
@@ -270,7 +272,7 @@ export default function EventsScreen() {
             );
           })}
           <Chip
-            label={freeOnly ? 'Free only âœ“' : 'Free only'}
+            label={freeOnly ? 'Free only ✓' : 'Free only'}
             selected={freeOnly}
             onPress={() => setFreeOnly(!freeOnly)}
           />
@@ -281,12 +283,12 @@ export default function EventsScreen() {
         {isLoading && !allEvents ? (
           <View style={styles.skeletonList}>
             {[1, 2, 3].map((i) => (
-              <View key={i} style={styles.skeletonCard} />
+              <View key={i} style={[styles.skeletonCard, { backgroundColor: colors.surfaceMuted }]} />
             ))}
           </View>
         ) : upcoming.length === 0 ? (
           <EmptyState
-            icon={<Calendar size={40} color={theme.colors.textTertiary} />}
+            icon={<Calendar size={40} color={colors.textTertiary} />}
             title={searchQuery || category !== 'all' || freeOnly ? 'No events match' : 'Nothing on right now'}
             description={
               searchQuery || category !== 'all' || freeOnly
@@ -336,33 +338,33 @@ export default function EventsScreen() {
                 </View>
               )}
             </View>
-            <Text style={styles.detailTitle}>{selectedEvent.title}</Text>
+            <Text style={[styles.detailTitle, { color: colors.textPrimary }]}>{selectedEvent.title}</Text>
             <View style={styles.detailMetaRow}>
               <View style={styles.detailMetaItem}>
-                <Calendar size={16} color={theme.colors.textSecondary} />
+                <Calendar size={16} color={colors.textSecondary} />
                 <View style={styles.detailMetaTextCol}>
-                  <Text style={styles.detailMetaLabel}>Date</Text>
-                  <Text style={styles.detailMetaValue}>
+                  <Text style={[styles.detailMetaLabel, { color: colors.textTertiary }]}>Date</Text>
+                  <Text style={[styles.detailMetaValue, { color: colors.textPrimary }]}>
                     {formatDate(selectedEvent.startDate)}{selectedEvent.endDate !== selectedEvent.startDate ? ` — ${formatDate(selectedEvent.endDate)}` : ''}
                   </Text>
                 </View>
               </View>
               <View style={styles.detailMetaItem}>
-                <Ticket size={16} color={theme.colors.textSecondary} />
+                <Ticket size={16} color={colors.textSecondary} />
                 <View style={styles.detailMetaTextCol}>
-                  <Text style={styles.detailMetaLabel}>Venue</Text>
-                  <Text style={styles.detailMetaValue}>{selectedEvent.venue}</Text>
+                  <Text style={[styles.detailMetaLabel, { color: colors.textTertiary }]}>Venue</Text>
+                  <Text style={[styles.detailMetaValue, { color: colors.textPrimary }]}>{selectedEvent.venue}</Text>
                 </View>
               </View>
               <View style={styles.detailMetaItem}>
-                <View style={styles.metaPill}>
-                  <Text style={styles.metaPillText}>
+                <View style={[styles.metaPill, { backgroundColor: colors.surfaceMuted }]}>
+                  <Text style={[styles.metaPillText, { color: colors.textPrimary }]}>
                     {selectedEvent.isFree ? 'Free' : 'Paid'}
                   </Text>
                 </View>
                 <View style={styles.detailMetaTextCol}>
-                  <Text style={styles.detailMetaLabel}>Cost</Text>
-                  <Text style={styles.detailMetaValue}>{selectedEvent.isFree ? 'No entry fee' : 'Ticket required'}</Text>
+                  <Text style={[styles.detailMetaLabel, { color: colors.textTertiary }]}>Cost</Text>
+                  <Text style={[styles.detailMetaValue, { color: colors.textPrimary }]}>{selectedEvent.isFree ? 'No entry fee' : 'Ticket required'}</Text>
                 </View>
               </View>
             </View>
@@ -378,18 +380,18 @@ export default function EventsScreen() {
               resizeMode="cover"
             />
 
-            <Text style={styles.detailSectionTitle}>About</Text>
-            <Text style={styles.detailDescription}>{selectedEvent.description}</Text>
+            <Text style={[styles.detailSectionTitle, { color: colors.textPrimary }]}>About</Text>
+            <Text style={[styles.detailDescription, { color: colors.textSecondary }]}>{selectedEvent.description}</Text>
 
             {selectedEvent.photos && selectedEvent.photos.length > 0 ? (
               <View style={styles.photosSection}>
                 <View style={styles.photosHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <ImageIcon size={16} color={theme.colors.accent} />
-                    <Text style={styles.detailSectionTitle}>Event Photos & Highlights</Text>
+                    <ImageIcon size={16} color={colors.accent} />
+                    <Text style={[styles.detailSectionTitle, { color: colors.textPrimary }]}>Event Photos & Highlights</Text>
                   </View>
-                  <View style={styles.photosCountBadge}>
-                    <Text style={styles.photosCountText}>{selectedEvent.photos.length} photos</Text>
+                  <View style={[styles.photosCountBadge, { backgroundColor: colors.accentSoft }]}>
+                    <Text style={[styles.photosCountText, { color: colors.accent }]}>{selectedEvent.photos.length} photos</Text>
                   </View>
                 </View>
                 <ScrollView horizontal nestedScrollEnabled={true} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.galleryScroll}>
@@ -421,13 +423,13 @@ export default function EventsScreen() {
                   }}
                   size="sm"
                 />
-                <Text style={styles.hintText}>
+                <Text style={[styles.hintText, { color: colors.textTertiary }]}>
                   Opens the registration page in the in-app viewer.
                 </Text>
               </View>
             )}
-            <View style={styles.detailFooter}>
-              <Text style={styles.detailFooterText}>
+            <View style={[styles.detailFooter, { borderTopColor: colors.divider }]}>
+              <Text style={[styles.detailFooterText, { color: colors.textTertiary }]}>
                 {selectedEvent.source === 'supabase' ? 'From GBU One backend' : 'Campus Event — live synced across university ecosystem.'}
               </Text>
             </View>

@@ -36,12 +36,30 @@ function dayKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-async function readStoredReminders(): Promise<ClassReminder[]> {
+export async function readStoredReminders(): Promise<ClassReminder[]> {
   try {
     const raw = await AsyncStorage.getItem(CLASS_REMINDERS_STORAGE_KEY);
     return parseStoredReminders(raw);
   } catch {
     return [];
+  }
+}
+
+export async function removeStoredReminder(slotId: string): Promise<void> {
+  try {
+    const stored = await readStoredReminders();
+    const next = stored.filter((entry) => entry.slotId !== slotId);
+    await AsyncStorage.setItem(CLASS_REMINDERS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+export async function clearAllStoredReminders(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(CLASS_REMINDERS_STORAGE_KEY);
+  } catch {
+    // ignore
   }
 }
 

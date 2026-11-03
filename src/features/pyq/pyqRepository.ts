@@ -68,7 +68,25 @@ function rowToPaper(row: Record<string, unknown>, storageBaseUrl: string): PyqPa
 /** The Supabase project URL, used to build public download links. */
 function storageBaseUrl(): string {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-  return url.includes('placeholder') ? '' : url.replace(/\/$/, '');
+  if (!url || url.includes('placeholder')) {
+    return 'https://pjnxllnncsoroevgfbmt.supabase.co';
+  }
+  return url.replace(/\/$/, '');
+}
+
+/** Resolves a signed URL for a moderator to inspect a pending paper. */
+export async function getPendingPaperUrl(filePath: string): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  try {
+    const clean = filePath.replace(/^pyq-pending\//, '');
+    // Try both raw clean and nested pyq-pending path
+    const { data, error } = await supabase.storage.from(PYQ_PENDING_BUCKET).createSignedUrl(clean, 3600);
+    if (!error && data?.signedUrl) return data.signedUrl;
+    const { data: nestedData } = await supabase.storage.from(PYQ_PENDING_BUCKET).createSignedUrl(`pyq-pending/${clean}`, 3600);
+    return nestedData?.signedUrl ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

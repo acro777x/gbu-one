@@ -14,14 +14,30 @@ export interface PYQItem {
   examType: 'Mid Sem' | 'End Sem' | 'Back Paper';
   downloads: number;
   status: 'approved' | 'pending';
-  /** Public download link; populated for approved papers and offline sample fallback. */
+  /** Public download link; populated only when an authentic paper file exists. */
   fileUrl?: string;
+  /** Explicit indicator whether an authentic paper file has been uploaded. */
+  hasFile?: boolean;
 }
 
 export const SAMPLE_PAPER_URL =
   'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOBT/UFS/I/BTBFS101/2026-MID-SEM-cc12b1aa-4e88-55aa-82ea-102364169073.pdf';
 
 export const MOCK_PAPERS: PYQItem[] = [
+  {
+    id: 'p_btbfs101',
+    school: 'SOBT',
+    programme: 'UFS',
+    semester: 'Sem I',
+    subjectCode: 'BTBFS101',
+    subjectName: 'Physics for Biotechnology',
+    year: 2026,
+    examType: 'Mid Sem',
+    downloads: 342,
+    status: 'approved',
+    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: true,
+  },
   {
     id: 'p1',
     school: 'SOICT',
@@ -33,7 +49,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'Mid Sem',
     downloads: 320,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p2',
@@ -46,7 +62,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 294,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p3',
@@ -59,7 +75,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 185,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p4',
@@ -72,7 +88,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'Mid Sem',
     downloads: 240,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p5',
@@ -85,7 +101,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'Back Paper',
     downloads: 92,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p6',
@@ -98,7 +114,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 164,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p7',
@@ -111,7 +127,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'Mid Sem',
     downloads: 118,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p8',
@@ -124,7 +140,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 142,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p9',
@@ -137,7 +153,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 278,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p10',
@@ -150,7 +166,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 245,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p11',
@@ -163,7 +179,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 195,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p12',
@@ -176,7 +192,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'Mid Sem',
     downloads: 162,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p13',
@@ -189,7 +205,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 310,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p14',
@@ -202,7 +218,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 225,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p15',
@@ -215,7 +231,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'Mid Sem',
     downloads: 289,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p16',
@@ -228,7 +244,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 140,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p17',
@@ -241,7 +257,8 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 132,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOICT/BIT/III/IT311/2025-END-SEM-580a2501-cdca-5a03-8389-84f10125e747.jpg',
+    hasFile: true,
   },
   {
     id: 'p18',
@@ -254,7 +271,8 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 175,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOICT/BCA/III/BCA315/2026-END-SEM-a8f00521-ccc9-5a6b-849f-bb1afcdb990c.pdf',
+    hasFile: true,
   },
   {
     id: 'p19',
@@ -267,7 +285,8 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 168,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOVSAS/UFT/I/FTMA101/2025-END-SEM-ed86009c-3fac-5321-8f30-e2f27e9881c0.pdf',
+    hasFile: true,
   },
   {
     id: 'p20',
@@ -280,7 +299,8 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 147,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOVSAS/BHP/I/PH111/2025-END-SEM-7d887b12-1b03-5934-8f45-589faece29f1.pdf',
+    hasFile: true,
   },
   {
     id: 'p21',
@@ -293,7 +313,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'Mid Sem',
     downloads: 153,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p22',
@@ -306,7 +326,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 138,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p23',
@@ -319,7 +339,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'Mid Sem',
     downloads: 180,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p24',
@@ -332,7 +352,7 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 165,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
   },
   {
     id: 'p25',
@@ -345,7 +365,105 @@ export const MOCK_PAPERS: PYQItem[] = [
     examType: 'End Sem',
     downloads: 215,
     status: 'approved',
-    fileUrl: SAMPLE_PAPER_URL,
+    hasFile: false,
+  },
+  {
+    id: 'p_bca101',
+    school: 'SOICT',
+    programme: 'BCA',
+    semester: 'Sem I',
+    subjectCode: 'BCA101',
+    subjectName: 'Computer Fundamentals and Programming',
+    year: 2025,
+    examType: 'End Sem',
+    downloads: 280,
+    status: 'approved',
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOICT/BCA/I/BCA101/2025-END-SEM-5aa297ca-116d-5e0f-881d-48e06d50ba32.pdf',
+    hasFile: true,
+  },
+  {
+    id: 'p_cs325',
+    school: 'SOICT',
+    programme: 'ICS',
+    semester: 'Sem III',
+    subjectCode: 'CS325',
+    subjectName: 'Graph Theory',
+    year: 2023,
+    examType: 'Mid Sem',
+    downloads: 195,
+    status: 'approved',
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOICT/ICS/III/CS325/2023-MID-SEM-51a38b9a-c7ee-5c6e-84e2-bd03e318092e.pdf',
+    hasFile: true,
+  },
+  {
+    id: 'p_mcb003',
+    school: 'SOICT',
+    programme: 'MCA',
+    semester: 'Sem I',
+    subjectCode: 'MCB003',
+    subjectName: 'Introduction to Internet Technology',
+    year: 2024,
+    examType: 'Mid Sem',
+    downloads: 165,
+    status: 'approved',
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOICT/MCA/I/MCB003/2024-MID-SEM-dfef1582-d575-5f40-8c82-590542db4203.pdf',
+    hasFile: true,
+  },
+  {
+    id: 'p_mds203',
+    school: 'SOICT',
+    programme: 'MCA',
+    semester: 'Sem II',
+    subjectCode: 'MDS203',
+    subjectName: 'R Programming',
+    year: 2024,
+    examType: 'Mid Sem',
+    downloads: 155,
+    status: 'approved',
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOICT/MCA/II/MDS203/2024-MID-SEM-1ea728fa-b691-5375-87d7-d1f9abd0649d.pdf',
+    hasFile: true,
+  },
+  {
+    id: 'p_it409',
+    school: 'SOICT',
+    programme: 'BIT',
+    semester: 'Sem IV',
+    subjectCode: 'IT409',
+    subjectName: 'Mobile Computing',
+    year: 2025,
+    examType: 'End Sem',
+    downloads: 170,
+    status: 'approved',
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOICT/BIT/IV/IT409/2025-END-SEM-509402c0-59bf-5976-875e-23ff320d8035.jpg',
+    hasFile: true,
+  },
+  {
+    id: 'p_mds101',
+    school: 'SOICT',
+    programme: 'MCA',
+    semester: 'Sem I',
+    subjectCode: 'MDS101',
+    subjectName: 'Data Science',
+    year: 2024,
+    examType: 'Mid Sem',
+    downloads: 210,
+    status: 'approved',
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOICT/MCA/I/MDS101/2024-MID-SEM-387b8ce2-5b6d-519c-8010-3c220e0cad2b.pdf',
+    hasFile: true,
+  },
+  {
+    id: 'p_it301',
+    school: 'SOICT',
+    programme: 'BIT',
+    semester: 'Sem III',
+    subjectCode: 'IT301',
+    subjectName: 'Theory of Automata',
+    year: 2025,
+    examType: 'End Sem',
+    downloads: 220,
+    status: 'approved',
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/pyq/SOICT/BIT/III/IT301/2025-END-SEM-ddfe3d12-9d4d-5ecd-8b3d-2cbe2fe0facf.pdf',
+    hasFile: true,
   },
 ];
 
@@ -394,7 +512,7 @@ export function buildCataloguePapers(): PYQItem[] {
       examType: 'End Sem',
       downloads: (sub.code.length * 13) % 40 + 15,
       status: 'approved',
-      fileUrl: SAMPLE_PAPER_URL,
+      hasFile: false,
     });
   }
 

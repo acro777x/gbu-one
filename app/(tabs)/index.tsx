@@ -48,6 +48,7 @@ import {
 import { useNoticesQuery } from '../../src/features/notices/useNoticesQuery';
 import { useDatesheetQuery } from '../../src/features/exams/useDatesheetQuery';
 import { calculateExamCountdown } from '../../src/features/exams/examService';
+import { formatRoomLocation } from '../../src/features/timetable/roomMapping';
 import { usePyqQuery } from '../../src/features/pyq/usePyqQuery';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
@@ -337,7 +338,7 @@ export default function HomeScreen() {
             subject={nextSlot?.subject}
             room={
               nextSlot?.room
-                ? `${nextSlot.room}${classSelection?.school ? ` • ${classSelection.school}` : ''}`
+                ? formatRoomLocation(nextSlot.room, classSelection?.school)
                 : undefined
             }
             time={nextSlot ? `${nextSlot.start} - ${nextSlot.end}` : undefined}

@@ -15,7 +15,10 @@ export const PYQ_MAX_BYTES = 20 * 1024 * 1024;
 export const PYQ_ALLOWED_MIME_TYPES = [
   'application/pdf',
   'image/jpeg',
+  'image/jpg',
   'image/png',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ] as const;
 
 export type PyqExamType = 'Mid Sem' | 'End Sem' | 'Back Paper';
@@ -70,14 +73,20 @@ export function validateUploadMeta(meta: Partial<PyqUploadMeta>): PyqValidationR
   return { ok: true };
 }
 
-/** Validates the file itself (type and size). */
+/** Validates the file itself (type and size). Supported formats: PDF, JPG, PNG, DOC, DOCX. */
 export function validateUploadFile(file: {
   mimeType?: string | null;
   size?: number | null;
+  name?: string | null;
 }): PyqValidationResult {
   const mime = (file.mimeType || '').toLowerCase();
-  if (!mime) return { ok: false, reason: 'File type could not be read.' };
-  if (!(PYQ_ALLOWED_MIME_TYPES as readonly string[]).includes(mime)) {
+  const name = (file.name || '').toLowerCase();
+  const ext = name.split('.').pop() || '';
+  const validByMime = (PYQ_ALLOWED_MIME_TYPES as readonly string[]).includes(mime);
+  const validByExt = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'].includes(ext);
+
+  if (!mime && !name) return { ok: false, reason: 'File type could not be read.' };
+  if (!validByMime && !validByExt) {
     return { ok: false, reason: 'Only PDF, JPG and PNG papers are accepted.' };
   }
   const size = Number(file.size ?? 0);
@@ -90,19 +99,23 @@ export function validateUploadFile(file: {
   return { ok: true };
 }
 
-/** File extension for a mime type. */
-export function extensionForMimeType(mimeType?: string | null): string {
-  switch ((mimeType || '').toLowerCase()) {
-    case 'application/pdf':
-      return 'pdf';
-    case 'image/png':
-      return 'png';
-    case 'image/jpeg':
-    case 'image/jpg':
-      return 'jpg';
-    default:
-      return 'bin';
+/** File extension for a mime type or filename. */
+export function extensionForMimeType(mimeType?: string | null, fileName?: string | null): string {
+  const m = (mimeType || '').toLowerCase();
+  if (m === 'application/pdf') return 'pdf';
+  if (m === 'image/png') return 'png';
+  if (m === 'image/jpeg' || m === 'image/jpg') return 'jpg';
+  if (m === 'application/msword') return 'doc';
+  if (m === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
+
+  if (fileName) {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (ext === 'pdf' || ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'doc' || ext === 'docx') {
+      return ext === 'jpeg' ? 'jpg' : ext;
+    }
   }
+
+  return 'bin';
 }
 
 /**
@@ -114,6 +127,7 @@ export function buildStoragePath(
   paperId: string,
   bucket: string = PYQ_PENDING_BUCKET,
   mimeType?: string | null,
+  fileName?: string | null,
 ): string {
   const school = slugifySegment(meta.school) || 'SOICT';
   const programme = slugifySegment(meta.programmeCode) || 'GEN';
@@ -122,7 +136,7 @@ export function buildStoragePath(
   const year = Number(meta.year) || new Date().getFullYear();
   const exam = slugifySegment(meta.examType) || 'MID-SEM';
   const id = slugifySegment(paperId) || 'paper';
-  const extension = extensionForMimeType(mimeType);
+  const extension = extensionForMimeType(mimeType, fileName);
   return `${bucket}/${school}/${programme}/${semester}/${subject}/${year}-${exam}-${id}.${extension}`;
 }
 

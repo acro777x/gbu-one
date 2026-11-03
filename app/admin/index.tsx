@@ -41,6 +41,7 @@ import {
   Image as ImageIcon,
   X,
   Upload,
+  Eye,
 } from 'lucide-react-native';
 import { GlassCard, PillButton, Toast } from '../../src/components/ui';
 import {
@@ -54,8 +55,10 @@ import {
 import {
   listPendingPapers,
   applyModeration,
+  getPendingPaperUrl,
   type PyqPaperRecord,
 } from '../../src/features/pyq/pyqRepository';
+import { registerDocument } from '../../src/components/pdf/pdfRegistry';
 import {
   checkForAppUpdate,
   publishAppVersion,
@@ -71,7 +74,7 @@ import { queryClient, EVENTS_QUERY_KEY } from '../../src/lib/queryClient';
 type AdminTab = 'events' | 'pyq' | 'broadcast' | 'version';
 
 export default function AdminScreen() {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -323,12 +326,43 @@ export default function AdminScreen() {
 
   // Handler: Moderate PYQ
   const handleModeratePaper = async (paperId: string, action: 'approve' | 'reject') => {
-    const res = await applyModeration(paperId, action);
+    const res = await applyModerateAction(paperId, action);
     if (res.ok) {
       showToast(`Paper ${action === 'approve' ? 'approved & published' : 'rejected'}.`);
       void loadData();
     } else {
       showToast(res.reason || 'Moderation action failed.');
+    }
+  };
+
+  const applyModerateAction = async (paperId: string, action: 'approve' | 'reject') => {
+    return applyModeration(paperId, action);
+  };
+
+  const getFileExtensionBadge = (filePath: string) => {
+    const clean = filePath.split('?')[0];
+    const ext = clean.split('.').pop()?.toUpperCase() || 'PDF';
+    return ext;
+  };
+
+  const handleInspectPaper = async (paper: PyqPaperRecord) => {
+    try {
+      let targetUrl = paper.fileUrl;
+      if (!targetUrl.startsWith('http')) {
+        const signed = await getPendingPaperUrl(paper.fileUrl);
+        if (signed) targetUrl = signed;
+      }
+      if (targetUrl.startsWith('http')) {
+        const docId = registerDocument(targetUrl, `${paper.subjectCode} - ${paper.subjectName}`);
+        router.push({
+          pathname: '/pdf',
+          params: { id: docId, url: targetUrl, title: `${paper.subjectCode} (${paper.examType})` },
+        });
+      } else {
+        showToast('Storage preview link unavailable for offline mock.');
+      }
+    } catch {
+      showToast('Could not open paper preview.');
     }
   };
 
@@ -750,40 +784,56 @@ export default function AdminScreen() {
                   </Text>
                 </View>
               ) : (
-                pendingPapers.map((paper) => (
-                  <GlassCard key={paper.id} style={styles.paperCard} variant="subtle">
-                    <View style={styles.paperTopRow}>
-                      <View style={[styles.paperBadge, { backgroundColor: colors.accentSoft }]}>
-                        <Text style={[styles.paperBadgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
+                pendingPapers.map((paper) => {
+                  const ext = getFileExtensionBadge(paper.fileUrl);
+                  return (
+                    <GlassCard key={paper.id} style={styles.paperCard} variant="subtle">
+                      <View style={styles.paperTopRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <View style={[styles.paperBadge, { backgroundColor: colors.accentSoft }]}>
+                            <Text style={[styles.paperBadgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
+                          </View>
+                          <View style={[styles.extBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
+                            <Text style={[styles.extBadgeText, { color: colors.textSecondary }]}>[{ext}]</Text>
+                          </View>
+                        </View>
+                        <Text style={[styles.paperExamType, { color: colors.textSecondary }]}>
+                          {paper.examType} {paper.year}
+                        </Text>
                       </View>
-                      <Text style={[styles.paperExamType, { color: colors.textSecondary }]}>
-                        {paper.examType} {paper.year}
+
+                      <Text style={[styles.paperName, { color: colors.textPrimary }]}>{paper.subjectName}</Text>
+                      <Text style={[styles.paperMeta, { color: colors.textSecondary }]}>
+                        School: {paper.school} • Sem {paper.semester} • Prog: {paper.programmeCode}
                       </Text>
-                    </View>
 
-                    <Text style={[styles.paperName, { color: colors.textPrimary }]}>{paper.subjectName}</Text>
-                    <Text style={[styles.paperMeta, { color: colors.textSecondary }]}>
-                      School: {paper.school} • Sem {paper.semester} • Prog: {paper.programmeCode}
-                    </Text>
-
-                    <View style={styles.moderationBtnRow}>
-                      <PillButton
-                        label="Approve & Publish"
-                        variant="primary"
-                        size="sm"
-                        onPress={() => handleModeratePaper(paper.id, 'approve')}
-                        style={{ flex: 1, marginRight: 8 }}
-                      />
-                      <PillButton
-                        label="Reject"
-                        variant="outline"
-                        size="sm"
-                        onPress={() => handleModeratePaper(paper.id, 'reject')}
-                        style={{ flex: 1 }}
-                      />
-                    </View>
-                  </GlassCard>
-                ))
+                      <View style={styles.moderationBtnRow}>
+                        <PillButton
+                          label={`Inspect [${ext}]`}
+                          variant="outline"
+                          size="sm"
+                          icon={<Eye size={13} color={colors.accent} style={{ marginRight: 4 }} />}
+                          onPress={() => handleInspectPaper(paper)}
+                          style={{ flex: 1.1, marginRight: 6 }}
+                        />
+                        <PillButton
+                          label="Approve"
+                          variant="primary"
+                          size="sm"
+                          onPress={() => handleModeratePaper(paper.id, 'approve')}
+                          style={{ flex: 1, marginRight: 6 }}
+                        />
+                        <PillButton
+                          label="Reject"
+                          variant="outline"
+                          size="sm"
+                          onPress={() => handleModeratePaper(paper.id, 'reject')}
+                          style={{ flex: 0.8 }}
+                        />
+                      </View>
+                    </GlassCard>
+                  );
+                })
               )}
             </GlassCard>
           </View>
@@ -1166,6 +1216,16 @@ const styles = StyleSheet.create({
   paperBadgeText: {
     fontSize: 12,
     fontFamily: 'Inter-Bold',
+  },
+  extBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  extBadgeText: {
+    fontSize: 11,
+    fontFamily: 'Inter-Bold',
+    letterSpacing: 0.5,
   },
   paperExamType: {
     fontSize: 12,

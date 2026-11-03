@@ -25,10 +25,10 @@ export const MOCK_CALENDAR_EVENTS: CalendarEvent[] = [
   {
     id: 'cal_2',
     title: 'Mid Semester Examinations (Autumn 2026)',
-    dateFrom: '2026-11-03T00:00:00.000Z',
-    dateTo: '2026-11-10T23:59:59.000Z',
+    dateFrom: '2026-10-07T00:00:00.000Z',
+    dateTo: '2026-10-16T23:59:59.000Z',
     category: 'exam',
-    description: 'Mid term exams for all undergraduate and postgraduate programmes',
+    description: 'Mid term examinations completed (7 Oct - 16 Oct 2026)',
   },
   {
     id: 'cal_3',
