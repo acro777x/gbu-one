@@ -425,6 +425,25 @@ export function filterNotices(notices: NoticeItem[], filters: NoticeFilters = {}
  */
 export const MOCK_NOTICES: NoticeItem[] = [
   {
+    id: 'c3d4e5f6-7890-1234-abcd-ef0123456784',
+    isSample: true,
+    source: 'main',
+    sourceId: 'src_fest_abhivyanjana_2026',
+    title: 'Abhivyanjana 2026 Campus Cultural Fest: Core Student Committee Nominations Open',
+    cleanTitle: 'Abhivyanjana 2026 Cultural Fest: Committee Nominations',
+    postedAt: '2026-10-24T10:00:00.000Z',
+    fileUrl: 'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/campus-events/notices/abhivyanjana_2026_notification.pdf',
+    fileType: 'pdf',
+    rawText:
+      'Gautam Buddha University, Greater Noida\nOffice of the Dean, Student Affairs & Cultural Council\nNotification Ref: GBU/DSA/CC/2026/FEST-042\nDate: 24 October 2026\n\nSubject: Nominations for Student Core Organizing Committee - ABHIVYANJANA 2026\n\nApplications are invited from eligible students of all University Schools (SOICT, SOBT, SOE, SOM, SOL, SOVSAS, SOHSS, SOBSC) for student core organizing committee positions for Abhivyanjana 2026.\n\nEvents included: Dance, Drama, Music, Literary Arts, Fine Arts, Fashion, Photography & Videography.\n\nSubmit nominations via student portal or Cultural Council Office by 15 November 2026.',
+    category: 'event',
+    audience: { all: true },
+    importance: 5,
+    deadlineAt: '2026-11-15T17:00:00.000Z',
+    threadId: 'th_abhivyanjana_2026',
+    threadUpdateCount: 1,
+  },
+  {
     id: 'not_revised_datesheet',
     isSample: true,
     source: 'exams',

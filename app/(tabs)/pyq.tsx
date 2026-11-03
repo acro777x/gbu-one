@@ -328,18 +328,6 @@ export default function PYQScreen() {
                   <Text style={[styles.fileStatusText, { color: colors.textTertiary }]}>No paper</Text>
                 </View>
               )}
-              <TouchableOpacity
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleOpenReport(paper);
-                }}
-                hitSlop={8}
-                style={styles.reportButton}
-                accessibilityRole="button"
-                accessibilityLabel={`Report ${paper.subjectCode}`}
-              >
-                <Flag size={13} color={colors.textTertiary} />
-              </TouchableOpacity>
               {hasAuthenticFile && (
                 <TouchableOpacity
                   onPress={(e) => {
@@ -597,29 +585,6 @@ export default function PYQScreen() {
         </ScrollView>
       </View>
 
-      {/* Subject Filter Row */}
-      {availableSubjects.length > 0 && (
-        <View style={[styles.filterSection, { paddingTop: 0 }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-            <Chip
-              key="all_subjects"
-              label={`All Subjects (${availableSubjects.length})`}
-              selected={selectedSubject === 'All'}
-              onPress={() => setSelectedSubject('All')}
-              style={styles.filterChip}
-            />
-            {displayedSubjectChips.map((sub) => (
-              <Chip
-                key={sub.code}
-                label={`${sub.code} (${sub.count})`}
-                selected={selectedSubject === sub.code}
-                onPress={() => setSelectedSubject(sub.code === selectedSubject ? 'All' : sub.code)}
-                style={styles.filterChip}
-              />
-            ))}
-          </ScrollView>
-        </View>
-      )}
 
       <FlatList
         data={filteredPapers}
@@ -1160,9 +1125,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   badge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: theme.radius.pill,
   },
   badgeText: {
     fontFamily: 'Inter-SemiBold',
@@ -1349,9 +1314,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: theme.radius.pill,
   },
   fileStatusText: {
     fontFamily: 'Inter-Medium',
