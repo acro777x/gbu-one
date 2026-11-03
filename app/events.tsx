@@ -18,6 +18,7 @@ import {
   Pressable,
   BackHandler,
   Dimensions,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -103,7 +104,7 @@ function EventImage({
 
 export default function EventsScreen() {
   const { colors, isDark } = useAppTheme();
-  const { data: allEvents, isLoading, isFetching } = useEventsQuery();
+  const { data: allEvents, isLoading, isFetching, isRefetching, refetch } = useEventsQuery();
 
   const [category, setCategory] = useState<typeof EVENT_CATEGORIES[0]['id']>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -311,6 +312,14 @@ export default function EventsScreen() {
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.flatListContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={Boolean(isRefetching)}
+                onRefresh={() => { void refetch(); }}
+                tintColor={colors.accent}
+                colors={[colors.accent]}
+              />
+            }
             ListEmptyComponent={undefined}
           />
         )}

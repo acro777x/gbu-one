@@ -7,13 +7,46 @@ import {
   FlatList,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from '@react-navigation/native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { PillButton } from './PillButton';
-import { LetterRise } from '../motion/LetterRise';
 import { useAppTheme } from '../../lib/ThemeContext';
 import { theme } from '../../lib/theme';
+
+const HeroTitleRise: React.FC<{ text: string; style: any; isCurrent: boolean }> = React.memo(
+  ({ text, style, isCurrent }) => {
+    const opacity = useSharedValue(isCurrent ? 0.3 : 1);
+    const translateY = useSharedValue(isCurrent ? 6 : 0);
+
+    useEffect(() => {
+      if (isCurrent) {
+        opacity.value = 0.3;
+        translateY.value = 6;
+        opacity.value = withTiming(1, { duration: 240, easing: Easing.out(Easing.quad) });
+        translateY.value = withTiming(0, { duration: 240, easing: Easing.out(Easing.quad) });
+      }
+    }, [isCurrent, text]);
+
+    const animStyle = useAnimatedStyle(() => ({
+      opacity: opacity.value,
+      transform: [{ translateY: translateY.value }],
+    }));
+
+    return (
+      <Animated.Text style={[style, animStyle]} numberOfLines={2}>
+        {text}
+      </Animated.Text>
+    );
+  }
+);
 
 export interface HeroSlideItem {
   id: string;
@@ -72,6 +105,9 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
+        initialNumToRender={2}
+        windowSize={3}
+        removeClippedSubviews={Platform.OS === 'android'}
         onTouchStart={() => {
           isInteracting.current = true;
         }}
@@ -108,18 +144,11 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
 
                 {/* Main Headline */}
                 <View style={styles.titleContainer}>
-                  {isCurrent ? (
-                    <LetterRise
-                      key={`hero-title-${item.id}-${activeIndex}`}
-                      text={item.title}
-                      style={[styles.heroTitle, { color: colors.textPrimary }]}
-                      stagger={16}
-                    />
-                  ) : (
-                    <Text style={[styles.heroTitle, { color: colors.textPrimary }]} numberOfLines={2}>
-                      {item.title}
-                    </Text>
-                  )}
+                  <HeroTitleRise
+                    text={item.title}
+                    style={[styles.heroTitle, { color: colors.textPrimary }]}
+                    isCurrent={isCurrent}
+                  />
                 </View>
 
                 {/* Action button */}

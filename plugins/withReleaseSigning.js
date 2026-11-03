@@ -213,6 +213,45 @@ function withAndroidSigningFiles(config) {
         }
       }
 
+      // 5. MainActivity.kt: unlock 120Hz high refresh rate and hardware acceleration
+      const mainActivityPath = path.join(
+        androidRoot,
+        'app',
+        'src',
+        'main',
+        'java',
+        'in',
+        'gbu',
+        'one',
+        'MainActivity.kt',
+      );
+      if (fs.existsSync(mainActivityPath)) {
+        let code = fs.readFileSync(mainActivityPath, 'utf8');
+        if (!code.includes('enableHighRefreshRate')) {
+          const target = 'super.onCreate(null)';
+          const replacement = `super.onCreate(null)\n    enableHighRefreshRate()\n  }\n\n  override fun onWindowFocusChanged(hasFocus: Boolean) {\n    super.onWindowFocusChanged(hasFocus)\n    if (hasFocus) {\n      enableHighRefreshRate()\n    }\n  }\n\n  private fun enableHighRefreshRate() {\n    try {\n      window.setFlags(\n        android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,\n        android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED\n      )\n      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {\n        val currentDisplay = display\n        val modes = currentDisplay?.supportedModes\n        val highestMode = modes?.maxByOrNull { it.refreshRate }\n        if (highestMode != null && highestMode.refreshRate > 60f) {\n          window.attributes.preferredDisplayModeId = highestMode.modeId\n        }\n        window.attributes.preferredRefreshRate = 120f\n      } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {\n        @Suppress("DEPRECATION")\n        val wm = getSystemService(android.content.Context.WINDOW_SERVICE) as? android.view.WindowManager\n        @Suppress("DEPRECATION")\n        val display = wm?.defaultDisplay\n        @Suppress("DEPRECATION")\n        val modes = display?.supportedModes\n        val highestMode = modes?.maxByOrNull { it.refreshRate }\n        if (highestMode != null && highestMode.refreshRate > 60f) {\n          val params = window.attributes\n          params.preferredDisplayModeId = highestMode.modeId\n          window.attributes = params\n        }\n      }\n    } catch (_: Exception) {}\n  `;
+          code = code.replace(target, replacement);
+          fs.writeFileSync(mainActivityPath, code, 'utf8');
+        }
+      }
+
+      // 6. AndroidManifest.xml: ensure hardwareAccelerated and largeHeap
+      const manifestPath = path.join(androidRoot, 'app', 'src', 'main', 'AndroidManifest.xml');
+      if (fs.existsSync(manifestPath)) {
+        let manifest = fs.readFileSync(manifestPath, 'utf8');
+        if (!manifest.includes('android:largeHeap="true"')) {
+          manifest = manifest.replace(
+            '<application ',
+            '<application android:hardwareAccelerated="true" android:largeHeap="true" ',
+          );
+          manifest = manifest.replace(
+            '<activity ',
+            '<activity android:hardwareAccelerated="true" ',
+          );
+          fs.writeFileSync(manifestPath, manifest, 'utf8');
+        }
+      }
+
       return cfg;
     },
   ]);

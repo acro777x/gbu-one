@@ -15,6 +15,7 @@ import {
   type CampusEvent,
   createCampusEvent,
   listCampusEvents,
+  deleteCampusEvent,
 } from '../src/features/events/eventsService';
 
 describe('Campus Events Service & Deduplication', () => {
@@ -189,5 +190,42 @@ describe('Campus Events Service & Deduplication', () => {
     expect(created?.photos).toHaveLength(3);
     expect(created?.photos?.[0]).toBe(photos[0]);
     expect(created?.imageUrl).toBe(photos[0]);
+  });
+  it('deletes custom events and excludes them permanently via tombstones', async () => {
+    const createRes = await createCampusEvent({
+      title: 'Robotics Workshop 2026',
+      description: 'Hands-on robotics.',
+      category: 'workshop',
+      startDate: '2026-11-20T10:00:00.000Z',
+      endDate: '2026-11-20T16:00:00.000Z',
+      venue: 'Robotics Lab',
+      isFree: true,
+      registrationRequired: false,
+      audience: ['all'],
+    });
+
+    expect(createRes.ok).toBe(true);
+    const eventId = createRes.id!;
+
+    let list = await listCampusEvents();
+    expect(list.some((e) => e.id === eventId)).toBe(true);
+
+    const delRes = await deleteCampusEvent(eventId);
+    expect(delRes.ok).toBe(true);
+
+    list = await listCampusEvents();
+    expect(list.some((e) => e.id === eventId)).toBe(false);
+  });
+
+  it('permanently deletes and excludes seed events when deleted by admin', async () => {
+    let list = await listCampusEvents();
+    const seedEvent = list.find((e) => e.id === 'seed_1');
+    expect(seedEvent).toBeDefined();
+
+    const delRes = await deleteCampusEvent('seed_1');
+    expect(delRes.ok).toBe(true);
+
+    list = await listCampusEvents();
+    expect(list.some((e) => e.id === 'seed_1')).toBe(false);
   });
 });

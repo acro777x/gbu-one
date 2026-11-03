@@ -11,6 +11,7 @@
  *  3) Bundled seed (`MOCK_EVENTS`), clearly labelled as samples with rich media.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { deleteCachedEvent, writeCachedEvents } from '../../lib/db';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 export type EventCategory =
@@ -229,7 +230,13 @@ export const MOCK_EVENTS: CampusEvent[] = [
 ];
 
 const CUSTOM_EVENTS_KEY = '@gbu_one_custom_events';
+const DELETED_EVENTS_KEY = '@gbu_one_deleted_events';
 const CLOUD_STORAGE_EVENTS_PATH = 'campus-events/events.json';
+
+export interface CloudEventsPayload {
+  events: CampusEvent[];
+  deletedIds: string[];
+}
 
 function getSupabaseBaseUrl(): string {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
@@ -248,12 +255,29 @@ function getAdminStorageKey(): string {
   );
 }
 
+export async function getLocalDeletedEventIds(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(DELETED_EVENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function setLocalDeletedEventIds(ids: string[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(DELETED_EVENTS_KEY, JSON.stringify(ids));
+  } catch {
+    // ignore
+  }
+}
+
 /**
- * Reads events published by admin stored in Supabase Storage CDN.
+ * Reads events payload (custom events + deleted tombstones) from Supabase Storage CDN.
  */
-async function fetchCloudCustomEvents(): Promise<CampusEvent[]> {
+export async function fetchCloudEventsPayload(): Promise<CloudEventsPayload> {
   const baseUrl = getSupabaseBaseUrl();
-  if (!baseUrl) return [];
+  if (!baseUrl) return { events: [], deletedIds: [] };
 
   // 1. Direct public CDN fetch with timestamp cache-buster and no-cache header
   try {
@@ -264,7 +288,12 @@ async function fetchCloudCustomEvents(): Promise<CampusEvent[]> {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
-        return data as CampusEvent[];
+        return { events: data as CampusEvent[], deletedIds: [] };
+      }
+      if (data && typeof data === 'object') {
+        const events = Array.isArray(data.events) ? (data.events as CampusEvent[]) : [];
+        const deletedIds = Array.isArray(data.deletedIds) ? (data.deletedIds as string[]) : [];
+        return { events, deletedIds };
       }
     }
   } catch {
@@ -280,7 +309,12 @@ async function fetchCloudCustomEvents(): Promise<CampusEvent[]> {
           const text = await (data as unknown as { text: () => Promise<string> }).text();
           const parsed = JSON.parse(text);
           if (Array.isArray(parsed)) {
-            return parsed as CampusEvent[];
+            return { events: parsed as CampusEvent[], deletedIds: [] };
+          }
+          if (parsed && typeof parsed === 'object') {
+            const events = Array.isArray(parsed.events) ? (parsed.events as CampusEvent[]) : [];
+            const deletedIds = Array.isArray(parsed.deletedIds) ? (parsed.deletedIds as string[]) : [];
+            return { events, deletedIds };
           }
         }
       }
@@ -289,19 +323,36 @@ async function fetchCloudCustomEvents(): Promise<CampusEvent[]> {
     }
   }
 
-  return [];
+  return { events: [], deletedIds: [] };
 }
 
 /**
- * Saves events to Supabase Storage CDN bucket so all public apps get live sync.
+ * Saves events payload (events and deleted tombstones) to Supabase Storage CDN bucket.
  */
-async function syncCloudCustomEvents(events: CampusEvent[]): Promise<boolean> {
-  const payload = JSON.stringify(events);
+export async function syncCloudEventsPayload(payloadData: CloudEventsPayload): Promise<boolean> {
+  const payload = JSON.stringify(payloadData);
   const baseUrl = getSupabaseBaseUrl();
   const adminKey = getAdminStorageKey();
 
-  // 1. Direct REST upload using admin credentials (bypass client session hurdles)
+  // 1. REST PUT upload (primary for upsert in Supabase Storage)
   if (baseUrl && adminKey) {
+    try {
+      const res = await fetch(`${baseUrl}/storage/v1/object/${CLOUD_STORAGE_EVENTS_PATH}`, {
+        method: 'PUT',
+        headers: {
+          apikey: adminKey,
+          Authorization: `Bearer ${adminKey}`,
+          'Content-Type': 'application/json',
+          'x-upsert': 'true',
+        },
+        body: payload,
+      });
+      if (res.ok) return true;
+    } catch {
+      // Fall through
+    }
+
+    // 2. REST POST upload fallback
     try {
       const res = await fetch(`${baseUrl}/storage/v1/object/${CLOUD_STORAGE_EVENTS_PATH}`, {
         method: 'POST',
@@ -319,7 +370,7 @@ async function syncCloudCustomEvents(events: CampusEvent[]): Promise<boolean> {
     }
   }
 
-  // 2. Official Supabase Storage SDK
+  // 3. Official Supabase Storage SDK
   if (isSupabaseConfigured) {
     try {
       const { error } = await supabase.storage
@@ -342,71 +393,28 @@ async function syncCloudCustomEvents(events: CampusEvent[]): Promise<boolean> {
  * under `campus-events/photos/...` and returns the permanent public HTTPS URL.
  * If the URI is already an HTTP/HTTPS URL, returns it directly.
  */
-export async function uploadEventPhoto(localUri: string, mimeType = 'image/jpeg'): Promise<string> {
-  if (!localUri) return '';
+export async function uploadEventPhoto(
+  localUri: string,
+  mimeType = 'image/jpeg',
+  category: EventCategory = 'fest',
+): Promise<string> {
+  if (!localUri) return CATEGORY_DEFAULT_IMAGES[category] || CATEGORY_DEFAULT_IMAGES.other;
   if (localUri.startsWith('http://') || localUri.startsWith('https://')) {
     return localUri;
   }
 
+  const fallback = CATEGORY_DEFAULT_IMAGES[category] || CATEGORY_DEFAULT_IMAGES.other;
   const baseUrl = getSupabaseBaseUrl();
   const apiKey = getAdminStorageKey();
   if (!baseUrl || !apiKey) {
-    return localUri;
+    return fallback;
   }
 
   const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg';
   const fileName = `photo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
   const storagePath = `photos/${fileName}`;
 
-  // 1. Native Stream/Wrap Upload via ReactNativeBlobUtil (Handles file:// AND content:// URIs on Android)
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const ReactNativeBlobUtil = require('react-native-blob-util').default;
-    if (ReactNativeBlobUtil?.wrap && ReactNativeBlobUtil?.fetch) {
-      const uploadUrl = `${baseUrl}/storage/v1/object/campus-events/${storagePath}`;
-      const res = await ReactNativeBlobUtil.fetch(
-        'POST',
-        uploadUrl,
-        {
-          apikey: apiKey,
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': mimeType,
-          'x-upsert': 'true',
-        },
-        ReactNativeBlobUtil.wrap(localUri),
-      );
-      const respInfo = res.info();
-      if (respInfo && respInfo.status >= 200 && respInfo.status < 300) {
-        return `${baseUrl}/storage/v1/object/public/campus-events/${storagePath}`;
-      }
-    }
-  } catch (err) {
-    console.warn('ReactNativeBlobUtil wrapped upload failed, falling back:', err);
-  }
-
-  // 2. Official Supabase Client Upload
-  if (isSupabaseConfigured) {
-    try {
-      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-      const filePayload: any = {
-        uri: localUri,
-        name: fileName,
-        type: mimeType,
-      };
-      const { error } = await supabase.storage.from('campus-events').upload(storagePath, filePayload, {
-        upsert: true,
-        contentType: mimeType,
-      });
-
-      if (!error) {
-        return `${baseUrl}/storage/v1/object/public/campus-events/${storagePath}`;
-      }
-    } catch {
-      // Fallback to fetch
-    }
-  }
-
-  // 2. Direct REST Multipart FormData Upload
+  // 1. Direct REST Multipart FormData Upload (RN Native FormData handles file:// and content://)
   try {
     const formData = new FormData();
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -431,12 +439,60 @@ export async function uploadEventPhoto(localUri: string, mimeType = 'image/jpeg'
       return `${baseUrl}/storage/v1/object/public/campus-events/${storagePath}`;
     }
   } catch (err) {
-    console.warn('Failed to upload photo to storage CDN:', err);
+    console.warn('FormData photo upload failed, attempting native wrap:', err);
   }
 
-  return localUri;
-}
+  // 2. Native Stream/Wrap Upload via ReactNativeBlobUtil
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ReactNativeBlobUtil = require('react-native-blob-util').default;
+    if (ReactNativeBlobUtil?.wrap && ReactNativeBlobUtil?.fetch) {
+      const cleanPath = localUri.replace(/^file:\/\//, '');
+      const uploadUrl = `${baseUrl}/storage/v1/object/campus-events/${storagePath}`;
+      const res = await ReactNativeBlobUtil.fetch(
+        'POST',
+        uploadUrl,
+        {
+          apikey: apiKey,
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': mimeType,
+          'x-upsert': 'true',
+        },
+        ReactNativeBlobUtil.wrap(cleanPath),
+      );
+      const respInfo = res.info();
+      if (respInfo && respInfo.status >= 200 && respInfo.status < 300) {
+        return `${baseUrl}/storage/v1/object/public/campus-events/${storagePath}`;
+      }
+    }
+  } catch (err) {
+    console.warn('ReactNativeBlobUtil wrapped upload failed, falling back:', err);
+  }
 
+  // 3. Official Supabase Client Upload
+  if (isSupabaseConfigured) {
+    try {
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const filePayload: any = {
+        uri: localUri,
+        name: fileName,
+        type: mimeType,
+      };
+      const { error } = await supabase.storage.from('campus-events').upload(storagePath, filePayload, {
+        upsert: true,
+        contentType: mimeType,
+      });
+
+      if (!error) {
+        return `${baseUrl}/storage/v1/object/public/campus-events/${storagePath}`;
+      }
+    } catch {
+      // Fallback to default
+    }
+  }
+
+  return fallback;
+}
 
 export async function getLocalCustomEvents(): Promise<CampusEvent[]> {
   try {
@@ -448,75 +504,100 @@ export async function getLocalCustomEvents(): Promise<CampusEvent[]> {
 }
 
 /**
- * Reads campus events with multi-tier failover:
+ * Reads campus events with multi-tier failover and tombstone filtering:
  * 1. Cloud custom events published by Admin (via Storage CDN & Postgres)
  * 2. University Calendar Events
  * 3. Seed Events with full media
- * 4. Local AsyncStorage cache
+ * 4. Local SQLite / AsyncStorage cache
  */
 export async function listCampusEvents(limit = 300): Promise<CampusEvent[]> {
-  const localCache = await getLocalCustomEvents();
-
-  if (!isSupabaseConfigured) {
-    const combined = [...localCache, ...MOCK_EVENTS.map((e) => ({ ...e, source: 'seed' }))];
-    return deduplicateEvents(combined);
+  // 1. Fetch cloud payload (both events and deleted tombstones)
+  let cloudPayload: CloudEventsPayload = { events: [], deletedIds: [] };
+  let cloudFetchSuccess = false;
+  if (isSupabaseConfigured) {
+    try {
+      cloudPayload = await fetchCloudEventsPayload();
+      cloudFetchSuccess = true;
+    } catch {
+      cloudPayload = { events: [], deletedIds: [] };
+    }
   }
 
-  let cloudCustom: CampusEvent[] = [];
-  try {
-    cloudCustom = await fetchCloudCustomEvents();
-  } catch {
-    cloudCustom = [];
+  // 2. Fetch local deleted IDs and combine tombstones
+  const localDeleted = await getLocalDeletedEventIds();
+  const allDeletedIds = new Set<string>([...cloudPayload.deletedIds, ...localDeleted]);
+
+  // Sync tombstones locally if cloud had new ones
+  if (cloudPayload.deletedIds.length > 0) {
+    const mergedDeleted = Array.from(allDeletedIds);
+    void setLocalDeletedEventIds(mergedDeleted);
+  }
+
+  // 3. Authoritative custom events:
+  // If cloud fetch succeeded, cloud events are authoritative.
+  // Otherwise, fallback to local storage cache.
+  let customEvents: CampusEvent[] = [];
+  if (cloudFetchSuccess) {
+    customEvents = cloudPayload.events;
+    void AsyncStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(cloudPayload.events));
+  } else {
+    customEvents = await getLocalCustomEvents();
   }
 
   // Also query Postgres campus_events if table exists
   let pgEvents: CampusEvent[] = [];
-  try {
-    const { data, error } = await supabase
-      .from('campus_events')
-      .select('*')
-      .order('start_date', { ascending: true })
-      .limit(limit);
-    if (!error && data && data.length > 0) {
-      pgEvents = (data as Record<string, unknown>[]).map((row) => rowToEvent(row));
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('campus_events')
+        .select('*')
+        .order('start_date', { ascending: true })
+        .limit(limit);
+      if (!error && data && data.length > 0) {
+        pgEvents = (data as Record<string, unknown>[]).map((row) => rowToEvent(row));
+      }
+    } catch {
+      // Postgres table may not exist yet, storage CDN handles it
     }
-  } catch {
-    // Postgres table may not exist yet, storage CDN handles it
   }
 
   // Live University Calendar fallback
   let liveCalendar: CampusEvent[] = [];
-  try {
-    const { data: calData, error: calError } = await supabase
-      .from('calendar_events')
-      .select('*')
-      .order('date_from', { ascending: true })
-      .limit(limit);
-    if (!calError && calData && calData.length > 0) {
-      liveCalendar = (calData as Record<string, unknown>[]).map((row) => calendarRowToCampusEvent(row));
+  if (isSupabaseConfigured) {
+    try {
+      const { data: calData, error: calError } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .order('date_from', { ascending: true })
+        .limit(limit);
+      if (!calError && calData && calData.length > 0) {
+        liveCalendar = (calData as Record<string, unknown>[]).map((row) => calendarRowToCampusEvent(row));
+      }
+    } catch {
+      // ignore
     }
+  }
+
+  // Combine all sources
+  const all = [
+    ...customEvents,
+    ...pgEvents,
+    ...liveCalendar,
+    ...MOCK_EVENTS.map((e) => ({ ...e, source: 'seed' as const })),
+  ];
+
+  // Apply Tombstones: ANY deleted event ID is strictly filtered out!
+  const activeEvents = all.filter((e) => e && e.id && !allDeletedIds.has(e.id));
+  const deduped = deduplicateEvents(activeEvents);
+
+  // Sync active events to SQLite cache
+  try {
+    writeCachedEvents(deduped);
   } catch {
     // ignore
   }
 
-  // Combine: Cloud Custom Events + Postgres Events + Local Events + Live Calendar + MOCK_EVENTS
-  const all = [
-    ...cloudCustom,
-    ...pgEvents,
-    ...localCache,
-    ...liveCalendar,
-    ...MOCK_EVENTS.map((e) => ({ ...e, source: 'seed' })),
-  ];
-
-  const deduped = deduplicateEvents(all);
-
-  // Update local storage cache in background
-  if (cloudCustom.length > 0 || pgEvents.length > 0) {
-    const customOnly = deduped.filter((e) => !e.isSample && e.source !== 'academic-calendar');
-    void AsyncStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(customOnly));
-  }
-
-  return deduped;
+  return deduped.slice(0, limit);
 }
 
 export function deduplicateEvents(events: CampusEvent[]): CampusEvent[] {
@@ -655,25 +736,28 @@ export async function createCampusEvent(
 
   let finalImageUrl = eventData.imageUrl || '';
   if (finalImageUrl.startsWith('file://') || finalImageUrl.startsWith('content://')) {
-    finalImageUrl = await uploadEventPhoto(finalImageUrl);
+    finalImageUrl = await uploadEventPhoto(finalImageUrl, 'image/jpeg', eventData.category);
   }
 
   const finalPhotos: string[] = [];
   if (eventData.photos && eventData.photos.length > 0) {
     for (const p of eventData.photos) {
       if (p.startsWith('file://') || p.startsWith('content://')) {
-        finalPhotos.push(await uploadEventPhoto(p));
+        finalPhotos.push(await uploadEventPhoto(p, 'image/jpeg', eventData.category));
       } else if (p) {
         finalPhotos.push(p);
       }
     }
   }
 
+  const heroImage = finalImageUrl || (finalPhotos.length > 0 ? finalPhotos[0] : defaultImg);
+  const photos = finalPhotos.length > 0 ? finalPhotos : [heroImage];
+
   const newEvent: CampusEvent = {
     ...eventData,
     id: newId,
-    imageUrl: finalImageUrl || (finalPhotos.length > 0 ? finalPhotos[0] : defaultImg),
-    photos: finalPhotos.length > 0 ? finalPhotos : [defaultImg],
+    imageUrl: heroImage,
+    photos,
     source: isSupabaseConfigured ? 'supabase' : 'cache',
     isSample: false,
   };
@@ -681,11 +765,12 @@ export async function createCampusEvent(
   // 1. Sync to Supabase Storage CDN (instant distribution to public APK)
   if (isSupabaseConfigured) {
     try {
-      const cloudEvents = await fetchCloudCustomEvents();
-      const updatedCloud = [newEvent, ...cloudEvents.filter((e) => e.id !== newEvent.id)];
-      await syncCloudCustomEvents(updatedCloud);
-    } catch {
-      // ignore
+      const payload = await fetchCloudEventsPayload();
+      const updatedEvents = [newEvent, ...payload.events.filter((e) => e.id !== newId)];
+      const updatedDeleted = payload.deletedIds.filter((dId) => dId !== newId);
+      await syncCloudEventsPayload({ events: updatedEvents, deletedIds: updatedDeleted });
+    } catch (err) {
+      console.warn('Could not sync event to cloud storage:', err);
     }
 
     // 2. Also attempt Postgres insert if table exists
@@ -710,11 +795,22 @@ export async function createCampusEvent(
     }
   }
 
-  // 3. Save locally in AsyncStorage
+  // 3. Remove newId from local deleted set (in case it was previously deleted)
+  try {
+    const localDeleted = await getLocalDeletedEventIds();
+    if (localDeleted.includes(newId)) {
+      await setLocalDeletedEventIds(localDeleted.filter((d) => d !== newId));
+    }
+  } catch {
+    // ignore
+  }
+
+  // 4. Save locally in AsyncStorage and SQLite
   try {
     const existing = await getLocalCustomEvents();
     const updated = [newEvent, ...existing.filter((e) => e.id !== newEvent.id)];
     await AsyncStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(updated));
+    writeCachedEvents([newEvent]);
     return { ok: true, id: newEvent.id };
   } catch (err) {
     return { ok: false, error: String(err) };
@@ -722,16 +818,47 @@ export async function createCampusEvent(
 }
 
 /**
- * Deletes a campus event from cloud and local cache.
+ * Deletes a campus event from cloud and local cache using tombstones so
+ * it is permanently removed across all student and admin devices.
  */
 export async function deleteCampusEvent(id: string): Promise<{ ok: boolean; error?: string }> {
+  if (!id) return { ok: false, error: 'Event ID required' };
+
+  // 1. Record in local tombstones immediately
+  try {
+    const localDeleted = await getLocalDeletedEventIds();
+    if (!localDeleted.includes(id)) {
+      await setLocalDeletedEventIds([...localDeleted, id]);
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2. Remove from local AsyncStorage custom events
+  try {
+    const existing = await getLocalCustomEvents();
+    const filtered = existing.filter((e) => e.id !== id);
+    await AsyncStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(filtered));
+  } catch {
+    // ignore
+  }
+
+  // 3. Remove from SQLite cache
+  try {
+    deleteCachedEvent(id);
+  } catch {
+    // ignore
+  }
+
+  // 4. Record in cloud storage tombstones & prune from events list
   if (isSupabaseConfigured) {
     try {
-      const cloudEvents = await fetchCloudCustomEvents();
-      const filtered = cloudEvents.filter((e) => e.id !== id);
-      await syncCloudCustomEvents(filtered);
-    } catch {
-      // ignore
+      const payload = await fetchCloudEventsPayload();
+      const updatedEvents = payload.events.filter((e) => e.id !== id);
+      const updatedDeleted = Array.from(new Set([...payload.deletedIds, id]));
+      await syncCloudEventsPayload({ events: updatedEvents, deletedIds: updatedDeleted });
+    } catch (err) {
+      console.warn('Could not sync event deletion to cloud storage:', err);
     }
 
     try {
@@ -741,12 +868,5 @@ export async function deleteCampusEvent(id: string): Promise<{ ok: boolean; erro
     }
   }
 
-  try {
-    const existing = await getLocalCustomEvents();
-    const filtered = existing.filter((e) => e.id !== id);
-    await AsyncStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(filtered));
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: String(err) };
-  }
+  return { ok: true };
 }

@@ -382,13 +382,15 @@ export default function AdminScreen() {
 
   // Handler: Delete Event
   const handleDeleteEvent = async (id: string, title: string) => {
+    setEventsList((prev) => prev.filter((e) => e.id !== id));
+    showToast(`Deleted: "${title}"`);
     const res = await deleteCampusEvent(id);
     if (res.ok) {
-      showToast(`Deleted: "${title}"`);
       void loadData();
       void queryClient.invalidateQueries({ queryKey: EVENTS_QUERY_KEY });
     } else {
       showToast(res.error || 'Failed to delete event.');
+      void loadData();
     }
   };
 

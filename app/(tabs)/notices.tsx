@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -77,10 +77,30 @@ export default function NoticesScreen() {
     void refetch();
   };
 
-  const handleOpenNotice = (notice: NoticeItem) => {
+  const handleOpenNotice = useCallback((notice: NoticeItem) => {
     setActiveNotice(notice);
     router.push({ pathname: '/notice/[id]', params: { id: notice.id } });
-  };
+  }, []);
+
+  const renderNoticeItem = useCallback(
+    ({ item: n }: { item: NoticeItem }) => (
+      <NoticeCard
+        id={n.id}
+        category={n.category}
+        title={n.cleanTitle}
+        source={n.source.toUpperCase()}
+        date={new Date(n.postedAt).toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'short',
+        })}
+        importance={n.importance}
+        deadlineBadge={n.deadlineAt ? 'Deadline' : undefined}
+        threadUpdateCount={n.threadUpdateCount}
+        onPress={() => handleOpenNotice(n)}
+      />
+    ),
+    [handleOpenNotice],
+  );
 
   const handleShare = async () => {
     if (activeNotice) {
@@ -216,6 +236,7 @@ export default function NoticesScreen() {
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={5}
+        scrollEventThrottle={16}
         removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl
@@ -230,22 +251,7 @@ export default function NoticesScreen() {
             description="Try clearing your search query or selecting a different category filter."
           />
         }
-        renderItem={({ item: n }) => (
-          <NoticeCard
-            id={n.id}
-            category={n.category}
-            title={n.cleanTitle}
-            source={n.source.toUpperCase()}
-            date={new Date(n.postedAt).toLocaleDateString('en-IN', {
-              day: 'numeric',
-              month: 'short',
-            })}
-            importance={n.importance}
-            deadlineBadge={n.deadlineAt ? 'Deadline' : undefined}
-            threadUpdateCount={n.threadUpdateCount}
-            onPress={() => handleOpenNotice(n)}
-          />
-        )}
+        renderItem={renderNoticeItem}
       />
 
       {/* Notice Detail Bottom Sheet */}

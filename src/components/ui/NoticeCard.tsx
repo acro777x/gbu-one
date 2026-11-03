@@ -17,7 +17,7 @@ export interface NoticeCardProps {
   onPress: () => void;
 }
 
-export const NoticeCard: React.FC<NoticeCardProps> = ({
+export const NoticeCard: React.FC<NoticeCardProps> = React.memo(({
   category,
   title,
   source,
@@ -67,7 +67,7 @@ export const NoticeCard: React.FC<NoticeCardProps> = ({
       </View>
     </GlassCard>
   );
-};
+});
 
 const styles = StyleSheet.create({
   card: {

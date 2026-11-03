@@ -190,11 +190,31 @@ export function readCachedEvents(limit = 300): CampusEvent[] {
   }
 }
 
+export function deleteCachedEvent(id: string): void {
+  const d = getDb();
+  if (!d || !id) return;
+  try {
+    d.runSync('DELETE FROM campus_events_cache WHERE id = ?;', [id]);
+  } catch {
+    // ignore
+  }
+}
+
 export function writeCachedEvents(events: CampusEvent[]): void {
   const d = getDb();
-  if (!d || events.length === 0) return;
+  if (!d) return;
   try {
     const now = Date.now();
+    const activeIds = events.map((e) => e.id).filter(Boolean);
+    if (activeIds.length > 0) {
+      const placeholders = activeIds.map(() => '?').join(',');
+      d.runSync(
+        `DELETE FROM campus_events_cache WHERE id NOT IN (${placeholders});`,
+        activeIds,
+      );
+    } else {
+      d.runSync('DELETE FROM campus_events_cache;');
+    }
     for (const e of events) {
       d.runSync(
         `INSERT INTO campus_events_cache

@@ -24,10 +24,14 @@ export function useEventsQuery() {
   return useQuery<CampusEvent[]>({
     queryKey: EVENTS_QUERY_KEY,
     queryFn: async () => {
-      const live = await listCampusEvents();
-      if (live && live.length > 0) {
-        writeCachedEvents(live);
-        return live;
+      try {
+        const live = await listCampusEvents();
+        if (Array.isArray(live)) {
+          writeCachedEvents(live);
+          return live;
+        }
+      } catch {
+        // network error fallback
       }
 
       const cached = readCachedEvents();

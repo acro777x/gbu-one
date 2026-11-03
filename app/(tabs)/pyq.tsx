@@ -602,6 +602,7 @@ export default function PYQScreen() {
         ListFooterComponent={filteredPapers.length > 0 ? renderFooter : null}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
         initialNumToRender={8}
         maxToRenderPerBatch={10}
         windowSize={5}

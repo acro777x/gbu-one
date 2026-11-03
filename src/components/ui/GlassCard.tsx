@@ -20,7 +20,64 @@ export interface GlassCardProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export const GlassCard: React.FC<GlassCardProps> = ({
+interface PressableCardProps extends GlassCardProps {
+  onPress: () => void;
+  surface: string;
+  borderColor: string;
+  isDark: boolean;
+  colors: any;
+}
+
+const PressableGlassCard: React.FC<PressableCardProps> = React.memo(({
+  children,
+  style,
+  contentStyle,
+  onPress,
+  onLongPress,
+  delayLongPress,
+  delayPressIn,
+  glow = false,
+  surface,
+  borderColor,
+  isDark,
+  colors,
+}) => {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={delayLongPress}
+      unstable_pressDelay={delayPressIn ?? 90}
+      onPressIn={() => (scale.value = withTiming(0.985, { duration: 100 }))}
+      onPressOut={() => (scale.value = withTiming(1, { duration: 140 }))}
+      accessibilityRole="button"
+      style={[
+        styles.card,
+        {
+          backgroundColor: surface,
+          borderColor,
+          shadowColor: isDark ? '#000000' : colors.borderStrong,
+        },
+        glow && { shadowColor: colors.accent, shadowOpacity: 0.16, shadowRadius: 18, elevation: 5 },
+        style,
+        animatedStyle,
+      ]}
+    >
+      {glow && (
+        <View
+          pointerEvents="none"
+          style={[styles.ambientGlow, { backgroundColor: colors.accentGlow }]}
+        />
+      )}
+      {contentStyle ? <View style={contentStyle}>{children}</View> : children}
+    </AnimatedPressable>
+  );
+});
+
+export const GlassCard: React.FC<GlassCardProps> = React.memo(({
   children,
   style,
   contentStyle,
@@ -33,8 +90,6 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   variant = 'default',
 }) => {
   const { colors, isDark } = useAppTheme();
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   const surface =
     variant === 'subtle'
@@ -50,34 +105,23 @@ export const GlassCard: React.FC<GlassCardProps> = ({
 
   if (onPress) {
     return (
-      <AnimatedPressable
+      <PressableGlassCard
         onPress={onPress}
         onLongPress={onLongPress}
         delayLongPress={delayLongPress}
-        unstable_pressDelay={delayPressIn ?? 50}
-        onPressIn={() => (scale.value = withTiming(0.985, { duration: 120 }))}
-        onPressOut={() => (scale.value = withTiming(1, { duration: 160 }))}
-        accessibilityRole="button"
-        style={[
-          styles.card,
-          {
-            backgroundColor: surface,
-            borderColor,
-            shadowColor: isDark ? '#000000' : colors.borderStrong,
-          },
-          glow && { shadowColor: colors.accent, shadowOpacity: 0.16, shadowRadius: 18, elevation: 5 },
-          style,
-          animatedStyle,
-        ]}
+        delayPressIn={delayPressIn}
+        style={style}
+        contentStyle={contentStyle}
+        accentBorder={accentBorder}
+        glow={glow}
+        variant={variant}
+        surface={surface}
+        borderColor={borderColor}
+        isDark={isDark}
+        colors={colors}
       >
-        {glow && (
-          <View
-            pointerEvents="none"
-            style={[styles.ambientGlow, { backgroundColor: colors.accentGlow }]}
-          />
-        )}
-        {contentStyle ? <View style={contentStyle}>{children}</View> : children}
-      </AnimatedPressable>
+        {children}
+      </PressableGlassCard>
     );
   }
 
@@ -103,7 +147,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
       {contentStyle ? <View style={contentStyle}>{children}</View> : children}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   card: {
