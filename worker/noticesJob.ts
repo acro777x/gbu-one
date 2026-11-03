@@ -167,7 +167,41 @@ export function parseMainNoticesHtml(html: string): ScrapedRawNotice[] {
  */
 export function parseExamsNoticesHtml(html: string): ScrapedRawNotice[] {
   const results: ScrapedRawNotice[] = [];
-  const linkRegex = /<a\s+[^>]*href=["']([^"']*(?:uploads\/notices\/|admin\/public\/uploads\/)[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+
+  // 1. Structure on https://exams.gbu.ac.in: <div class="notice-item ...">
+  const blockRegex =
+    /<div\b[^>]*class\s*=\s*"[^"]*notice-item[^"]*"[^>]*>([\s\S]*?)(?=<div\b[^>]*class\s*=\s*"[^"]*notice-item[^"]*"[^>]*>|\Z)/gi;
+  let blockMatch: RegExpExecArray | null;
+
+  while ((blockMatch = blockRegex.exec(html)) !== null) {
+    const block = blockMatch[1];
+    const hMatch = block.match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/i);
+    const linkMatch = block.match(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const dateMatch = block.match(
+      /(?:Posted on:|Date:)?\s*([0-3]?[0-9][/.-][0-1]?[0-9][/.-][2-9][0-9]{3})/i
+    );
+
+    if (hMatch && linkMatch) {
+      const title = decodeHtmlEntities(hMatch[1].replace(/<[^>]+>/g, '').trim());
+      let href = linkMatch[1].trim();
+      if (!href.startsWith('http')) {
+        href = `https://exams.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
+      }
+      const dateStr = dateMatch ? dateMatch[1].trim() : new Date().toISOString().split('T')[0];
+      if (title.length > 2 && !/^view\s+attachment$/i.test(title)) {
+        results.push({
+          source: 'exams',
+          rawTitle: title,
+          url: href,
+          dateStr,
+        });
+      }
+    }
+  }
+
+  // 2. Fallback: table rows or direct links with descriptive anchor text
+  const linkRegex =
+    /<a\s+[^>]*href=["']([^"']*(?:uploads\/notices\/|admin\/public\/uploads\/)[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let match: RegExpExecArray | null;
 
   while ((match = linkRegex.exec(html)) !== null) {
@@ -175,8 +209,10 @@ export function parseExamsNoticesHtml(html: string): ScrapedRawNotice[] {
     if (!href.startsWith('http')) {
       href = `https://exams.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
     }
-    const rawTitle = match[2].replace(/<[^>]+>/g, '').trim();
-    if (rawTitle.length > 3) {
+    if (results.some((r) => r.url === href)) continue;
+
+    const rawTitle = decodeHtmlEntities(match[2].replace(/<[^>]+>/g, '').trim());
+    if (rawTitle.length > 3 && !/^view\s+attachment$/i.test(rawTitle)) {
       results.push({
         source: 'exams',
         rawTitle,

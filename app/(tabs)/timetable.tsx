@@ -508,13 +508,13 @@ export default function TimetableScreen() {
           </View>
         )}
 
-        {/* Class alarms for the selected day */}
-        {!loading && (
+        {/* Class alarms for the selected day — only render when alarms are set for this day */}
+        {!loading && dayReminders.length > 0 && (
           <GlassCard style={styles.alarmsCard}>
             <View style={styles.alarmsHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
                 <Bell size={16} color={colors.accent} />
-                <Text style={[styles.alarmsTitle, { color: colors.textPrimary }]}>Class alarms</Text>
+                <Text style={[styles.alarmsTitle, { color: colors.textPrimary }]}>Active Alarms</Text>
                 <Text style={[styles.alarmsCount, { color: colors.textSecondary }]}>
                   {selectedDayLabel} ({dayReminders.length})
                 </Text>
@@ -528,43 +528,37 @@ export default function TimetableScreen() {
               </TouchableOpacity>
             </View>
 
-            {dayReminders.length === 0 ? (
-              <Text style={[styles.alarmsEmpty, { color: colors.textSecondary }]}>
-                No alarm set for this day. Tap the bell on a class to add one.
-              </Text>
-            ) : (
-              dayReminders.map((reminder) => (
-                <View
-                  key={reminder.slotId}
-                  style={[styles.alarmRow, { borderTopColor: colors.divider }]}
-                >
-                  <View style={styles.alarmInfo}>
-                    <Text
-                      style={[styles.alarmSubject, { color: colors.textPrimary }]}
-                      numberOfLines={1}
-                    >
-                      {reminder.subject}
-                    </Text>
-                    <Text style={[styles.alarmMeta, { color: colors.textSecondary }]}>
-                      {reminder.start} class - alarm {formatLeadTime(reminder.leadMinutes)}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.alarmCancel}
-                    onPress={() => {
-                      void handleCancelReminder(reminder.slotId);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Cancel the alarm for ${reminder.subject}`}
-                    hitSlop={8}
+            {dayReminders.map((reminder) => (
+              <View
+                key={reminder.slotId}
+                style={[styles.alarmRow, { borderTopColor: colors.divider }]}
+              >
+                <View style={styles.alarmInfo}>
+                  <Text
+                    style={[styles.alarmSubject, { color: colors.textPrimary }]}
+                    numberOfLines={1}
                   >
-                    <Text style={[styles.alarmCancelText, { color: colors.danger }]}>Cancel</Text>
-                  </TouchableOpacity>
+                    {reminder.subject}
+                  </Text>
+                  <Text style={[styles.alarmMeta, { color: colors.textSecondary }]}>
+                    {reminder.start} class - alarm {formatLeadTime(reminder.leadMinutes)}
+                  </Text>
                 </View>
-              ))
-            )}
+                <TouchableOpacity
+                  style={styles.alarmCancel}
+                  onPress={() => {
+                    void handleCancelReminder(reminder.slotId);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Cancel the alarm for ${reminder.subject}`}
+                  hitSlop={8}
+                >
+                  <Text style={[styles.alarmCancelText, { color: colors.danger }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
 
-            {dayReminders.length > 1 ? (
+            {dayReminders.length > 1 && (
               <TouchableOpacity
                 style={styles.alarmsClearAll}
                 onPress={() => {
@@ -578,7 +572,7 @@ export default function TimetableScreen() {
                   Clear all {dayReminders.length} alarms
                 </Text>
               </TouchableOpacity>
-            ) : null}
+            )}
           </GlassCard>
         )}
 

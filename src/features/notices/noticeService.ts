@@ -63,6 +63,9 @@ const GBU_PROGRAMMES = [
  */
 export function cleanNoticeTitle(rawTitle: string): string {
   let cleaned = rawTitle.trim();
+  if (/^view\s+attachment$/i.test(cleaned)) {
+    return 'Official Examination Circular';
+  }
   cleaned = cleaned.replace(/^(office\s+order\s*[-:.]?\s*)/i, '');
   cleaned = cleaned.replace(/^(notice\s*[-:.]?\s*)/i, '');
   cleaned = cleaned.replace(/^(notification\s*[-:.]?\s*)/i, '');
@@ -70,7 +73,7 @@ export function cleanNoticeTitle(rawTitle: string): string {
   cleaned = cleaned.replace(/^(urgent\s+notice\s*[-:.]?\s*)/i, '');
   cleaned = cleaned.replace(/^(regarding\s*[-:.]?\s*)/i, '');
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
-  return cleaned;
+  return cleaned || 'Official University Notice';
 }
 
 /**

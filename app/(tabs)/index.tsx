@@ -154,14 +154,18 @@ export default function HomeScreen() {
     router.push('/notices' as never);
   };
 
-  const topNotices = notices.filter((n) => n.importance >= 3).slice(0, 4);
+  const validNotices = notices.filter(
+    (n) => n.cleanTitle && !/^view\s+attachment$/i.test(n.cleanTitle.trim())
+  );
+  const prioritized = validNotices.filter((n) => n.importance >= 3);
+  const topNotices = (prioritized.length > 0 ? prioritized : validNotices).slice(0, 5);
   const heroSlides = topNotices.map((n) => ({
     id: n.id,
     category: n.category === 'datesheet' ? 'Exam Alert' : n.category.toUpperCase(),
     title: n.cleanTitle,
     meta: n.deadlineAt
       ? `Deadline: ${new Date(n.deadlineAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
-      : `${n.source.toUpperCase()} • Official Notice`,
+      : `${n.source.toUpperCase()} • ${new Date(n.postedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
     onPress: () => router.push({ pathname: '/notice/[id]', params: { id: n.id } } as never),
   }));
 
