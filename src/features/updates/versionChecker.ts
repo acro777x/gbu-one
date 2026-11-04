@@ -44,11 +44,13 @@ export const FALLBACK_VERSION_MANIFEST: AppVersionManifest = {
     'Interactive Class Alarms with Snooze (+10m) & Dismiss controls',
     'Full Campus Events hub with photos & all-branch PYQ downloads',
   ],
-  apkUrl: 'https://github.com/acro777x/gbu-one/releases/latest',
+  apkUrl: 'https://github.com/acro777x/gbu-one',
   releasedAt: '2026-10-25T00:00:00.000Z',
 };
 
 export const VERSION_OVERRIDE_KEY = '@gbu_one_update_manifest_override';
+export const CLOUD_VERSION_URL =
+  'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/campus-events/version.json';
 
 /**
  * Compares two semver strings (e.g. "1.1.0" vs "1.0.0").
@@ -88,7 +90,33 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
     // ignore
   }
 
-  // 2. Query Supabase app_versions if configured
+  // 2. Fetch from Supabase Storage CDN (fast, unauthenticated, never blocked)
+  try {
+    const res = await fetch(`${CLOUD_VERSION_URL}?t=${Date.now()}`, {
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data === 'object' && typeof data.latestVersion === 'string') {
+        const manifest: AppVersionManifest = {
+          platform: 'android',
+          latestVersion: String(data.latestVersion || '1.0.0'),
+          minSupportedVersion: String(data.minSupportedVersion || '1.0.0'),
+          isMandatory: Boolean(data.isMandatory),
+          title: String(data.title || 'GBU One Update Available'),
+          message: String(data.message || 'A new update is available.'),
+          releaseNotes: Array.isArray(data.releaseNotes) ? data.releaseNotes : [],
+          apkUrl: String(data.apkUrl || 'https://github.com/acro777x/gbu-one'),
+          releasedAt: String(data.releasedAt || new Date().toISOString()),
+        };
+        return evaluateManifest(currentVersion, manifest);
+      }
+    }
+  } catch {
+    // Fallback
+  }
+
+  // 3. Query Supabase app_versions if configured
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase
@@ -108,7 +136,7 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
           releaseNotes: Array.isArray(data.release_notes)
             ? (data.release_notes as string[])
             : ['New version with critical security and timetable updates'],
-          apkUrl: String(data.apk_url ?? 'https://github.com/acro777x/gbu-one/releases/latest'),
+          apkUrl: String(data.apk_url ?? 'https://github.com/acro777x/gbu-one'),
           releasedAt: String(data.released_at ?? new Date().toISOString()),
         };
         return evaluateManifest(currentVersion, manifest);
@@ -118,7 +146,7 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
     }
   }
 
-  // 3. Fallback manifest evaluation
+  // 4. Fallback manifest evaluation
   return evaluateManifest(currentVersion, FALLBACK_VERSION_MANIFEST);
 }
 
@@ -162,20 +190,36 @@ export async function publishAppVersion(
     await AsyncStorage.setItem(VERSION_OVERRIDE_KEY, JSON.stringify(manifest));
 
     if (isSupabaseConfigured) {
-      await supabase
-        .from('app_versions')
-        .upsert(
-          {
-            platform: manifest.platform,
-            latest_version: manifest.latestVersion,
-            min_supported_version: manifest.minSupportedVersion,
-            is_mandatory: manifest.isMandatory,
-            apk_url: manifest.apkUrl,
-            release_notes: manifest.releaseNotes,
-            released_at: new Date().toISOString(),
-          },
-          { onConflict: 'platform' },
-        );
+      try {
+        const payload = JSON.stringify(manifest, null, 2);
+        await supabase.storage
+          .from('campus-events')
+          .upload('version.json', payload, {
+            contentType: 'application/json',
+            upsert: true,
+          });
+      } catch (uploadErr) {
+        console.warn('Storage version.json upload error:', uploadErr);
+      }
+
+      try {
+        await supabase
+          .from('app_versions')
+          .upsert(
+            {
+              platform: manifest.platform,
+              latest_version: manifest.latestVersion,
+              min_supported_version: manifest.minSupportedVersion,
+              is_mandatory: manifest.isMandatory,
+              apk_url: manifest.apkUrl,
+              release_notes: manifest.releaseNotes,
+              released_at: new Date().toISOString(),
+            },
+            { onConflict: 'platform' },
+          );
+      } catch {
+        // Table might not exist yet, storage CDN is authoritative
+      }
     }
 
     return { ok: true };
@@ -186,4 +230,21 @@ export async function publishAppVersion(
 
 export async function clearAppVersionOverride(): Promise<void> {
   await AsyncStorage.removeItem(VERSION_OVERRIDE_KEY);
+  if (isSupabaseConfigured) {
+    try {
+      const resetManifest: AppVersionManifest = {
+        ...FALLBACK_VERSION_MANIFEST,
+        releasedAt: new Date().toISOString(),
+      };
+      const payload = JSON.stringify(resetManifest, null, 2);
+      await supabase.storage
+        .from('campus-events')
+        .upload('version.json', payload, {
+          contentType: 'application/json',
+          upsert: true,
+        });
+    } catch {
+      // ignore
+    }
+  }
 }

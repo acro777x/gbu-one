@@ -98,20 +98,16 @@ export function MandatoryUpdateModal() {
 
   const { isMandatory, currentVersion, manifest } = updateState;
   const latestVersion = manifest?.latestVersion ?? '1.1.0';
-  const apkUrl = manifest?.apkUrl ?? 'https://github.com/acro777x/gbu-one/releases/latest';
+  const apkUrl = manifest?.apkUrl ?? 'https://github.com/acro777x/gbu-one';
 
   const handleUpdatePress = async () => {
     setDownloading(true);
     try {
-      const supported = await Linking.canOpenURL(apkUrl);
-      if (supported) {
-        await Linking.openURL(apkUrl);
-      } else {
-        await Linking.openURL('https://github.com/acro777x/gbu-one/releases/latest');
-      }
+      const url = apkUrl && apkUrl.startsWith('http') ? apkUrl : 'https://github.com/acro777x/gbu-one';
+      await Linking.openURL(url);
     } catch {
       if (Platform.OS === 'android') {
-        void Linking.openURL(apkUrl);
+        void Linking.openURL(apkUrl || 'https://github.com/acro777x/gbu-one');
       }
     } finally {
       setTimeout(() => setDownloading(false), 2000);

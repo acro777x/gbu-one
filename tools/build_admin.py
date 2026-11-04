@@ -54,6 +54,12 @@ try:
         shutil.copy2(src_mod, dst_mod)
         print("Injected app/moderation.tsx into Admin build.")
 
+    src_dir = os.path.join(source_dir, 'src')
+    dst_src = r'C:\gbuone-build\src'
+    if os.path.isdir(src_dir):
+        shutil.copytree(src_dir, dst_src, dirs_exist_ok=True)
+        print("Injected src/ into Admin build.")
+
     var_file = r'C:\gbuone-build\src\lib\appVariant.ts'
     if os.path.exists(var_file):
         with open(var_file, 'w', encoding='utf-8') as f:

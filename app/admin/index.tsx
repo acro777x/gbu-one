@@ -136,7 +136,7 @@ export default function AdminScreen() {
   const [minSupported, setMinSupported] = useState('1.0.0');
   const [isMandatory, setIsMandatory] = useState(true);
   const [apkDownloadUrl, setApkDownloadUrl] = useState(
-    'https://github.com/acro777x/gbu-one/releases/latest',
+    'https://github.com/acro777x/gbu-one',
   );
   const [releaseNotesText, setReleaseNotesText] = useState(
     'Official End Sem datesheet sync\nFull Campus Event photo memories\nAll-department PYQ downloads',
@@ -207,29 +207,7 @@ export default function AdminScreen() {
       setAuthError('');
       showToast('Admin console unlocked successfully.');
 
-      // Authenticate with Supabase so session is an authenticated moderator
-      try {
-        const adminEmail =
-          process.env.EXPO_PUBLIC_ADMIN_EMAIL ||
-          process.env.GBU_ADMIN_EMAIL ||
-          'ashishkhola56@gmail.com';
-        const adminPass =
-          process.env.EXPO_PUBLIC_ADMIN_PASSWORD ||
-          process.env.GBU_ADMIN_PASSWORD ||
-          '';
-        if (isSupabaseConfigured && adminEmail && adminPass) {
-          const { error: signErr } = await supabase.auth.signInWithPassword({
-            email: adminEmail,
-            password: adminPass,
-          });
-          if (signErr) {
-            console.warn('Admin auto-auth warning:', signErr.message);
-          }
-        }
-      } catch (err) {
-        console.warn('Admin Supabase auth error:', err);
-      }
-    } else {
+      } else {
       setAuthError('Access Denied: Invalid Administrative Master Key.');
       showToast('Invalid security passcode.');
     }

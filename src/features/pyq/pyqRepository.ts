@@ -130,13 +130,32 @@ export async function listApprovedPapers(limit = 300): Promise<PyqPaperRecord[]>
 export async function listPendingPapers(limit = 100): Promise<PyqPaperRecord[]> {
   if (!isSupabaseConfigured) return [];
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('pyq_papers')
       .select('*')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(limit);
-    if (error || !data) return [];
+
+    if ((!data || data.length === 0) && isSupabaseConfigured) {
+      const url = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://pjnxllnncsoroevgfbmt.supabase.co';
+      const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+      if (url && key) {
+        const { createClient } = require('@supabase/supabase-js');
+        const cleanClient = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+        const cleanRes = await cleanClient
+          .from('pyq_papers')
+          .select('*')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: true })
+          .limit(limit);
+        if (cleanRes.data && cleanRes.data.length > 0) {
+          data = cleanRes.data;
+        }
+      }
+    }
+
+    if (!data) return [];
     return (data as Record<string, unknown>[]).map((row) => rowToPaper(row, storageBaseUrl()));
   } catch {
     return [];
@@ -234,6 +253,14 @@ export async function approveAllPending(
   return { approved, failed };
 }
 
+export function generatePaperUuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 /**
  * Uploads a paper into the pending bucket and queues it for moderation.
  * The file is removed again if the row cannot be written, so the bucket never
@@ -254,7 +281,7 @@ export async function uploadPendingPaper(
   const fileCheck = validateUploadFile(file);
   if (!fileCheck.ok) return { ok: false, reason: fileCheck.reason };
 
-  const paperId = `pyq_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const paperId = generatePaperUuid();
   const path = buildStoragePath(meta, paperId, PYQ_PENDING_BUCKET, file.mimeType);
 
   const { error: uploadError } = await supabase.storage
@@ -302,32 +329,34 @@ export async function applyModeration(
   const row = data as Record<string, unknown>;
   const filePath = String(row.file_path ?? '');
   const nextStatus = statusAfterAction(action);
+  const cleanPendingPath = filePath.replace(new RegExp(`^${PYQ_PENDING_BUCKET}/`), '');
+  const cleanApprovedPath = filePath.replace(new RegExp(`^(${PYQ_PENDING_BUCKET}|${PYQ_APPROVED_BUCKET})/`), '');
+  const targetStoredPath = `${PYQ_APPROVED_BUCKET}/${cleanApprovedPath}`;
 
   if (action === 'approve') {
-    const target = filePath.replace(new RegExp(`^${PYQ_PENDING_BUCKET}/`), `${PYQ_APPROVED_BUCKET}/`);
     const { data: blob, error: downloadError } = await supabase.storage
       .from(PYQ_PENDING_BUCKET)
-      .download(filePath);
+      .download(cleanPendingPath);
     if (downloadError || !blob) {
       return { ok: false, reason: downloadError?.message || 'Could not read the uploaded file.' };
     }
     const { error: uploadError } = await supabase.storage
       .from(PYQ_APPROVED_BUCKET)
-      .upload(target, blob, { upsert: true });
+      .upload(cleanApprovedPath, blob, { upsert: true });
     if (uploadError) {
       return { ok: false, reason: uploadError.message || 'Could not publish the paper.' };
     }
-    await supabase.storage.from(PYQ_PENDING_BUCKET).remove([filePath]).catch(() => {});
+    await supabase.storage.from(PYQ_PENDING_BUCKET).remove([cleanPendingPath]).catch(() => {});
 
     const { error: updateError } = await supabase
       .from('pyq_papers')
-      .update({ status: nextStatus, file_path: target })
+      .update({ status: nextStatus, file_path: targetStoredPath })
       .eq('id', paperId);
     if (updateError) {
       return { ok: false, reason: updateError.message || 'Could not update the paper.' };
     }
   } else if (action === 'reject') {
-    await supabase.storage.from(PYQ_PENDING_BUCKET).remove([filePath]).catch(() => {});
+    await supabase.storage.from(PYQ_PENDING_BUCKET).remove([cleanPendingPath]).catch(() => {});
     const { error: updateError } = await supabase
       .from('pyq_papers')
       .update({ status: nextStatus })
