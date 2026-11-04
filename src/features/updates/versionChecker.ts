@@ -49,8 +49,71 @@ export const FALLBACK_VERSION_MANIFEST: AppVersionManifest = {
 };
 
 export const VERSION_OVERRIDE_KEY = '@gbu_one_update_manifest_override';
+export const UPDATE_DISMISSED_KEY = '@gbu_one_update_dismissed_until';
+export const UPDATE_REALTIME_CHANNEL = 'gbu_version_updates';
 export const CLOUD_VERSION_URL =
   'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/public/campus-events/version.json';
+
+export interface UpdateDismissalRecord {
+  version: string;
+  dismissedUntil: number;
+}
+
+/**
+ * Checks if an update notification has been snoozed by the student.
+ * CRITICAL: Compulsory / mandatory updates CANNOT be dismissed.
+ */
+export async function isUpdateDismissed(
+  targetVersion: string,
+  isMandatory: boolean,
+): Promise<boolean> {
+  if (isMandatory) return false;
+
+  try {
+    const raw = await AsyncStorage.getItem(UPDATE_DISMISSED_KEY);
+    if (!raw) return false;
+
+    if (!raw.startsWith('{')) {
+      const timestamp = Number(raw);
+      return !isNaN(timestamp) && Date.now() < timestamp;
+    }
+
+    const record: UpdateDismissalRecord = JSON.parse(raw);
+    if (record.version && record.version !== targetVersion) {
+      return false;
+    }
+
+    return typeof record.dismissedUntil === 'number' && Date.now() < record.dismissedUntil;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Records a 12-hour dismissal for an optional update.
+ */
+export async function dismissUpdateForVersion(version: string): Promise<void> {
+  try {
+    const record: UpdateDismissalRecord = {
+      version,
+      dismissedUntil: Date.now() + 12 * 60 * 60 * 1000,
+    };
+    await AsyncStorage.setItem(UPDATE_DISMISSED_KEY, JSON.stringify(record));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Clears update dismissal record (e.g. when mandatory update arrives or testing).
+ */
+export async function clearUpdateDismissal(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(UPDATE_DISMISSED_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 /**
  * Compares two semver strings (e.g. "1.1.0" vs "1.0.0").
@@ -150,7 +213,7 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
   return evaluateManifest(currentVersion, FALLBACK_VERSION_MANIFEST);
 }
 
-function evaluateManifest(currentVersion: string, manifest: AppVersionManifest): UpdateCheckResult {
+export function evaluateManifest(currentVersion: string, manifest: AppVersionManifest): UpdateCheckResult {
   const isOlderThanMin = compareSemver(currentVersion, manifest.minSupportedVersion) < 0;
   const isOlderThanLatest = compareSemver(currentVersion, manifest.latestVersion) < 0;
 
@@ -181,7 +244,40 @@ function evaluateManifest(currentVersion: string, manifest: AppVersionManifest):
 }
 
 /**
- * Admin action to publish or update the version manifest in Supabase and local cache.
+ * Subscribes to realtime version updates broadcast by administrators.
+ * Fires the callback instantly whenever an update is broadcast.
+ */
+export function subscribeToVersionUpdates(
+  onUpdate: (manifest: AppVersionManifest) => void,
+): () => void {
+  if (!isSupabaseConfigured) {
+    return () => {};
+  }
+  try {
+    const channel = supabase.channel(UPDATE_REALTIME_CHANNEL);
+    channel
+      .on('broadcast', { event: 'version_update' }, (msg) => {
+        if (msg?.payload && typeof msg.payload === 'object' && msg.payload.latestVersion) {
+          onUpdate(msg.payload as AppVersionManifest);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      try {
+        void supabase.removeChannel(channel);
+      } catch {
+        // ignore
+      }
+    };
+  } catch {
+    return () => {};
+  }
+}
+
+/**
+ * Admin action to publish or update the version manifest in Supabase, local cache,
+ * and broadcast instantly over Supabase Realtime to all connected devices.
  */
 export async function publishAppVersion(
   manifest: AppVersionManifest,
@@ -190,6 +286,7 @@ export async function publishAppVersion(
     await AsyncStorage.setItem(VERSION_OVERRIDE_KEY, JSON.stringify(manifest));
 
     if (isSupabaseConfigured) {
+      // 1. Upload to Storage CDN (authoritative public cache)
       try {
         const payload = JSON.stringify(manifest, null, 2);
         await supabase.storage
@@ -202,6 +299,29 @@ export async function publishAppVersion(
         console.warn('Storage version.json upload error:', uploadErr);
       }
 
+      // 2. Realtime broadcast for instantaneous sub-second delivery
+      try {
+        const channel = supabase.channel(UPDATE_REALTIME_CHANNEL);
+        channel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            void channel
+              .send({
+                type: 'broadcast',
+                event: 'version_update',
+                payload: manifest,
+              })
+              .then(() => {
+                setTimeout(() => {
+                  void supabase.removeChannel(channel);
+                }, 1000);
+              });
+          }
+        });
+      } catch (broadcastErr) {
+        console.warn('Realtime version broadcast warning:', broadcastErr);
+      }
+
+      // 3. Postgres sync (if table exists)
       try {
         await supabase
           .from('app_versions')
@@ -243,6 +363,27 @@ export async function clearAppVersionOverride(): Promise<void> {
           contentType: 'application/json',
           upsert: true,
         });
+
+      try {
+        const channel = supabase.channel(UPDATE_REALTIME_CHANNEL);
+        channel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            void channel
+              .send({
+                type: 'broadcast',
+                event: 'version_update',
+                payload: resetManifest,
+              })
+              .then(() => {
+                setTimeout(() => {
+                  void supabase.removeChannel(channel);
+                }, 1000);
+              });
+          }
+        });
+      } catch {
+        // ignore
+      }
     } catch {
       // ignore
     }

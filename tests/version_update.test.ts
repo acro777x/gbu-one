@@ -3,16 +3,23 @@ import {
   checkForAppUpdate,
   publishAppVersion,
   clearAppVersionOverride,
+  evaluateManifest,
+  isUpdateDismissed,
+  dismissUpdateForVersion,
+  clearUpdateDismissal,
+  subscribeToVersionUpdates,
   type AppVersionManifest,
 } from '../src/features/updates/versionChecker';
 
 describe('Version Checker & Compulsory Update Engine', () => {
   beforeEach(async () => {
     await clearAppVersionOverride();
+    await clearUpdateDismissal();
   });
 
   afterEach(async () => {
     await clearAppVersionOverride();
+    await clearUpdateDismissal();
   });
 
   describe('compareSemver', () => {
@@ -105,6 +112,75 @@ describe('Version Checker & Compulsory Update Engine', () => {
 
       expect(res.updateAvailable).toBe(true);
       expect(res.isMandatory).toBe(true);
+    });
+  });
+
+  describe('isUpdateDismissed & Compulsory Mode Enforcement', () => {
+    it('NEVER dismisses or snoozes a mandatory update', async () => {
+      await dismissUpdateForVersion('1.2.0');
+      const isDismissed = await isUpdateDismissed('1.2.0', true);
+      expect(isDismissed).toBe(false);
+    });
+
+    it('returns false when no dismissal has been recorded', async () => {
+      const isDismissed = await isUpdateDismissed('1.2.0', false);
+      expect(isDismissed).toBe(false);
+    });
+
+    it('returns true when optional update was snoozed for the same version', async () => {
+      await dismissUpdateForVersion('1.2.0');
+      const isDismissed = await isUpdateDismissed('1.2.0', false);
+      expect(isDismissed).toBe(true);
+    });
+
+    it('invalidates previous dismissal when a newer version is published', async () => {
+      await dismissUpdateForVersion('1.2.0');
+      const isDismissed = await isUpdateDismissed('1.3.0', false);
+      expect(isDismissed).toBe(false);
+    });
+  });
+
+  describe('evaluateManifest', () => {
+    it('flags mandatory when minSupportedVersion is higher than current', () => {
+      const manifest: AppVersionManifest = {
+        platform: 'android',
+        latestVersion: '2.0.0',
+        minSupportedVersion: '1.5.0',
+        isMandatory: false,
+        title: 'Title',
+        message: 'Message',
+        releaseNotes: [],
+        apkUrl: 'url',
+        releasedAt: '2026-01-01',
+      };
+      const result = evaluateManifest('1.0.0', manifest);
+      expect(result.updateAvailable).toBe(true);
+      expect(result.isMandatory).toBe(true);
+    });
+
+    it('flags optional when current version is between minSupported and latest', () => {
+      const manifest: AppVersionManifest = {
+        platform: 'android',
+        latestVersion: '1.2.0',
+        minSupportedVersion: '1.0.0',
+        isMandatory: false,
+        title: 'Title',
+        message: 'Message',
+        releaseNotes: [],
+        apkUrl: 'url',
+        releasedAt: '2026-01-01',
+      };
+      const result = evaluateManifest('1.0.0', manifest);
+      expect(result.updateAvailable).toBe(true);
+      expect(result.isMandatory).toBe(false);
+    });
+  });
+
+  describe('subscribeToVersionUpdates', () => {
+    it('returns a cleanup function that removes subscription safely', () => {
+      const unsubscribe = subscribeToVersionUpdates(() => {});
+      expect(typeof unsubscribe).toBe('function');
+      expect(() => unsubscribe()).not.toThrow();
     });
   });
 });

@@ -4,14 +4,18 @@
  * Implemented as a pure overlay view (no native Modal) to strictly honor
  * tests/no_native_modal.test.ts and ensure proper touch dispatch on Android.
  *
- * When an update is available:
- * - A clear glass modal presents the new version, highlights, and APK action.
- * - Students can tap "Download & Install Update".
- * - Students can dismiss the modal with "Later" or the top-right close button,
- *   persisting the dismissal so it doesn't repeatedly trap or annoy the user.
+ * Realtime & Compulsory Behavior:
+ * - Realtime push: Listens to Supabase Realtime broadcast channel, AppState active
+ *   events, and a 15-second background poller so updates appear dynamically in real time
+ *   without requiring the student to restart the application.
+ * - Compulsory / Mandatory updates (isMandatory = true):
+ *   - Strictly non-dismissible: NO "Later" button, NO close button, hardware back button trapped.
+ *   - Overrides any prior snooze or dismissal.
+ * - Optional updates (isMandatory = false):
+ *   - Allows "Later / Continue to App", snoozing that specific version for 12 hours.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -21,61 +25,114 @@ import {
   Linking,
   Platform,
   TouchableOpacity,
+  AppState,
+  type AppStateStatus,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { ArrowUpCircle, CheckCircle2, ShieldAlert, X } from 'lucide-react-native';
 import { GlassCard } from './GlassCard';
 import { PillButton } from './PillButton';
 import {
   checkForAppUpdate,
+  evaluateManifest,
+  subscribeToVersionUpdates,
+  isUpdateDismissed,
+  dismissUpdateForVersion,
   type UpdateCheckResult,
+  type AppVersionManifest,
+  UPDATE_DISMISSED_KEY,
 } from '../../features/updates/versionChecker';
 import { useAppTheme } from '../../lib/ThemeContext';
 import { theme } from '../../lib/theme';
 
-export const UPDATE_DISMISSED_KEY = '@gbu_one_update_dismissed_until';
+export { UPDATE_DISMISSED_KEY };
 
 export function MandatoryUpdateModal() {
   const { colors, isDark } = useAppTheme();
   const [updateState, setUpdateState] = useState<UpdateCheckResult | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const mountedRef = useRef(true);
+  const currentAppVersion = Constants.expoConfig?.version ?? '1.0.0';
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const dismissedUntil = await AsyncStorage.getItem(UPDATE_DISMISSED_KEY);
-        if (dismissedUntil && Date.now() < Number(dismissedUntil)) {
-          if (mounted) setDismissed(true);
-          return;
-        }
-
-        const res = await checkForAppUpdate();
-        if (mounted) {
-          setUpdateState(res);
-        }
-      } catch {
-        // ignore
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const handleDismiss = async () => {
-    setDismissed(true);
+  const performUpdateCheck = useCallback(async () => {
     try {
-      // Snooze update prompt for 12 hours so it doesn't keep blocking the user
-      await AsyncStorage.setItem(
-        UPDATE_DISMISSED_KEY,
-        String(Date.now() + 12 * 60 * 60 * 1000),
-      );
+      const res = await checkForAppUpdate();
+      if (!mountedRef.current) return;
+
+      if (res.updateAvailable && res.manifest) {
+        const isSnoozed = await isUpdateDismissed(res.manifest.latestVersion, res.isMandatory);
+        if (!mountedRef.current) return;
+        setUpdateState(res);
+        setDismissed(isSnoozed);
+      } else {
+        setUpdateState(res);
+        setDismissed(false);
+      }
     } catch {
       // ignore
     }
+  }, []);
+
+  // 1. Initial check on mount
+  useEffect(() => {
+    mountedRef.current = true;
+    void performUpdateCheck();
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [performUpdateCheck]);
+
+  // 2. Real-time background-to-foreground AppState listener
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        void performUpdateCheck();
+      }
+    });
+    return () => sub.remove();
+  }, [performUpdateCheck]);
+
+  // 3. Periodic real-time interval poller (checks every 15 seconds in foreground)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void performUpdateCheck();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [performUpdateCheck]);
+
+  // 4. Supabase Realtime Broadcast Channel: INSTANT update delivery (<500ms)
+  useEffect(() => {
+    const unsubscribe = subscribeToVersionUpdates((newManifest: AppVersionManifest) => {
+      if (!mountedRef.current) return;
+      const evalResult = evaluateManifest(currentAppVersion, newManifest);
+
+      if (evalResult.updateAvailable && evalResult.manifest) {
+        void (async () => {
+          const isSnoozed = await isUpdateDismissed(
+            newManifest.latestVersion,
+            evalResult.isMandatory,
+          );
+          if (!mountedRef.current) return;
+          setUpdateState(evalResult);
+          setDismissed(isSnoozed);
+        })();
+      } else {
+        setUpdateState(evalResult);
+        setDismissed(false);
+      }
+    });
+    return () => unsubscribe();
+  }, [currentAppVersion]);
+
+  const handleDismiss = async () => {
+    // Compulsory / mandatory updates CANNOT be dismissed
+    if (updateState?.isMandatory) return;
+
+    if (updateState?.manifest?.latestVersion) {
+      await dismissUpdateForVersion(updateState.manifest.latestVersion);
+    }
+    setDismissed(true);
   };
 
   // Android hardware back button handler
@@ -85,6 +142,10 @@ export function MandatoryUpdateModal() {
     }
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      // If mandatory, NEVER dismiss: consume event and keep modal displayed
+      if (updateState.isMandatory) {
+        return true;
+      }
       void handleDismiss();
       return true;
     });
@@ -121,15 +182,22 @@ export function MandatoryUpdateModal() {
           style={[
             styles.card,
             { backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.98)' },
+            isMandatory && { borderColor: 'rgba(239, 68, 68, 0.4)', borderWidth: 1.5 },
           ]}
           variant="elevated"
         >
-          {/* Header Row: Badge & Close Button */}
+          {/* Header Row: Badge & (Optional) Close Button */}
           <View style={styles.topRow}>
             <View
               style={[
                 styles.badge,
-                { backgroundColor: isMandatory ? 'rgba(239, 68, 68, 0.15)' : 'rgba(79, 70, 229, 0.15)' },
+                {
+                  backgroundColor: isMandatory
+                    ? 'rgba(239, 68, 68, 0.15)'
+                    : 'rgba(79, 70, 229, 0.15)',
+                  borderColor: isMandatory ? 'rgba(239, 68, 68, 0.3)' : 'transparent',
+                  borderWidth: isMandatory ? 1 : 0,
+                },
               ]}
             >
               {isMandatory ? (
@@ -137,24 +205,32 @@ export function MandatoryUpdateModal() {
               ) : (
                 <ArrowUpCircle size={14} color={colors.accent} style={{ marginRight: 6 }} />
               )}
-              <Text style={[styles.badgeText, { color: isMandatory ? '#EF4444' : colors.accent }]}>
-                {isMandatory ? 'RECOMMENDED UPDATE' : 'NEW VERSION AVAILABLE'}
+              <Text
+                style={[
+                  styles.badgeText,
+                  { color: isMandatory ? '#EF4444' : colors.accent, fontWeight: isMandatory ? '700' : '600' },
+                ]}
+              >
+                {isMandatory ? 'CRITICAL COMPULSORY UPDATE' : 'NEW VERSION AVAILABLE'}
               </Text>
             </View>
 
-            <TouchableOpacity
-              onPress={handleDismiss}
-              style={[styles.closeBtn, { backgroundColor: colors.surfaceAlt }]}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss update notice"
-            >
-              <X size={18} color={colors.textSecondary} />
-            </TouchableOpacity>
+            {/* Close button only rendered for optional updates */}
+            {!isMandatory && (
+              <TouchableOpacity
+                onPress={handleDismiss}
+                style={[styles.closeBtn, { backgroundColor: colors.surfaceAlt }]}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss update notice"
+              >
+                <X size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            )}
           </View>
 
           <Text style={[styles.title, { color: colors.textPrimary }]}>
-            {isMandatory ? 'Update Recommended' : 'A New GBU One is Ready'}
+            {isMandatory ? 'Compulsory Update Required' : 'A New GBU One is Ready'}
           </Text>
 
           <View style={styles.versionRow}>
@@ -165,9 +241,9 @@ export function MandatoryUpdateModal() {
               </Text>
             </Text>
             <Text style={[styles.arrow, { color: colors.textTertiary }]}>→</Text>
-            <Text style={[styles.versionText, { color: colors.accent }]}>
+            <Text style={[styles.versionText, { color: isMandatory ? '#EF4444' : colors.accent }]}>
               New:{' '}
-              <Text style={{ fontFamily: 'Inter-SemiBold', color: colors.accent }}>
+              <Text style={{ fontFamily: 'Inter-SemiBold', color: isMandatory ? '#EF4444' : colors.accent }}>
                 v{latestVersion}
               </Text>
             </Text>
@@ -175,7 +251,7 @@ export function MandatoryUpdateModal() {
 
           <Text style={[styles.description, { color: colors.textSecondary }]}>
             {isMandatory
-              ? 'This release includes official university examination calendar updates, enhanced real notice scrapers, and 120Hz smooth scrolling.'
+              ? 'This critical update is required to continue accessing Gautam Buddha University timetable, notices, and exam services. Access is restricted until updated.'
               : 'Update to enjoy the latest GBU One enhancements, PYQ library, and campus events.'}
           </Text>
 
@@ -190,7 +266,7 @@ export function MandatoryUpdateModal() {
                   <View key={index} style={styles.noteItem}>
                     <CheckCircle2
                       size={13}
-                      color={colors.accent}
+                      color={isMandatory ? '#EF4444' : colors.accent}
                       style={{ marginTop: 2, marginRight: 8, flexShrink: 0 }}
                     />
                     <Text style={[styles.noteText, { color: colors.textSecondary }]}>{note}</Text>
@@ -211,13 +287,24 @@ export function MandatoryUpdateModal() {
               onPress={handleUpdatePress}
             />
 
-            <PillButton
-              label="Later / Continue to App"
-              variant="outline"
-              size="md"
-              onPress={handleDismiss}
-              style={{ marginTop: 8 }}
-            />
+            {!isMandatory ? (
+              <PillButton
+                label="Later / Continue to App"
+                variant="outline"
+                size="md"
+                onPress={handleDismiss}
+                style={{ marginTop: 8 }}
+              />
+            ) : (
+              <Text
+                style={[
+                  styles.mandatoryWarning,
+                  { color: colors.textTertiary },
+                ]}
+              >
+                This update is compulsory. You cannot bypass or postpone it.
+              </Text>
+            )}
           </View>
         </GlassCard>
       </View>
@@ -227,7 +314,7 @@ export function MandatoryUpdateModal() {
 
 const styles = StyleSheet.create({
   backdrop: {
-    backgroundColor: 'rgba(0, 0, 0, 0.82)',
+    backgroundColor: 'rgba(0, 0, 0, 0.84)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: theme.spacing.lg,
@@ -270,7 +357,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontFamily: 'PlusJakartaSans-Bold',
+    fontFamily: 'Poppins-Bold',
     marginBottom: 6,
   },
   versionRow: {
@@ -316,5 +403,11 @@ const styles = StyleSheet.create({
   },
   actions: {
     marginTop: theme.spacing.xs,
+  },
+  mandatoryWarning: {
+    marginTop: 10,
+    fontSize: 11,
+    fontFamily: 'Inter-Medium',
+    textAlign: 'center',
   },
 });
