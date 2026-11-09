@@ -73,19 +73,49 @@ export function validateUploadMeta(meta: Partial<PyqUploadMeta>): PyqValidationR
   return { ok: true };
 }
 
+/**
+ * Resolves a clean, canonical MIME type from a given MIME type string and/or filename.
+ * Strips charset and parameters (e.g. 'text/plain; charset=utf-8' -> 'text/plain').
+ * Prioritizes the actual file extension when the system-reported MIME type is
+ * generic or misleading (e.g. 'text/plain' or 'application/octet-stream' on Android).
+ */
+export function resolveCanonicalMime(mimeType?: string | null, fileName?: string | null): string {
+  const cleanMime = (mimeType || '').split(';')[0].trim().toLowerCase();
+  const ext = (fileName || '').split('.').pop()?.trim().toLowerCase() || '';
+
+  // 1. If file extension clearly indicates a supported paper document, prefer it
+  if (ext === 'pdf') return 'application/pdf';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'doc') return 'application/msword';
+  if (ext === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+  // 2. If extension is unknown or missing, check if clean MIME matches a supported format
+  if (cleanMime === 'application/pdf') return 'application/pdf';
+  if (cleanMime === 'image/png') return 'image/png';
+  if (cleanMime === 'image/jpeg' || cleanMime === 'image/jpg') return 'image/jpeg';
+  if (cleanMime === 'application/msword') return 'application/msword';
+  if (cleanMime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+
+  // 3. Fallback to clean MIME if present, otherwise default to PDF
+  return cleanMime || 'application/pdf';
+}
+
 /** Validates the file itself (type and size). Supported formats: PDF, JPG, PNG, DOC, DOCX. */
 export function validateUploadFile(file: {
   mimeType?: string | null;
   size?: number | null;
   name?: string | null;
 }): PyqValidationResult {
-  const mime = (file.mimeType || '').toLowerCase();
+  const canonicalMime = resolveCanonicalMime(file.mimeType, file.name);
   const name = (file.name || '').toLowerCase();
   const ext = name.split('.').pop() || '';
-  const validByMime = (PYQ_ALLOWED_MIME_TYPES as readonly string[]).includes(mime);
+  const validByMime = (PYQ_ALLOWED_MIME_TYPES as readonly string[]).includes(canonicalMime);
   const validByExt = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'].includes(ext);
 
-  if (!mime && !name) return { ok: false, reason: 'File type could not be read.' };
+  if (!file.mimeType && !name) return { ok: false, reason: 'File type could not be read.' };
   if (!validByMime && !validByExt) {
     return { ok: false, reason: 'Only PDF, JPG and PNG papers are accepted.' };
   }
@@ -101,12 +131,12 @@ export function validateUploadFile(file: {
 
 /** File extension for a mime type or filename. */
 export function extensionForMimeType(mimeType?: string | null, fileName?: string | null): string {
-  const m = (mimeType || '').toLowerCase();
-  if (m === 'application/pdf') return 'pdf';
-  if (m === 'image/png') return 'png';
-  if (m === 'image/jpeg' || m === 'image/jpg') return 'jpg';
-  if (m === 'application/msword') return 'doc';
-  if (m === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
+  const canonical = resolveCanonicalMime(mimeType, fileName);
+  if (canonical === 'application/pdf') return 'pdf';
+  if (canonical === 'image/png') return 'png';
+  if (canonical === 'image/jpeg') return 'jpg';
+  if (canonical === 'application/msword') return 'doc';
+  if (canonical === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
 
   if (fileName) {
     const ext = fileName.split('.').pop()?.toLowerCase();
@@ -146,8 +176,13 @@ export function buildPaperRow(
   paperId: string,
   filePath: string,
   uploaderId: string | null,
+  uploaderProfile?: {
+    name?: string;
+    uniqueStudentId?: string;
+    avatarId?: string;
+  },
 ): Record<string, unknown> {
-  return {
+  const row: Record<string, unknown> = {
     id: paperId,
     school: meta.school.trim().toUpperCase(),
     programme_code: meta.programmeCode.trim().toUpperCase(),
@@ -157,10 +192,17 @@ export function buildPaperRow(
     year: Number(meta.year),
     exam_type: meta.examType,
     file_path: filePath,
-    uploader_id: uploaderId,
+    uploader_id: uploaderProfile?.uniqueStudentId || uploaderId,
     status: 'pending' as PyqStatus,
     downloads: 0,
   };
+  if (uploaderProfile?.name) {
+    row.uploader_name = uploaderProfile.name;
+  }
+  if (uploaderProfile?.avatarId) {
+    row.uploader_avatar = uploaderProfile.avatarId;
+  }
+  return row;
 }
 
 /** Moderation decision the queue can apply to a pending paper. */

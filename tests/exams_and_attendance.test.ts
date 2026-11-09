@@ -3,6 +3,8 @@
  * Per docs/ROADMAP.md Phase 5, docs/DATA_SOURCES.md, docs/ARCHITECTURE.md
  */
 
+import fs from 'fs';
+import path from 'path';
 import {
   searchRollNumberResult,
   calculateExamCountdown,
@@ -16,6 +18,20 @@ import {
   calculateAttendanceStatus,
   useAttendanceStore,
 } from '../src/features/attendance/attendanceStore';
+import {
+  parseExcelDateSheet,
+  parseSubjectCell,
+  buildClassKey,
+  matchClassKey,
+  filterSlotsForStudent,
+  examSlotToRow,
+  rowToExamSlot,
+  examSlotToDatesheetEntry,
+  dateSlotKey,
+  type ExamDateSlot,
+} from '../src/features/exams/examDateSheetParser';
+import { parseAnyDateSheet } from '../worker/examDateSheet';
+import { upsertExamDateSlots } from '../worker/supabaseClient';
 
 describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
   describe('Exam Service & On-Device Result Finder', () => {
@@ -168,6 +184,255 @@ describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
       expect(typeof status.isShortage).toBe('boolean');
       expect(typeof status.canBunkMargin).toBe('number');
       expect(typeof status.classesNeededFor75).toBe('number');
+    });
+  });
+
+  describe('Authentic GBU Exam Date Sheet Parser & Ingestion Pipeline', () => {
+    const fixturePath = path.join(__dirname, '../worker/fixtures/gbu_midsem_datesheet_sample.csv');
+    const fixtureCsv = fs.readFileSync(fixturePath, 'utf8');
+
+    it('parses authentic GBU Mid-Sem CSV grid fixture into ExamDateSlot array', () => {
+      const slots = parseExcelDateSheet(fixtureCsv);
+      expect(slots.length).toBe(48);
+
+      // Verify School & ExamType auto-detection
+      expect(slots.every((s) => s.schoolCode === 'soict')).toBe(true);
+      expect(slots.every((s) => s.examType === 'mid_sem')).toBe(true);
+
+      // Verify shift timings
+      const morningSlots = slots.filter((s) => s.slot === 'morning');
+      const eveningSlots = slots.filter((s) => s.slot === 'evening');
+      expect(morningSlots.length).toBeGreaterThan(0);
+      expect(eveningSlots.length).toBeGreaterThan(0);
+      expect(morningSlots[0].shiftTime).toContain('10.00am-11.30am');
+      expect(eveningSlots[0].shiftTime).toContain('3.30pm-5.00pm');
+    });
+
+    it('parses course code and title cleanly without mangling contiguous words (CSE209 fix)', () => {
+      const slots = parseExcelDateSheet(fixtureCsv);
+
+      // CSE209 Operating System (originally "CSE209Operating System" without space)
+      const cse209 = slots.find((s) => s.subjectCode === 'CSE209');
+      expect(cse209).toBeDefined();
+      expect(cse209?.subjectCode).toBe('CSE209');
+      expect(cse209?.subjectName).toBe('Operating System');
+      expect(cse209?.classKey).toBe('btech_cse_sem3');
+
+      // Verify parseSubjectCell unit behavior with varied formats
+      const p1 = parseSubjectCell('CSE209Operating System');
+      expect(p1.subjectCode).toBe('CSE209');
+      expect(p1.subjectName).toBe('Operating System');
+
+      const p2 = parseSubjectCell('CS307- Python');
+      expect(p2.subjectCode).toBe('CS307');
+      expect(p2.subjectName).toBe('Python');
+
+      const p3 = parseSubjectCell('CSE201 Scientific Computing with Python');
+      expect(p3.subjectCode).toBe('CSE201');
+      expect(p3.subjectName).toBe('Scientific Computing with Python');
+
+      const p4 = parseSubjectCell('VACLB001 Constitution of India');
+      expect(p4.subjectCode).toBe('VACLB001');
+      expect(p4.subjectName).toBe('Constitution of India');
+
+      const p5 = parseSubjectCell('MA101 (Back Paper)');
+      expect(p5.subjectCode).toBe('MA101');
+      expect(p5.isBackPaper).toBe(true);
+    });
+
+    it('maps all programmes to canonical class keys faithfully', () => {
+      const slots = parseExcelDateSheet(fixtureCsv);
+      const classKeys = Array.from(new Set(slots.map((s) => s.classKey)));
+
+      expect(classKeys).toContain('int_btech_mtech_cse_sem1');
+      expect(classKeys).toContain('btech_cse_sem1');
+      expect(classKeys).toContain('btech_cse_sem3');
+      expect(classKeys).toContain('btech_ai_sem3');
+      expect(classKeys).toContain('btech_cse_sem5');
+      expect(classKeys).toContain('btech_it_sem3');
+      expect(classKeys).toContain('bca_sem3');
+      expect(classKeys).toContain('mca_ai_sem3');
+    });
+
+    it('filters slots for student enrolled in B.Tech CSE Sem 3', () => {
+      const slots = parseExcelDateSheet(fixtureCsv);
+      const studentSlots = filterSlotsForStudent(slots, 'btech_cse_sem3');
+
+      expect(studentSlots).toHaveLength(6);
+      const codes = studentSlots.map((s) => s.subjectCode);
+      expect(codes).toContain('CSE201'); // Scientific Computing with Python
+      expect(codes).toContain('CSE203'); // Data Structures
+      expect(codes).toContain('CSE209'); // Operating System
+      expect(codes).toContain('MB457');  // Organizational Behaviour
+      expect(codes).toContain('CSE205'); // Database Management System
+      expect(codes).toContain('CSE207'); // Computer Organization and Architecture
+
+      // Test canonical class key generation
+      expect(buildClassKey('B. Tech. (CSE) Batch (2025-2029) 3rd Semester')).toBe('btech_cse_sem3');
+      expect(buildClassKey('Integrated B. Tech.- M. Tech. (CSE) 1st Semester')).toBe('int_btech_mtech_cse_sem1');
+      expect(buildClassKey('MCA (AI) 3rd Semester')).toBe('mca_ai_sem3');
+
+      // Test alias matching (e.g. bcs_sem3 matches btech_cse_sem3)
+      expect(matchClassKey('bcs_sem3', 'btech_cse_sem3')).toBe(true);
+      expect(matchClassKey('btech_cse_3', 'btech_cse_sem3')).toBe(true);
+      expect(matchClassKey('btech_ai_sem3', 'btech_cse_sem3')).toBe(false);
+    });
+
+    it('parses tabular/flat format date sheet Excel and CSV files', () => {
+      const flatCsv = [
+        'Date,Shift,Programme,Semester,Course Code,Course Name,Paper ID',
+        '14-12-2026,Morning 09:30-12:30,B.Tech CSE,Sem 3,CSE201,Scientific Computing,101',
+        '16-12-2026,Evening 02:00-05:00,B.Tech CSE,Sem 3,CSE203,Data Structures,102',
+      ].join('\n');
+
+      const flatSlots = parseExcelDateSheet(flatCsv, { examType: 'end_sem', schoolCode: 'soict' });
+      expect(flatSlots).toHaveLength(2);
+      expect(flatSlots[0].examDate).toBe('2026-12-14');
+      expect(flatSlots[0].slot).toBe('morning');
+      expect(flatSlots[0].subjectCode).toBe('CSE201');
+      expect(flatSlots[0].paperId).toBe('101');
+      expect(flatSlots[0].classKey).toBe('btech_cse_sem3');
+      expect(flatSlots[1].examDate).toBe('2026-12-16');
+      expect(flatSlots[1].slot).toBe('evening');
+      expect(flatSlots[1].subjectCode).toBe('CSE203');
+      expect(flatSlots[1].paperId).toBe('102');
+    });
+
+    it('supports universal date sheet ingestion via parseAnyDateSheet', () => {
+      // CSV string
+      const slotsFromCsv = parseAnyDateSheet(fixtureCsv, 'midsem.csv');
+      expect(slotsFromCsv.length).toBe(48);
+
+      // Buffer
+      const buffer = Buffer.from(fixtureCsv, 'utf8');
+      const slotsFromBuffer = parseAnyDateSheet(buffer, 'midsem.csv');
+      expect(slotsFromBuffer.length).toBe(48);
+
+      // ArrayBuffer
+      const ab = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+      const slotsFromAb = parseAnyDateSheet(ab, 'midsem.xlsx');
+      expect(slotsFromAb.length).toBe(48);
+    });
+
+    it('converts ExamDateSlot to database row and DatesheetEntry UI shape faithfully', () => {
+      const slot: ExamDateSlot = {
+        slotKey: 'datesheet:soict:2026-12-14:morning:cse201:scientific-computing',
+        schoolCode: 'soict',
+        programme: 'B. Tech. (CSE) Batch (2025-2029) 3rd Semester',
+        classKey: 'btech_cse_sem3',
+        examDate: '2026-12-14',
+        slot: 'morning',
+        shiftTime: '09:30 AM - 12:30 PM',
+        subjectCode: 'CSE201',
+        subjectName: 'Scientific Computing with Python',
+        paperId: '1001',
+        examType: 'end_sem',
+        isBackPaper: false,
+      };
+
+      const row = examSlotToRow(slot);
+      expect(row.slot_key).toBe(slot.slotKey);
+      expect(row.class_key).toBe('btech_cse_sem3');
+      expect(row.paper_id).toBe('1001');
+
+      const reconstructed = rowToExamSlot(row);
+      expect(reconstructed.slotKey).toBe(slot.slotKey);
+      expect(reconstructed.subjectCode).toBe('CSE201');
+      expect(reconstructed.classKey).toBe('btech_cse_sem3');
+
+      const entry = examSlotToDatesheetEntry(slot);
+      expect(entry.id).toBe(slot.slotKey);
+      expect(entry.subjectCode).toBe('CSE201');
+      expect(entry.shift).toBe('Morning');
+      expect(entry.examTime).toBe('09:30 AM - 12:30 PM');
+      expect(entry.paperId).toBe('1001');
+      expect(entry.examType).toBe('end_sem');
+    });
+
+    it('verifies deterministic dateSlotKey and batch deduplication in upsertExamDateSlots', async () => {
+      const key1 = dateSlotKey('soict', '2026-12-14', 'morning', 'CSE201', 'Scientific Computing');
+      const key2 = dateSlotKey('soict', '2026-12-14', 'morning', 'CSE201', 'Scientific Computing');
+      expect(key1).toBe(key2);
+
+      // Verify upsertExamDateSlots handles duplicate slotKeys safely without throwing
+      const mockSlot: ExamDateSlot = {
+        slotKey: key1,
+        schoolCode: 'soict',
+        programme: 'B.Tech CSE',
+        classKey: 'btech_cse_sem3',
+        examDate: '2026-12-14',
+        slot: 'morning',
+        subjectCode: 'CSE201',
+        subjectName: 'Scientific Computing',
+        examType: 'end_sem',
+        isBackPaper: false,
+      };
+
+      // Calling with duplicates (without Supabase configured in test env returns 0 safely)
+      const count = await upsertExamDateSlots([mockSlot, mockSlot]);
+      expect(typeof count).toBe('number');
+    });
+
+    it('generates collision-free keys across different classes for shared exams and preserves all 48 slots', () => {
+      // Int B.Tech + M.Tech (CSE) 1st Sem and B.Tech (CSE) 1st Sem both take ES101 on 07-10-2026 Morning
+      const keyClass1 = dateSlotKey('soict', '2026-10-07', 'morning', 'ES101', 'Environmental Studies', 'int_btech_mtech_cse_sem1');
+      const keyClass2 = dateSlotKey('soict', '2026-10-07', 'morning', 'ES101', 'Environmental Studies', 'btech_cse_sem1');
+      expect(keyClass1).not.toBe(keyClass2);
+      expect(keyClass1).toContain('int_btech_mtech_cse_sem1');
+      expect(keyClass2).toContain('btech_cse_sem1');
+
+      // Verify all 48 slots in the authentic fixture produce 48 unique slot keys
+      const slots = parseExcelDateSheet(fixtureCsv);
+      const uniqueKeys = new Set(slots.map((s) => s.slotKey));
+      expect(slots.length).toBe(48);
+      expect(uniqueKeys.size).toBe(48);
+    });
+
+    it('handles dual-format PDF date sheet ingestion via parseAnyDateSheet', () => {
+      const pdfText = 'B. Tech. (CSE) 3rd Semester | Morning Shift 10.00am-11.30am | 07-10-2026 | CSE201 Python\nMid-Semester Examination';
+      const pdfBuffer = Buffer.from(
+        `%PDF-1.4\n1 0 obj\n<< /Length ${pdfText.length + 30} >>\nstream\nBT (${pdfText}) Tj ET\nendstream\nendobj\ntrailer\n%%EOF\n`,
+        'latin1',
+      );
+
+      const slots = parseAnyDateSheet(pdfBuffer, 'soict_midsem.pdf');
+      expect(slots.length).toBe(1);
+      expect(slots[0].examType).toBe('mid_sem');
+      expect(slots[0].classKey).toBe('btech_cse_sem3');
+      expect(slots[0].subjectCode).toBe('CSE201');
+      expect(slots[0].subjectName).toBe('Python');
+      expect(slots[0].shiftTime).toBe('10:00 AM - 11:30 AM');
+      expect(slots[0].slotKey).toContain('btech_cse_sem3');
+    });
+
+    it('formats mid_sem vs end_sem shift timings accurately in examSlotToDatesheetEntry', () => {
+      const midSlot: ExamDateSlot = {
+        slotKey: 'slot_mid_1',
+        schoolCode: 'soict',
+        programme: 'B. Tech. (CSE)',
+        classKey: 'btech_cse_sem3',
+        examDate: '2026-10-07',
+        slot: 'evening',
+        subjectCode: 'CSE201',
+        subjectName: 'Scientific Computing with Python',
+        examType: 'mid_sem',
+        isBackPaper: false,
+      };
+
+      const midEntry = examSlotToDatesheetEntry(midSlot);
+      expect(midEntry.shift).toBe('Evening');
+      expect(midEntry.examTime).toBe('03:30 PM - 05:00 PM');
+
+      const endSlot: ExamDateSlot = {
+        ...midSlot,
+        slotKey: 'slot_end_1',
+        examDate: '2026-12-14',
+        slot: 'morning',
+        examType: 'end_sem',
+      };
+      const endEntry = examSlotToDatesheetEntry(endSlot);
+      expect(endEntry.shift).toBe('Morning');
+      expect(endEntry.examTime).toBe('09:30 AM - 12:30 PM');
     });
   });
 });

@@ -74,7 +74,7 @@ no university password is ever collected from anyone (`docs/SCREENS_AUTH.md`).
 
 | | |
 |---|---|
-| Email | `ashishkhola56@gmail.com` |
+| Email | `admin@gbu.ac.in` |
 | Role | `owner` (in `public.moderators`) |
 | Password | the value of `GBU_ADMIN_PASSWORD` in `.env` — **git-ignored, never committed; rotate it if it ever leaks** |
 

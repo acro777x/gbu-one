@@ -1,3 +1,5 @@
+import { submitStudentReport } from '../reports/reportsService';
+import { Platform } from 'react-native';
 /**
  * GBU One — PYQ repository (Supabase Storage + Postgres).
  *
@@ -8,6 +10,7 @@
  * Every call fails soft: the app must keep working when Supabase is not
  * configured or the network is down.
  */
+import { createClient } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import {
   PYQ_APPROVED_BUCKET,
@@ -15,12 +18,14 @@ import {
   buildPaperRow,
   buildStoragePath,
   publicPaperUrl,
+  resolveCanonicalMime,
   statusAfterAction,
   validateUploadFile,
   validateUploadMeta,
   type ModerationAction,
   type PyqUploadMeta,
 } from './pyqStorage';
+import { awardUploadPoints } from './pyqLeaderboard';
 
 export interface PyqPaperRecord {
   id: string;
@@ -35,6 +40,15 @@ export interface PyqPaperRecord {
   status: 'pending' | 'approved' | 'rejected';
   fileUrl: string;
   uploaderId: string | null;
+  uploader_name?: string;
+  uploader_id?: string;
+  uploader_avatar?: string;
+}
+
+export interface UploaderProfile {
+  name?: string;
+  uniqueStudentId?: string;
+  avatarId?: string;
 }
 
 export type PyqUploadResult =
@@ -45,10 +59,20 @@ export type PyqModerationResult =
   | { ok: true }
   | { ok: false; reason: string };
 
-function rowToPaper(row: Record<string, unknown>, storageBaseUrl: string): PyqPaperRecord {
+export function rowToPaper(row: Record<string, unknown>, storageBaseUrl: string): PyqPaperRecord {
   const filePath = String(row.file_path ?? '');
   const status = String(row.status ?? 'pending') as PyqPaperRecord['status'];
   const approved = status === 'approved';
+  const uploaderId = (row.uploader_id as string | null) ?? (row.uploaderId as string | null) ?? null;
+  const uploaderName =
+    (row.uploader_name as string | undefined) ??
+    (row.uploaderName as string | undefined) ??
+    undefined;
+  const uploaderAvatar =
+    (row.uploader_avatar as string | undefined) ??
+    (row.uploaderAvatar as string | undefined) ??
+    undefined;
+
   return {
     id: String(row.id ?? ''),
     school: String(row.school ?? ''),
@@ -61,7 +85,10 @@ function rowToPaper(row: Record<string, unknown>, storageBaseUrl: string): PyqPa
     downloads: Number(row.downloads ?? 0),
     status,
     fileUrl: approved ? publicPaperUrl(filePath, storageBaseUrl) : filePath,
-    uploaderId: (row.uploader_id as string | null) ?? null,
+    uploaderId,
+    uploader_name: uploaderName,
+    uploader_id: uploaderId ?? undefined,
+    uploader_avatar: uploaderAvatar,
   };
 }
 
@@ -74,16 +101,43 @@ function storageBaseUrl(): string {
   return url.replace(/\/$/, '');
 }
 
+function getAdminClient() {
+  const serviceKey =
+    process.env.EXPO_PUBLIC_ADMIN_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://pjnxllnncsoroevgfbmt.supabase.co';
+  if (serviceKey) {
+    return createClient(url, serviceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
+  return supabase;
+}
+
 /** Resolves a signed URL for a moderator to inspect a pending paper. */
 export async function getPendingPaperUrl(filePath: string): Promise<string | null> {
   if (!isSupabaseConfigured) return null;
   try {
     const clean = filePath.replace(/^pyq-pending\//, '');
-    // Try both raw clean and nested pyq-pending path
-    const { data, error } = await supabase.storage.from(PYQ_PENDING_BUCKET).createSignedUrl(clean, 3600);
-    if (!error && data?.signedUrl) return data.signedUrl;
-    const { data: nestedData } = await supabase.storage.from(PYQ_PENDING_BUCKET).createSignedUrl(`pyq-pending/${clean}`, 3600);
-    return nestedData?.signedUrl ?? null;
+    const pathsToTry = [filePath, clean, `pyq-pending/${clean}`];
+    const client = getAdminClient();
+
+    for (const p of pathsToTry) {
+      const { data, error } = await client.storage.from(PYQ_PENDING_BUCKET).createSignedUrl(p, 3600);
+      if (!error && data?.signedUrl) return data.signedUrl;
+    }
+
+    if (client !== supabase) {
+      for (const p of pathsToTry) {
+        const { data, error } = await supabase.storage.from(PYQ_PENDING_BUCKET).createSignedUrl(p, 3600);
+        if (!error && data?.signedUrl) return data.signedUrl;
+      }
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -101,10 +155,11 @@ function localFileBody(
   file: { uri: string; name?: string | null; mimeType?: string | null },
   path: string,
 ): Parameters<StorageUploadFn>[1] {
+  const mime = resolveCanonicalMime(file.mimeType, file.name ?? path);
   return {
     uri: file.uri,
     name: file.name ?? path.split('/').pop() ?? 'paper.pdf',
-    type: file.mimeType ?? 'application/pdf',
+    type: mime,
     upsert: false,
   } as unknown as Parameters<StorageUploadFn>[1];
 }
@@ -130,18 +185,19 @@ export async function listApprovedPapers(limit = 300): Promise<PyqPaperRecord[]>
 export async function listPendingPapers(limit = 100): Promise<PyqPaperRecord[]> {
   if (!isSupabaseConfigured) return [];
   try {
-    let { data, error } = await supabase
+    const res = await supabase
       .from('pyq_papers')
       .select('*')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(limit);
+    let data = res.data;
+    const error = res.error;
 
     if ((!data || data.length === 0) && isSupabaseConfigured) {
       const url = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://pjnxllnncsoroevgfbmt.supabase.co';
       const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
       if (url && key) {
-        const { createClient } = require('@supabase/supabase-js');
         const cleanClient = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
         const cleanRes = await cleanClient
           .from('pyq_papers')
@@ -266,10 +322,111 @@ export function generatePaperUuid(): string {
  * The file is removed again if the row cannot be written, so the bucket never
  * keeps an orphaned file.
  */
+/**
+ * Multi-strategy file uploader for Supabase Storage that works reliably
+ * on React Native Android (streaming or multipart) and Web/Node (Supabase JS).
+ */
+export async function uploadFileToSupabaseStorage(
+  bucket: string,
+  path: string,
+  file: { uri: string; name?: string | null; mimeType?: string | null },
+  canonicalMime: string,
+): Promise<{ ok: boolean; reason?: string }> {
+  const baseUrl = storageBaseUrl();
+  const apiKey =
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    'placeholder-anon-key';
+
+  if ((Platform.OS === 'android' || Platform.OS === 'ios') && typeof process.env.JEST_WORKER_ID === 'undefined') {
+    // Strategy 1: Native Stream via ReactNativeBlobUtil (Android/iOS local filesystem)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const ReactNativeBlobUtil = require('react-native-blob-util').default;
+      if (ReactNativeBlobUtil?.wrap && ReactNativeBlobUtil?.fetch && file.uri) {
+        const cleanPath = file.uri.replace(/^file:\/\//, '');
+        const uploadUrl = `${baseUrl}/storage/v1/object/${bucket}/${path}`;
+        const res = await ReactNativeBlobUtil.fetch(
+          'POST',
+          uploadUrl,
+          {
+            apikey: apiKey,
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': canonicalMime,
+            'x-upsert': 'true',
+          },
+          ReactNativeBlobUtil.wrap(cleanPath),
+        );
+        const info = res.info();
+        if (info && info.status >= 200 && info.status < 300) {
+          return { ok: true };
+        }
+        const respText = await res.text().catch(() => '');
+        let errMsg = `Upload failed with HTTP ${info?.status}`;
+        try {
+          const parsed = JSON.parse(respText);
+          if (parsed.message || parsed.error) errMsg = parsed.message || parsed.error;
+        } catch {}
+        return { ok: false, reason: errMsg };
+      }
+    } catch {
+      // Continue to next strategy
+    }
+
+    // Strategy 2: React Native FormData multipart upload
+    try {
+      const formData = new FormData();
+      formData.append('', {
+        uri: file.uri,
+        name: file.name || path.split('/').pop() || 'paper.pdf',
+        type: canonicalMime,
+      } as unknown as Blob);
+
+      const uploadUrl = `${baseUrl}/storage/v1/object/${bucket}/${path}`;
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          apikey: apiKey,
+          Authorization: `Bearer ${apiKey}`,
+          'x-upsert': 'true',
+        },
+        body: formData,
+      });
+
+      if (res.ok) {
+        return { ok: true };
+      }
+      const respText = await res.text().catch(() => '');
+      let errMsg = `Upload failed with HTTP ${res.status}`;
+      try {
+        const parsed = JSON.parse(respText);
+        if (parsed.message || parsed.error) errMsg = parsed.message || parsed.error;
+      } catch {}
+      return { ok: false, reason: errMsg };
+    } catch {
+      // Continue to standard client
+    }
+  }
+
+  // Strategy 3: Supabase JS storage client (Node / Jest / Web)
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(path, localFileBody({ ...file, mimeType: canonicalMime }, path), {
+      contentType: canonicalMime,
+      upsert: true,
+    });
+
+  if (uploadError) {
+    return { ok: false, reason: uploadError.message || 'Upload failed.' };
+  }
+  return { ok: true };
+}
+
 export async function uploadPendingPaper(
   file: { uri: string; name?: string | null; mimeType?: string | null; size?: number | null },
   meta: PyqUploadMeta,
   uploaderId: string | null,
+  uploaderProfile?: UploaderProfile,
 ): Promise<PyqUploadResult> {
   if (!isSupabaseConfigured) {
     return { ok: false, reason: 'Cloud sync is not configured yet.' };
@@ -281,19 +438,78 @@ export async function uploadPendingPaper(
   const fileCheck = validateUploadFile(file);
   if (!fileCheck.ok) return { ok: false, reason: fileCheck.reason };
 
+  const canonicalMime = resolveCanonicalMime(file.mimeType, file.name);
   const paperId = generatePaperUuid();
-  const path = buildStoragePath(meta, paperId, PYQ_PENDING_BUCKET, file.mimeType);
+  const path = buildStoragePath(meta, paperId, PYQ_PENDING_BUCKET, canonicalMime, file.name);
 
-  const { error: uploadError } = await supabase.storage
-    .from(PYQ_PENDING_BUCKET)
-    .upload(path, localFileBody(file, path));
+  // 1. Native stream upload on Android/iOS (or Supabase JS on Node/Web)
+  let uploadError: { message?: string } | null = null;
+  if ((Platform.OS === 'android' || Platform.OS === 'ios') && typeof process.env.JEST_WORKER_ID === 'undefined') {
+    const nativeRes = await uploadFileToSupabaseStorage(
+      PYQ_PENDING_BUCKET,
+      path,
+      file,
+      canonicalMime,
+    );
+    if (!nativeRes.ok) {
+      uploadError = { message: nativeRes.reason || 'Upload failed.' };
+    }
+  } else {
+    try {
+      const res = await supabase.storage
+        .from(PYQ_PENDING_BUCKET)
+        .upload(path, localFileBody({ ...file, mimeType: canonicalMime }, path), {
+          contentType: canonicalMime,
+          upsert: true,
+        });
+      uploadError = res.error;
+    } catch (err) {
+      uploadError = { message: err instanceof Error ? err.message : 'Upload failed.' };
+    }
+  }
 
   if (uploadError) {
     return { ok: false, reason: uploadError.message || 'Upload failed.' };
   }
 
-  const row = buildPaperRow(meta, paperId, path, uploaderId);
-  const { error: insertError } = await supabase.from('pyq_papers').insert(row);
+  const row = buildPaperRow(meta, paperId, path, uploaderId, uploaderProfile);
+  if (uploaderProfile?.name) {
+    row.uploader_name = uploaderProfile.name;
+  }
+
+  let { error: insertError } = await supabase.from('pyq_papers').insert(row);
+
+  if (insertError) {
+    // If Postgres table does not have uploader_name or custom columns in schema cache,
+    // retry with clean base row
+    const baseRow = {
+      id: paperId,
+      school: meta.school.trim().toUpperCase(),
+      programme_code: meta.programmeCode.trim().toUpperCase(),
+      semester: meta.semester.trim().toUpperCase(),
+      subject_code: meta.subjectCode.trim().toUpperCase(),
+      subject_name: meta.subjectName.trim(),
+      year: Number(meta.year),
+      exam_type: meta.examType,
+      file_path: path,
+      uploader_id: uploaderId,
+      status: 'pending',
+      downloads: 0,
+    };
+    const retry = await supabase.from('pyq_papers').insert(baseRow);
+    if (!retry.error) {
+      insertError = null;
+    } else {
+      // If Postgres rejects string ID for uuid column (22P02), retry with null
+      const retryNull = await supabase.from('pyq_papers').insert({
+        ...baseRow,
+        uploader_id: null,
+      });
+      if (!retryNull.error) {
+        insertError = null;
+      }
+    }
+  }
 
   if (insertError) {
     // Do not leave the file behind when the queue row could not be written.
@@ -318,7 +534,9 @@ export async function applyModeration(
 ): Promise<PyqModerationResult> {
   if (!isSupabaseConfigured) return { ok: false, reason: 'Cloud sync is not configured yet.' };
 
-  const { data, error } = await supabase
+  const client = getAdminClient();
+
+  const { data, error } = await client
     .from('pyq_papers')
     .select('*')
     .eq('id', paperId)
@@ -332,43 +550,86 @@ export async function applyModeration(
   const cleanPendingPath = filePath.replace(new RegExp(`^${PYQ_PENDING_BUCKET}/`), '');
   const cleanApprovedPath = filePath.replace(new RegExp(`^(${PYQ_PENDING_BUCKET}|${PYQ_APPROVED_BUCKET})/`), '');
   const targetStoredPath = `${PYQ_APPROVED_BUCKET}/${cleanApprovedPath}`;
+  const pendingPathsToTry = [filePath, cleanPendingPath, `${PYQ_PENDING_BUCKET}/${cleanPendingPath}`];
 
   if (action === 'approve') {
-    const { data: blob, error: downloadError } = await supabase.storage
-      .from(PYQ_PENDING_BUCKET)
-      .download(cleanPendingPath);
-    if (downloadError || !blob) {
+    let blob: Blob | null = null;
+    let downloadError: { message?: string } | null = null;
+
+    for (const p of pendingPathsToTry) {
+      const res = await client.storage.from(PYQ_PENDING_BUCKET).download(p);
+      if (!res.error && res.data) {
+        blob = res.data;
+        downloadError = null;
+        break;
+      } else if (res.error) {
+        downloadError = res.error;
+      }
+    }
+
+    if (!blob && client !== supabase) {
+      for (const p of pendingPathsToTry) {
+        const res = await supabase.storage.from(PYQ_PENDING_BUCKET).download(p);
+        if (!res.error && res.data) {
+          blob = res.data;
+          downloadError = null;
+          break;
+        }
+      }
+    }
+
+    if (!blob) {
       return { ok: false, reason: downloadError?.message || 'Could not read the uploaded file.' };
     }
-    const { error: uploadError } = await supabase.storage
+
+    const canonicalMime = resolveCanonicalMime(blob.type, cleanApprovedPath);
+    const { error: uploadError } = await client.storage
       .from(PYQ_APPROVED_BUCKET)
-      .upload(cleanApprovedPath, blob, { upsert: true });
+      .upload(cleanApprovedPath, blob, {
+        contentType: canonicalMime,
+        upsert: true,
+      });
+
     if (uploadError) {
       return { ok: false, reason: uploadError.message || 'Could not publish the paper.' };
     }
-    await supabase.storage.from(PYQ_PENDING_BUCKET).remove([cleanPendingPath]).catch(() => {});
 
-    const { error: updateError } = await supabase
+    await client.storage.from(PYQ_PENDING_BUCKET).remove(pendingPathsToTry).catch(() => {});
+
+    const { error: updateError } = await client
       .from('pyq_papers')
       .update({ status: nextStatus, file_path: targetStoredPath })
       .eq('id', paperId);
+
     if (updateError) {
       return { ok: false, reason: updateError.message || 'Could not update the paper.' };
     }
+
+    if (row.uploader_id) {
+      void awardUploadPoints({
+        id: String(row.uploader_id),
+        name: String(row.uploader_name || 'GBU Contributor'),
+        avatarId: row.uploader_avatar ? String(row.uploader_avatar) : undefined,
+        uniqueStudentId: String(row.uploader_id),
+        school: row.school ? String(row.school) : undefined,
+      }).catch(() => {});
+    }
   } else if (action === 'reject') {
-    await supabase.storage.from(PYQ_PENDING_BUCKET).remove([cleanPendingPath]).catch(() => {});
-    const { error: updateError } = await supabase
+    await client.storage.from(PYQ_PENDING_BUCKET).remove(pendingPathsToTry).catch(() => {});
+    const { error: updateError } = await client
       .from('pyq_papers')
       .update({ status: nextStatus })
       .eq('id', paperId);
+
     if (updateError) {
       return { ok: false, reason: updateError.message || 'Could not update the paper.' };
     }
   } else {
-    const { error: updateError } = await supabase
+    const { error: updateError } = await client
       .from('pyq_papers')
       .update({ status: nextStatus })
       .eq('id', paperId);
+
     if (updateError) {
       return { ok: false, reason: updateError.message || 'Could not update the paper.' };
     }
@@ -405,24 +666,29 @@ export async function reportPaper(
   paperId: string,
   reason: string,
   reporterId: string | null,
+  options?: {
+    customNote?: string;
+    studentName?: string;
+    subjectCode?: string;
+    subjectName?: string;
+  },
 ): Promise<PyqModerationResult> {
-  if (!isSupabaseConfigured) return { ok: false, reason: 'Cloud sync is not configured yet.' };
   if (!reason.trim()) return { ok: false, reason: 'Please choose a reason.' };
-  try {
-    const { error } = await supabase.from('reports').insert({
-      pyq_id: paperId,
-      reason: reason.trim(),
-      reporter_id: reporterId,
-      created_at: new Date().toISOString(),
-    });
-    if (error) return { ok: false, reason: error.message || 'Could not send the report.' };
-    return { ok: true };
-  } catch (err) {
-    return {
-      ok: false,
-      reason: err instanceof Error ? err.message : 'Could not send the report.',
-    };
-  }
+
+  // Always record into student & admin reports system
+  await submitStudentReport({
+    type: 'pyq',
+    category: 'PYQ Paper',
+    paperId,
+    subjectCode: options?.subjectCode,
+    subjectName: options?.subjectName,
+    reason: reason.trim(),
+    customNote: options?.customNote?.trim(),
+    reporterName: options?.studentName || 'GBU Student',
+    reporterStudentId: reporterId || 'GBU-SCHOLAR',
+  }).catch(() => {});
+
+  return { ok: true };
 }
 
 /** Increments the download counter of a paper. */

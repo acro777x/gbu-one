@@ -8,10 +8,8 @@ import { useAppTheme } from '../../src/lib/ThemeContext';
 
 export default function TabLayout() {
   const { user, isGuest } = useAuthStore();
+  const { isSheetOpen } = useSheetStore();
   const { colors } = useAppTheme();
-  // A sheet is drawn inside the screen, so the tab bar has to step aside
-  // while one is open instead of floating on top of it.
-  const isSheetOpen = useSheetStore((state) => state.isSheetOpen);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -21,24 +19,38 @@ export default function TabLayout() {
           tabBarStyle: { display: 'none' }, // Using our custom floating tab bar
         }}
         tabBar={(props) => {
-          if (isSheetOpen) return null;
-
           const currentRoute = props.state.routes[props.state.index].name;
           const activeKey = currentRoute === 'index' ? 'home' : currentRoute;
 
           const handleTabPress = (tabKey: string) => {
-            const targetRoute = tabKey === 'home' ? 'index' : tabKey;
-            props.navigation.navigate(targetRoute);
+            const targetRouteName = tabKey === 'home' ? 'index' : tabKey;
+            const route = props.state.routes.find((r) => r.name === targetRouteName);
+            if (route) {
+              const isFocused = props.state.routes[props.state.index].name === route.name;
+              const event = props.navigation.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              });
+              if (!isFocused && !event.defaultPrevented) {
+                props.navigation.navigate(route.name);
+              }
+            }
           };
 
           return (
-            <FloatingTabBar
-              activeTab={activeKey}
-              onTabPress={handleTabPress}
-              userAvatar={user?.avatarUrl}
-              userName={user?.name}
-              isGuest={isGuest}
-            />
+            <View
+              style={{ display: isSheetOpen ? 'none' : 'flex' }}
+              pointerEvents={isSheetOpen ? 'none' : 'auto'}
+            >
+              <FloatingTabBar
+                activeTab={activeKey}
+                onTabPress={handleTabPress}
+                userAvatar={user?.avatarUrl}
+                userName={user?.name}
+                isGuest={isGuest}
+              />
+            </View>
           );
         }}
       >

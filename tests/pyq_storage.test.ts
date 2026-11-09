@@ -14,6 +14,7 @@ import {
   moderationActionLabel,
   normaliseExamType,
   publicPaperUrl,
+  resolveCanonicalMime,
   slugifySegment,
   statusAfterAction,
   validateUploadFile,
@@ -108,6 +109,23 @@ describe('upload validation', () => {
     expect(extensionForMimeType('image/png')).toBe('png');
     expect(extensionForMimeType('image/jpeg')).toBe('jpg');
     expect(extensionForMimeType('application/zip')).toBe('bin');
+  });
+
+  it('normalises complex or degraded mime types from Android SAF picker', () => {
+    expect(resolveCanonicalMime('text/plain; charset=utf-8', 'paper.pdf')).toBe('application/pdf');
+    expect(resolveCanonicalMime('text/plain; charset=utf-8', 'scan.png')).toBe('image/png');
+    expect(resolveCanonicalMime('application/octet-stream', 'exam.jpg')).toBe('image/jpeg');
+    expect(resolveCanonicalMime('application/pdf; charset=binary', 'doc.pdf')).toBe('application/pdf');
+    expect(resolveCanonicalMime('image/png; charset=utf-8', 'diagram')).toBe('image/png');
+
+    // validateUploadFile accepts files with Android SAF degraded text/plain when filename is pdf
+    expect(
+      validateUploadFile({
+        mimeType: 'text/plain; charset=utf-8',
+        name: 'Maths_EndSem_2023.pdf',
+        size: 512000,
+      }).ok,
+    ).toBe(true);
   });
 });
 

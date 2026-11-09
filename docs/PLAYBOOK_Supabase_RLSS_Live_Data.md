@@ -25,7 +25,7 @@ grant execute on function public.is_moderator() to anon, authenticated;
 ## 🟡 Step 2 — Seed the Moderators Table
 ```sql
 insert into public.moderators (email, role)
-values ('ashishkhola56@gmail.com', 'owner');
+values ('admin@gbu.ac.in', 'owner');
 ```
 
 ## 🟢 Step 3 — Run the Full Gradle Build

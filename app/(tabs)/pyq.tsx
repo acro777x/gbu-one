@@ -9,6 +9,7 @@ import {
   Dimensions,
   FlatList,
   Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -22,11 +23,24 @@ import {
   AlertTriangle,
   FileText,
   X,
-  Flag,
+  Trophy,
 } from 'lucide-react-native';
-import { GlassCard, PillButton, Toast, BottomSheet, Chip, EmptyState } from '../../src/components/ui';
+import {
+  GlassCard,
+  PillButton,
+  Toast,
+  BottomSheet,
+  Chip,
+  EmptyState,
+  Avatar,
+} from '../../src/components/ui';
 import { useAuthStore } from '../../src/store/useAuthStore';
-import { PYQItem, MOCK_PAPERS, filterPapers, normalizeSemester } from '../../src/features/pyq/pyqService';
+import {
+  PYQItem,
+  MOCK_PAPERS,
+  filterPapers,
+  normalizeSemester,
+} from '../../src/features/pyq/pyqService';
 import { registerDocument } from '../../src/components/pdf/pdfRegistry';
 import { usePyqQuery } from '../../src/features/pyq/usePyqQuery';
 import {
@@ -34,7 +48,7 @@ import {
   uploadPendingPaper,
   type PyqUploadResult,
 } from '../../src/features/pyq/pyqRepository';
-import { PYQ_ALLOWED_MIME_TYPES } from '../../src/features/pyq/pyqStorage';
+import { PYQ_ALLOWED_MIME_TYPES, resolveCanonicalMime } from '../../src/features/pyq/pyqStorage';
 import {
   buildQueuedUpload,
   enqueueUpload,
@@ -42,13 +56,198 @@ import {
 } from '../../src/features/pyq/localUploadQueue';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
+import {
+  getLeaderboard,
+  awardUploadPoints,
+  DEFAULT_LEADERBOARD_SEED,
+  type LeaderboardEntry,
+  type CurrentUserParam,
+} from '../../src/features/pyq/pyqLeaderboard';
 
-const SCHOOL_FILTERS = ['All', 'SOICT', 'SOE', 'SOBT', 'SOM', 'SOL', 'SOVSAS', 'SOHSS'];
-const SEMESTER_FILTERS = ['All', 'Sem I', 'Sem II', 'Sem III', 'Sem IV', 'Sem V', 'Sem VI', 'Sem VII', 'Sem VIII'];
+const SCHOOL_FILTERS = [
+  'All',
+  'SOICT',
+  'SOE',
+  'SOBT',
+  'SOM',
+  'SOLJG',
+  'SOHSS',
+  'SOVSAS',
+  'SOUS',
+];
+
+const SEMESTER_FILTERS = [
+  'All',
+  'Sem I',
+  'Sem II',
+  'Sem III',
+  'Sem IV',
+  'Sem V',
+  'Sem VI',
+  'Sem VII',
+  'Sem VIII',
+  'Sem IX',
+  'Sem X',
+];
+
 const EXAM_TYPE_TABS = ['All', 'Mid Sem', 'End Sem', 'Back Paper'] as const;
 type ExamTab = (typeof EXAM_TYPE_TABS)[number];
+
+const UPLOAD_SCHOOLS = [
+  'SOICT',
+  'SOE',
+  'SOBT',
+  'SOM',
+  'SOLJG',
+  'SOHSS',
+  'SOVSAS',
+  'SOUS',
+] as const;
+
+const UPLOAD_SEMESTERS = [
+  'I',
+  'II',
+  'III',
+  'IV',
+  'V',
+  'VI',
+  'VII',
+  'VIII',
+  'IX',
+  'X',
+] as const;
+
+import {
+  PROGRAMMES_BY_SCHOOL,
+  type ProgrammeDescriptor,
+} from '../../src/features/pyq/pyqProgrammes';
+
+export { PROGRAMMES_BY_SCHOOL };
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.floor((SCREEN_WIDTH - theme.spacing.lg * 2 - 12) / 2);
+
+interface PaperCardProps {
+  paper: PYQItem;
+  isSelected: boolean;
+  onPress: () => void;
+  onToggleSelect: () => void;
+  onDownload: () => void;
+  onUpload: () => void;
+}
+
+const PaperCard = React.memo<PaperCardProps>(function PaperCard({
+  paper,
+  isSelected,
+  onPress,
+  onToggleSelect,
+  onDownload,
+  onUpload,
+}) {
+  const { colors, isDark } = useAppTheme();
+  const hasAuthenticFile = Boolean(paper.fileUrl);
+
+  return (
+    <GlassCard
+      style={[styles.card, isSelected && { backgroundColor: colors.accentSoft }]}
+      accentBorder={isSelected}
+      onPress={onPress}
+    >
+      <View style={styles.cardHeader}>
+        <View
+          style={[
+            styles.badge,
+            { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted },
+          ]}
+        >
+          <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {hasAuthenticFile ? (
+            <View style={[styles.fileStatusPill, { backgroundColor: colors.successSoft }]}>
+              <CheckCircle2 size={10} color={colors.success} />
+              <Text style={[styles.fileStatusText, { color: colors.success }]}>Available</Text>
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.fileStatusPill,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(15, 23, 42, 0.06)',
+                },
+              ]}
+            >
+              <Text style={[styles.fileStatusText, { color: colors.textTertiary }]}>No paper</Text>
+            </View>
+          )}
+          {hasAuthenticFile && (
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                onToggleSelect();
+              }}
+              hitSlop={8}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isSelected }}
+              accessibilityLabel={`Select ${paper.subjectCode}`}
+            >
+              <CheckCircle2 size={16} color={isSelected ? colors.accent : colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      <Text style={[styles.subjectName, { color: colors.textPrimary }]} numberOfLines={2}>
+        {paper.subjectName}
+      </Text>
+
+      <View style={styles.metaRow}>
+        <Text style={[styles.typeText, { color: colors.textSecondary }]}>
+          {paper.year} • {paper.examType}
+        </Text>
+        <Text style={[styles.programmeTag, { color: colors.textTertiary }]}>
+          {paper.programme} ({paper.semester})
+        </Text>
+      </View>
+
+      {hasAuthenticFile ? (
+        <TouchableOpacity
+          style={styles.downloadRow}
+          onPress={(e) => {
+            e.stopPropagation();
+            onDownload();
+          }}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Download ${paper.subjectCode}`}
+        >
+          <Download size={13} color={colors.accent} />
+          <Text style={[styles.downloadCount, { color: colors.accent, fontWeight: '600' }]}>
+            Download ({paper.downloads})
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={styles.downloadRow}
+          onPress={(e) => {
+            e.stopPropagation();
+            onUpload();
+          }}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Upload ${paper.subjectCode}`}
+        >
+          <UploadCloud size={13} color={colors.accent} />
+          <Text style={[styles.downloadCount, { color: colors.accent, fontWeight: '600' }]}>
+            Upload Paper
+          </Text>
+        </TouchableOpacity>
+      )}
+    </GlassCard>
+  );
+});
 
 export default function PYQScreen() {
   const { colors, isDark } = useAppTheme();
@@ -63,8 +262,9 @@ export default function PYQScreen() {
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [uploadSheetVisible, setUploadSheetVisible] = useState(false);
-  const [guestGateVisible, setGuestGateVisible] = useState(false);
   const [reportingPaper, setReportingPaper] = useState<PYQItem | null>(null);
+  const [selectedReportReason, setSelectedReportReason] = useState('Incomplete or blurred scan');
+  const [reportCustomNote, setReportCustomNote] = useState('');
   const [reportSheetVisible, setReportSheetVisible] = useState(false);
   const [detailPaper, setDetailPaper] = useState<PYQItem | null>(null);
   const [detailSheetVisible, setDetailSheetVisible] = useState(false);
@@ -75,6 +275,8 @@ export default function PYQScreen() {
   const [uploadSchool, setUploadSchool] = useState('SOICT');
   const [uploadExamType, setUploadExamType] = useState<'Mid Sem' | 'End Sem' | 'Back Paper'>('Mid Sem');
   const [uploadProgramme, setUploadProgramme] = useState('BCS');
+  const [isCustomProgramme, setIsCustomProgramme] = useState(false);
+  const [customProgrammeText, setCustomProgrammeText] = useState('');
   const [uploadSemester, setUploadSemester] = useState('II');
   const [uploadYear, setUploadYear] = useState(String(new Date().getFullYear() - 1));
   const [pickedFile, setPickedFile] = useState<{
@@ -84,8 +286,44 @@ export default function PYQScreen() {
     size: number;
   } | null>(null);
   const [uploading, setUploading] = useState(false);
-  // Papers handed in before the cloud was reachable, waiting to go up.
   const [queuedCount, setQueuedCount] = useState(0);
+  const [leaderboardRefreshKey, setLeaderboardRefreshKey] = useState(0);
+  const [topContributors, setTopContributors] = useState<LeaderboardEntry[]>(() =>
+    DEFAULT_LEADERBOARD_SEED.slice(0, 3),
+  );
+
+  const leaderboardUser = useMemo<CurrentUserParam | undefined>(
+    () =>
+      user
+        ? {
+            id: user.id,
+            name: user.name,
+            avatarId: user.avatarId ?? undefined,
+            uniqueStudentId:
+              user.uniqueStudentId || user.rollNo || `GBU-${user.id.slice(0, 6).toUpperCase()}`,
+            school: user.classSelection?.school,
+          }
+        : undefined,
+    [
+      user?.id,
+      user?.name,
+      user?.avatarId,
+      user?.uniqueStudentId,
+      user?.rollNo,
+      user?.classSelection?.school,
+    ],
+  );
+
+  // Load top 3 contributors for sleek banner card
+  useEffect(() => {
+    let active = true;
+    void getLeaderboard(leaderboardUser).then((data) => {
+      if (active) setTopContributors(data.slice(0, 3));
+    });
+    return () => {
+      active = false;
+    };
+  }, [leaderboardUser, leaderboardRefreshKey]);
 
   useEffect(() => {
     let active = true;
@@ -105,16 +343,16 @@ export default function PYQScreen() {
     setToastVisible(true);
   };
 
-  const toggleSelect = (id: string) => {
+  const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       if (prev.includes(id)) {
         return prev.filter((item) => item !== id);
       }
       return [...prev, id];
     });
-  };
+  }, []);
 
-  const handleSingleDownload = (paper: PYQItem) => {
+  const handleSingleDownload = useCallback((paper: PYQItem) => {
     setDetailSheetVisible(false);
     if (!paper.fileUrl) {
       showToast(`No question paper uploaded for ${paper.subjectCode} yet. Tap Upload to contribute!`);
@@ -128,7 +366,7 @@ export default function PYQScreen() {
       params: { id: docId, url: targetUrl, title },
     });
     showToast(`Opening ${paper.subjectCode} (${paper.examType}). Download logged.`);
-  };
+  }, []);
 
   const handleBulkDownload = () => {
     if (selectedIds.length === 0) return;
@@ -143,23 +381,37 @@ export default function PYQScreen() {
   };
 
   const handleUploadPress = () => {
-    // The upload sheet is open for everyone: a guest can still hand the paper
-    // in, and it is kept on the phone until the cloud is reachable.
+    setPickedFile(null);
     setUploadSheetVisible(true);
   };
 
   const handleOpenReport = (paper: PYQItem) => {
     setReportingPaper(paper);
+    setSelectedReportReason('Incomplete or blurred scan');
+    setReportCustomNote('');
     setReportSheetVisible(true);
   };
 
-  const handleSendReport = async (reason: string) => {
+  const handleSendReport = async (overrideReason?: string) => {
     if (!reportingPaper) return;
+    const finalReason = overrideReason || selectedReportReason;
+    const custom = reportCustomNote.trim();
     setReportSheetVisible(false);
-    const result = await reportPaper(reportingPaper.id, reason, user?.id ?? null);
+    setReportCustomNote('');
+    const result = await reportPaper(
+      reportingPaper.id,
+      finalReason,
+      user?.uniqueStudentId || user?.rollNo || user?.id || null,
+      {
+        customNote: custom,
+        studentName: user?.name || 'GBU Student',
+        subjectCode: reportingPaper.subjectCode,
+        subjectName: reportingPaper.subjectName,
+      },
+    );
     showToast(
       result.ok
-        ? `Report received: moderation will review ${reportingPaper.subjectCode} (${reason}).`
+        ? `Report received: moderation will review ${reportingPaper.subjectCode}.`
         : `Report could not be sent: ${result.reason}`,
     );
   };
@@ -167,21 +419,30 @@ export default function PYQScreen() {
   const handlePickFile = async () => {
     try {
       const picked = await DocumentPicker.getDocumentAsync({
-        type: [...PYQ_ALLOWED_MIME_TYPES],
+        type: ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/*', '*/*'],
         copyToCacheDirectory: true,
         multiple: false,
       });
       if (picked.canceled || picked.assets.length === 0) return;
       const asset = picked.assets[0];
+      const canonicalMime = resolveCanonicalMime(asset.mimeType, asset.name);
       setPickedFile({
         uri: asset.uri,
         name: asset.name || 'paper.pdf',
-        mimeType: asset.mimeType || 'application/pdf',
+        mimeType: canonicalMime,
         size: asset.size ?? 0,
       });
       showToast(`Selected ${asset.name}`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not open the file picker.');
+    }
+  };
+
+  const handleSchoolSelect = (school: string) => {
+    setUploadSchool(school);
+    const progs = PROGRAMMES_BY_SCHOOL[school] || [];
+    if (progs.length > 0 && !isCustomProgramme) {
+      setUploadProgramme(progs[0].code);
     }
   };
 
@@ -194,29 +455,57 @@ export default function PYQScreen() {
       showToast('Please enter the subject name');
       return;
     }
+    const finalProg = isCustomProgramme
+      ? customProgrammeText.trim().toUpperCase()
+      : uploadProgramme.trim().toUpperCase();
+    if (!finalProg) {
+      showToast('Please select or enter programme code');
+      return;
+    }
     if (!pickedFile) {
       showToast('Please choose the question paper file');
       return;
     }
 
+    const guestStudentId =
+      user?.uniqueStudentId ||
+      user?.rollNo ||
+      (user?.id ? `GBU-${user.id.slice(0, 6).toUpperCase()}` : `GBU-${Math.floor(100000 + Math.random() * 900000)}`);
+    const uploaderName = user?.name || 'Guest Scholar';
+    const uploaderAvatar = user?.avatarId || (user?.avatarUrl ?? 'tech-scholar');
+
     const meta = {
       school: uploadSchool,
-      programmeCode: uploadProgramme,
+      programmeCode: finalProg,
       semester: uploadSemester,
-      subjectCode: uploadSubjectCode,
-      subjectName: uploadSubjectName,
+      subjectCode: uploadSubjectCode.trim().toUpperCase(),
+      subjectName: uploadSubjectName.trim(),
       year: Number(uploadYear),
       examType: uploadExamType,
     };
 
     setUploading(true);
-    const result: PyqUploadResult = await uploadPendingPaper(pickedFile, meta, user?.id ?? null);
+    const result: PyqUploadResult = await uploadPendingPaper(
+      pickedFile,
+      meta,
+      user?.id ?? guestStudentId,
+      {
+        name: uploaderName,
+        uniqueStudentId: guestStudentId,
+        avatarId: uploaderAvatar,
+      },
+    );
     setUploading(false);
 
     if (!result.ok) {
-      // The cloud is not reachable yet, so the paper is kept on the phone
-      // instead of being thrown away.
-      if (result.reason === 'Cloud sync is not configured yet.') {
+      const isOfflineOrNetworkFailure =
+        result.reason === 'Cloud sync is not configured yet.' ||
+        result.reason.toLowerCase().includes('network') ||
+        result.reason.toLowerCase().includes('failed to fetch') ||
+        result.reason.toLowerCase().includes('timeout') ||
+        result.reason.toLowerCase().includes('connection');
+
+      if (isOfflineOrNetworkFailure) {
         const entry = buildQueuedUpload(
           {
             uri: pickedFile.uri,
@@ -232,7 +521,14 @@ export default function PYQScreen() {
         setUploadSubjectCode('');
         setUploadSubjectName('');
         setPickedFile(null);
-        showToast('Saved on this phone. It will go up once the library is connected.');
+        showToast('Saved on this phone. It will upload automatically once connected.');
+        void awardUploadPoints({
+          id: user?.id || guestStudentId,
+          name: uploaderName,
+          avatarId: uploaderAvatar,
+          uniqueStudentId: guestStudentId,
+          school: user?.classSelection?.school || uploadSchool,
+        }).then(() => setLeaderboardRefreshKey((k) => k + 1));
         return;
       }
       showToast(result.reason);
@@ -243,7 +539,14 @@ export default function PYQScreen() {
     setUploadSubjectCode('');
     setUploadSubjectName('');
     setPickedFile(null);
-    showToast('Upload submitted. A moderator will review it before it is listed.');
+    showToast('Upload submitted! A moderator will review it before it is listed on GBU One.');
+    void awardUploadPoints({
+      id: user?.id || guestStudentId,
+      name: uploaderName,
+      avatarId: uploaderAvatar,
+      uniqueStudentId: guestStudentId,
+      school: user?.classSelection?.school || uploadSchool,
+    }).then(() => setLeaderboardRefreshKey((k) => k + 1));
     void refetch();
   };
 
@@ -251,7 +554,15 @@ export default function PYQScreen() {
     const map = new Map<string, { code: string; name: string; count: number }>();
     const cleanSem = selectedSemester === 'All' ? 'All' : normalizeSemester(selectedSemester);
     papers.forEach((p) => {
-      if (selectedSchool !== 'All' && p.school.toUpperCase() !== selectedSchool.toUpperCase()) return;
+      if (selectedSchool !== 'All') {
+        const pSch = p.school.toUpperCase();
+        const selSch = selectedSchool.toUpperCase();
+        const matches =
+          pSch === selSch ||
+          (selSch === 'SOLJG' && (pSch === 'SOL' || pSch === 'SOLJG')) ||
+          (selSch === 'SOL' && (pSch === 'SOLJG' || pSch === 'SOL'));
+        if (!matches) return;
+      }
       if (cleanSem !== 'All') {
         const pSem = normalizeSemester(p.semester);
         if (pSem !== cleanSem) return;
@@ -266,16 +577,6 @@ export default function PYQScreen() {
     });
     return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
   }, [papers, selectedSchool, selectedSemester]);
-
-  const displayedSubjectChips = useMemo(() => {
-    if (availableSubjects.length <= 25) return availableSubjects;
-    const top = availableSubjects.slice(0, 25);
-    if (selectedSubject !== 'All' && !top.some((s) => s.code === selectedSubject)) {
-      const cur = availableSubjects.find((s) => s.code === selectedSubject);
-      if (cur) return [...top, cur];
-    }
-    return top;
-  }, [availableSubjects, selectedSubject]);
 
   useEffect(() => {
     if (selectedSubject !== 'All' && !availableSubjects.some((s) => s.code === selectedSubject)) {
@@ -301,106 +602,30 @@ export default function PYQScreen() {
   const renderPaperItem = useCallback(
     ({ item: paper }: { item: PYQItem }) => {
       const isSelected = selectedIds.includes(paper.id);
-      const hasAuthenticFile = Boolean(paper.fileUrl);
 
       return (
-        <GlassCard
-          key={paper.id}
-          style={[styles.card, isSelected && { backgroundColor: colors.accentSoft }]}
-          accentBorder={isSelected}
+        <PaperCard
+          paper={paper}
+          isSelected={isSelected}
           onPress={() => {
             setDetailPaper(paper);
             setDetailSheetVisible(true);
           }}
-        >
-          <View style={styles.cardHeader}>
-            <View style={[styles.badge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
-              <Text style={[styles.badgeText, { color: colors.accent }]}>{paper.subjectCode}</Text>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              {hasAuthenticFile ? (
-                <View style={[styles.fileStatusPill, { backgroundColor: colors.successSoft }]}>
-                  <CheckCircle2 size={10} color={colors.success} />
-                  <Text style={[styles.fileStatusText, { color: colors.success }]}>Available</Text>
-                </View>
-              ) : (
-                <View style={[styles.fileStatusPill, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15, 23, 42, 0.06)' }]}>
-                  <Text style={[styles.fileStatusText, { color: colors.textTertiary }]}>No paper</Text>
-                </View>
-              )}
-              {hasAuthenticFile && (
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    toggleSelect(paper.id);
-                  }}
-                  hitSlop={8}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: isSelected }}
-                  accessibilityLabel={`Select ${paper.subjectCode}`}
-                >
-                  <CheckCircle2 size={16} color={isSelected ? colors.accent : colors.textTertiary} />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          <Text style={[styles.subjectName, { color: colors.textPrimary }]} numberOfLines={2}>
-            {paper.subjectName}
-          </Text>
-
-          <View style={styles.metaRow}>
-            <Text style={[styles.typeText, { color: colors.textSecondary }]}>
-              {paper.year} • {paper.examType}
-            </Text>
-            <Text style={[styles.programmeTag, { color: colors.textTertiary }]}>
-              {paper.programme} ({paper.semester})
-            </Text>
-          </View>
-
-          {hasAuthenticFile ? (
-            <TouchableOpacity
-              style={styles.downloadRow}
-              onPress={(e) => {
-                e.stopPropagation();
-                handleSingleDownload(paper);
-              }}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`Download ${paper.subjectCode}`}
-            >
-              <Download size={13} color={colors.accent} />
-              <Text style={[styles.downloadCount, { color: colors.accent, fontWeight: '600' }]}>
-                Download ({paper.downloads})
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.downloadRow}
-              onPress={(e) => {
-                e.stopPropagation();
-                setUploadSubjectCode(paper.subjectCode);
-                setUploadSubjectName(paper.subjectName);
-                setUploadSchool(paper.school || 'SOICT');
-                setUploadProgramme(paper.programme || 'BCS');
-                setUploadSemester(paper.semester.replace(/^Sem\s*/i, '') || 'I');
-                setUploadExamType(paper.examType || 'Mid Sem');
-                setUploadSheetVisible(true);
-              }}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`Upload ${paper.subjectCode}`}
-            >
-              <UploadCloud size={13} color={colors.accent} />
-              <Text style={[styles.downloadCount, { color: colors.accent, fontWeight: '600' }]}>
-                Upload Paper
-              </Text>
-            </TouchableOpacity>
-          )}
-        </GlassCard>
+          onToggleSelect={() => toggleSelect(paper.id)}
+          onDownload={() => handleSingleDownload(paper)}
+          onUpload={() => {
+            setUploadSubjectCode(paper.subjectCode);
+            setUploadSubjectName(paper.subjectName);
+            setUploadSchool(paper.school || 'SOICT');
+            setUploadProgramme(paper.programme || 'BCS');
+            setUploadSemester(paper.semester.replace(/^Sem\s*/i, '') || 'I');
+            setUploadExamType(paper.examType || 'Mid Sem');
+            setUploadSheetVisible(true);
+          }}
+        />
       );
     },
-    [selectedIds, colors, isDark],
+    [selectedIds, toggleSelect, handleSingleDownload],
   );
 
   const renderHeader = useCallback(
@@ -465,7 +690,7 @@ export default function PYQScreen() {
         </View>
       </View>
     ),
-    [searchQuery, selectedSchool, selectedSemester, examTab, trendingPapers, selectedSubject, colors, isDark, isFetching, filteredPapers.length],
+    [searchQuery, selectedSchool, selectedSemester, examTab, trendingPapers, selectedSubject, colors, isDark, isFetching, filteredPapers.length, toggleSelect],
   );
 
   const renderFooter = useCallback(
@@ -491,11 +716,69 @@ export default function PYQScreen() {
         <TouchableOpacity
           style={[styles.uploadBtn, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}
           onPress={handleUploadPress}
+          accessibilityRole="button"
+          accessibilityLabel="Contribute question paper"
         >
           <UploadCloud size={16} color={colors.accent} />
           <Text style={[styles.uploadBtnText, { color: colors.accent }]}>Upload</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Sleek Compact GBU Contributor Leaderboard Banner Card */}
+      <TouchableOpacity
+        activeOpacity={0.88}
+        onPress={() => router.push('/pyq/leaderboard')}
+        accessibilityRole="button"
+        accessibilityLabel="View full contributor leaderboard"
+        style={[
+          styles.leaderboardBanner,
+          {
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : colors.surface,
+            borderColor: colors.borderGlass,
+          },
+        ]}
+      >
+        <View style={styles.leaderboardBannerHeader}>
+          <View style={styles.leaderboardBannerTitleRow}>
+            <Trophy size={16} color="#F59E0B" />
+            <Text style={[styles.leaderboardBannerTitle, { color: colors.textPrimary }]}>
+              🏆 GBU Contributor Leaderboard
+            </Text>
+          </View>
+          <View style={styles.leaderboardBannerAction}>
+            <Text style={[styles.leaderboardBannerActionText, { color: colors.accent }]}>
+              View Full Leaderboard →
+            </Text>
+          </View>
+        </View>
+
+        {/* Compact row of Top 3 podium avatars & points */}
+        <View style={styles.top3Row}>
+          {topContributors.map((entry, index) => {
+            const medal = index === 0 ? '👑' : index === 1 ? '🥈' : '🥉';
+            const medalBorder = index === 0 ? '#F59E0B' : index === 1 ? '#94A3B8' : '#D97706';
+            return (
+              <View key={`top3_${entry.id}_${index}`} style={styles.top3Item}>
+                <View style={[styles.top3AvatarRing, { borderColor: medalBorder }]}>
+                  <Avatar name={entry.name} avatarId={entry.avatarId} size={28} />
+                  <Text style={styles.top3Medal}>{medal}</Text>
+                </View>
+                <View style={styles.top3Details}>
+                  <Text
+                    style={[styles.top3Name, { color: colors.textPrimary }]}
+                    numberOfLines={1}
+                  >
+                    {entry.name.split(' ')[0]}
+                  </Text>
+                  <Text style={[styles.top3Points, { color: colors.accent }]}>
+                    {entry.points} pts
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </TouchableOpacity>
 
       {/* Search Bar */}
       {queuedCount > 0 ? (
@@ -585,7 +868,6 @@ export default function PYQScreen() {
         </ScrollView>
       </View>
 
-
       <FlatList
         data={filteredPapers}
         keyExtractor={(item) => item.id}
@@ -603,8 +885,8 @@ export default function PYQScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
-        initialNumToRender={8}
-        maxToRenderPerBatch={10}
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
         windowSize={5}
         removeClippedSubviews={Platform.OS === 'android'}
       />
@@ -637,31 +919,10 @@ export default function PYQScreen() {
         onDismiss={() => setToastVisible(false)}
       />
 
-      {/* Guest Gate Bottom Sheet */}
-      <BottomSheet
-        visible={guestGateVisible}
-        onClose={() => setGuestGateVisible(false)}
-        title="Account Required"
-      >
-        <View style={styles.sheetContent}>
-          <Text style={[styles.gateTitle, { color: colors.textPrimary }]}>Create a student account to upload</Text>
-          <Text style={[styles.gateSubtitle, { color: colors.textSecondary }]}>
-            To maintain academic integrity, PYQ contributions are moderated and linked to student profiles.
-          </Text>
-          <PillButton
-            label="Log In / Sign Up"
-            onPress={() => setGuestGateVisible(false)}
-            variant="primary"
-            size="md"
-            style={{ marginTop: 16 }}
-          />
-        </View>
-      </BottomSheet>
-
       {/* Upload Bottom Sheet */}
       <BottomSheet
         visible={uploadSheetVisible}
-        onClose={() => setUploadSheetVisible(false)}
+        onClose={() => { setUploadSheetVisible(false); setPickedFile(null); }}
         title="Contribute Question Paper"
       >
         <View style={styles.sheetContent}>
@@ -686,12 +947,12 @@ export default function PYQScreen() {
 
           <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>School</Text>
           <View style={styles.formChipRow}>
-            {['SOICT', 'SOE', 'SOBT', 'SOM', 'SOL', 'SOVSAS', 'SOHSS'].map((s) => (
+            {UPLOAD_SCHOOLS.map((s) => (
               <Chip
                 key={s}
                 label={s}
                 selected={uploadSchool === s}
-                onPress={() => setUploadSchool(s)}
+                onPress={() => handleSchoolSelect(s)}
                 style={styles.formChip}
               />
             ))}
@@ -710,27 +971,69 @@ export default function PYQScreen() {
             ))}
           </View>
 
-          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Programme & Semester</Text>
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Programme</Text>
           <View style={styles.formChipRow}>
-            {['BCS', 'ECE', 'IT', 'MIT', 'BCA', 'MCA', 'UFS', 'MBA', 'LAW'].map((p) => (
+            {(PROGRAMMES_BY_SCHOOL[uploadSchool] || []).map((p) => (
               <Chip
-                key={p}
-                label={p}
-                selected={uploadProgramme === p}
-                onPress={() => setUploadProgramme(p)}
+                key={p.code}
+                label={`${p.code} (${p.label})`}
+                selected={!isCustomProgramme && uploadProgramme === p.code}
+                onPress={() => {
+                  setIsCustomProgramme(false);
+                  setUploadProgramme(p.code);
+                }}
                 style={styles.formChip}
               />
             ))}
-            {['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'].map((s) => (
+            <Chip
+              key="custom_programme_chip"
+              label="Custom"
+              selected={isCustomProgramme}
+              onPress={() => {
+                setIsCustomProgramme(true);
+                if (customProgrammeText.trim()) {
+                  setUploadProgramme(customProgrammeText.trim().toUpperCase());
+                }
+              }}
+              style={styles.formChip}
+            />
+          </View>
+
+          {isCustomProgramme && (
+            <TextInput
+              value={customProgrammeText}
+              onChangeText={(txt) => {
+                setCustomProgrammeText(txt);
+                setUploadProgramme(txt.trim().toUpperCase());
+              }}
+              placeholder="Enter programme code (e.g. DUAL, PHD, ROBOTICS)"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="characters"
+              style={[
+                styles.formInput,
+                {
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.borderGlass,
+                  color: colors.textPrimary,
+                  marginTop: 2,
+                  marginBottom: 6,
+                },
+              ]}
+            />
+          )}
+
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Semester</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.formChipScrollHorizontal}>
+            {UPLOAD_SEMESTERS.map((s) => (
               <Chip
-                key={`sem_${s}`}
+                key={`upload_sem_${s}`}
                 label={`Sem ${s}`}
                 selected={uploadSemester === s}
                 onPress={() => setUploadSemester(s)}
                 style={styles.formChip}
               />
             ))}
-          </View>
+          </ScrollView>
 
           <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Exam Year</Text>
           <TextInput
@@ -743,31 +1046,118 @@ export default function PYQScreen() {
           />
 
           <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Paper File (PDF, Images, Word Docs)</Text>
-          <TouchableOpacity
-            onPress={handlePickFile}
-            style={[
-              styles.filePicker,
-              {
-                backgroundColor: pickedFile ? colors.successSoft : colors.inputBg,
-                borderColor: pickedFile ? colors.success : colors.borderGlass,
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Choose the question paper file"
-          >
-            <FileText size={16} color={pickedFile ? colors.success : colors.textSecondary} />
-            <Text
-              style={[
-                styles.filePickerText,
-                { color: pickedFile ? colors.success : colors.textSecondary },
-              ]}
-              numberOfLines={1}
+          {pickedFile ? (
+            <View
+              style={{
+                backgroundColor: colors.surface,
+                borderColor: colors.borderGlass,
+                borderWidth: 1,
+                borderRadius: 12,
+                padding: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
             >
-              {pickedFile
-                ? `${pickedFile.name} (${Math.round(pickedFile.size / 1024)} KB)`
-                : 'Choose PDF, JPG, PNG, DOC or DOCX (max 20 MB)'}
-            </Text>
-          </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 }}>
+                {pickedFile.mimeType && pickedFile.mimeType.startsWith('image/') ? (
+                  <Image
+                    source={{ uri: pickedFile.uri }}
+                    style={{ width: 44, height: 44, borderRadius: 8, marginRight: 12, backgroundColor: colors.surfaceAlt }}
+                  />
+                ) : (
+                  <View
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 8,
+                      backgroundColor: colors.accentSoft,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginRight: 12,
+                    }}
+                  >
+                    <FileText size={22} color={colors.accent} />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontFamily: 'Inter-SemiBold',
+                      color: colors.textPrimary,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {pickedFile.name}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontFamily: 'Inter-Regular',
+                      color: colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                  >
+                    {Math.round(pickedFile.size / 1024)} KB · Ready to upload
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TouchableOpacity
+                  onPress={handlePickFile}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: colors.surfaceAlt,
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Change selected paper file"
+                >
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter-Medium', color: colors.textPrimary }}>Change</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setPickedFile(null)}
+                  style={{
+                    padding: 6,
+                    borderRadius: 8,
+                    backgroundColor: colors.dangerSoft || 'rgba(239, 68, 68, 0.1)',
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove selected paper file"
+                >
+                  <X size={16} color={colors.danger || '#EF4444'} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={handlePickFile}
+              style={[
+                styles.filePicker,
+                {
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.borderGlass,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Choose the question paper file"
+            >
+              <FileText size={16} color={colors.textSecondary} />
+              <Text
+                style={[
+                  styles.filePickerText,
+                  { color: colors.textSecondary },
+                ]}
+                numberOfLines={1}
+              >
+                Choose PDF, JPG, PNG, DOC or DOCX (max 20 MB)
+              </Text>
+            </TouchableOpacity>
+          )}
 
           {/* Moderation Disclaimer */}
           <View style={[styles.moderationDisclaimer, { backgroundColor: colors.warningSoft }]}>
@@ -778,7 +1168,7 @@ export default function PYQScreen() {
           </View>
 
           <PillButton
-            label={isGuest ? 'Save on this phone' : 'Submit Question Paper'}
+            label="Submit Question Paper"
             onPress={handleSubmitUpload}
             loading={uploading}
             disabled={uploading}
@@ -789,9 +1179,7 @@ export default function PYQScreen() {
           />
 
           <Text style={[styles.uploadHint, { color: colors.textTertiary }]}>
-            {isGuest
-              ? 'Without an account the paper is kept on this phone and goes up as soon as you sign in. Nothing is lost.'
-              : 'A moderator reviews the paper before it is listed for everyone.'}
+            A moderator reviews your paper before it is listed on GBU One. +50 points will be added to your profile!
           </Text>
         </View>
       </BottomSheet>
@@ -905,30 +1293,73 @@ export default function PYQScreen() {
         <View style={styles.sheetContent}>
           <Text style={[styles.gateTitle, { color: colors.textPrimary }]}>Report {reportingPaper?.subjectCode}</Text>
           <Text style={[styles.gateSubtitle, { color: colors.textSecondary }]}>
-            Help us maintain clean, authentic academic resources. Select a reason:
+            Help us maintain clean academic resources. What is the issue with this paper?
           </Text>
 
-          <TouchableOpacity
-            style={[styles.reportOption, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
-            onPress={() => handleSendReport('Incomplete or blurred scan')}
-          >
-            <Text style={[styles.reportOptionText, { color: colors.textPrimary }]}>Incomplete, low resolution or blurred scan</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.reportOption, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
-            onPress={() => handleSendReport('Incorrect subject or semester')}
-          >
-            <Text style={[styles.reportOptionText, { color: colors.textPrimary }]}>Incorrect subject or semester label</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.reportOption, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}
-            onPress={() => handleSendReport('Copyright / Takedown request')}
-          >
-            <Text style={[styles.reportOptionText, { color: colors.textPrimary }]}>Copyright / Takedown request</Text>
-          </TouchableOpacity>
+          {[
+            'Incomplete or blurred scan',
+            'Incorrect subject or semester',
+            'Wrong exam year or duplicate',
+            'Other / Custom feedback',
+          ].map((reasonOption) => {
+            const isSelected = selectedReportReason === reasonOption;
+            return (
+              <TouchableOpacity
+                key={reasonOption}
+                style={[
+                  styles.reportOption,
+                  {
+                    backgroundColor: isSelected ? colors.accentSoft : colors.surfaceMuted,
+                    borderColor: isSelected ? colors.accent : colors.borderGlass,
+                  },
+                ]}
+                onPress={() => setSelectedReportReason(reasonOption)}
+              >
+                <Text
+                  style={[
+                    styles.reportOptionText,
+                    { color: isSelected ? colors.accent : colors.textPrimary, fontWeight: isSelected ? '700' : '500' },
+                  ]}
+                >
+                  {reasonOption}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
 
-          <Text style={[styles.takedownEmailNote, { color: colors.textTertiary }]}>
-            Takedown inquiries: student.gbuone@gmail.com
+          <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 12 }]}>
+            Additional Details or Explanation (Optional):
+          </Text>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: colors.textPrimary,
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.borderGlass,
+                height: 70,
+                textAlignVertical: 'top',
+                paddingTop: 8,
+              },
+            ]}
+            placeholder="Type your notes or describe what needs correction..."
+            placeholderTextColor={colors.textTertiary}
+            value={reportCustomNote}
+            onChangeText={setReportCustomNote}
+            multiline
+            numberOfLines={3}
+          />
+
+          <PillButton
+            label="Submit Report to Admin"
+            variant="primary"
+            size="md"
+            onPress={() => handleSendReport()}
+            style={{ marginTop: 14 }}
+          />
+
+          <Text style={[styles.takedownEmailNote, { color: colors.textTertiary, marginTop: 10 }]}>
+            Student ID: {user?.uniqueStudentId || 'Guest Scholar'} • Direct moderation review
           </Text>
         </View>
       </BottomSheet>
@@ -962,7 +1393,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     paddingHorizontal: 12,
-    // 44dp so the upload button meets the minimum touch target.
     minHeight: 44,
     borderRadius: 999,
     gap: 4,
@@ -970,6 +1400,75 @@ const styles = StyleSheet.create({
   uploadBtnText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 12,
+  },
+  leaderboardBanner: {
+    marginHorizontal: theme.spacing.lg,
+    marginTop: 6,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  leaderboardBannerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  leaderboardBannerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 6,
+  },
+  leaderboardBannerTitle: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 13,
+  },
+  leaderboardBannerAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  leaderboardBannerActionText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+  },
+  top3Row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(150, 150, 150, 0.15)',
+  },
+  top3Item: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 6,
+  },
+  top3AvatarRing: {
+    position: 'relative',
+    borderWidth: 1.5,
+    borderRadius: 16,
+    padding: 1,
+  },
+  top3Medal: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    fontSize: 10,
+  },
+  top3Details: {
+    flex: 1,
+  },
+  top3Name: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 11,
+  },
+  top3Points: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 10,
   },
   searchSection: {
     paddingHorizontal: theme.spacing.lg,
@@ -1004,7 +1503,6 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.chip,
     borderWidth: 1,
     paddingHorizontal: 14,
-    // 48 so the input inside is at least 44dp tall.
     minHeight: 48,
   },
   searchInput: {
@@ -1029,7 +1527,6 @@ const styles = StyleSheet.create({
   },
   examTab: {
     flex: 1,
-    // 44dp so the exam-type tabs meet the minimum touch target.
     minHeight: 44,
     borderRadius: theme.radius.chip,
     borderWidth: 1,
@@ -1045,15 +1542,6 @@ const styles = StyleSheet.create({
   filterChip: {
     marginRight: 6,
     marginBottom: 0,
-  },
-  reportButton: {
-    // 44dp so the report flag meets the minimum touch target; the glyph
-    // itself stays small.
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: -8,
   },
   filterDivider: {
     width: 1,
@@ -1107,11 +1595,6 @@ const styles = StyleSheet.create({
   columnWrapper: {
     justifyContent: 'space-between',
     marginBottom: 12,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
   },
   card: {
     width: CARD_WIDTH,
@@ -1263,6 +1746,11 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 6,
   },
+  formChipScrollHorizontal: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingVertical: 2,
+  },
   filePicker: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1338,5 +1826,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 12,
     lineHeight: 18,
+  },
+  inputLabel: {
+    fontFamily: 'Inter-Medium',
+    fontSize: 12,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontFamily: 'Inter-Regular',
+    fontSize: 13,
   },
 });

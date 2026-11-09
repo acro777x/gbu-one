@@ -15,7 +15,11 @@
  * safely.
  */
 import { fetchAcademicCalendar } from './academicCalendar';
-import { fetchDateSheet, DATE_SHEET_SCHOOL_CODES } from './examDateSheet';
+import {
+  fetchDateSheet,
+  DATE_SHEET_SCHOOL_CODES,
+  buildClassKey,
+} from './examDateSheet';
 import { fetchHolidays2026 } from './holidayList';
 
 export interface CalendarEventRow {
@@ -39,6 +43,10 @@ export interface DateSlotRow {
   subject_name: string;
   is_back_paper: boolean;
   source_url: string;
+  class_key?: string;
+  exam_type?: 'mid_sem' | 'end_sem' | 'practical';
+  shift_time?: string;
+  paper_id?: string;
 }
 
 export interface CalendarJobResult {
@@ -70,8 +78,13 @@ export function dateSlotKey(
   slot: string,
   subjectCode: string,
   subjectName: string,
+  classKey?: string,
 ): string {
-  return `datesheet:${schoolCode}:${examDate}:${slot}:${subjectCode}:${subjectName}`
+  const parts = classKey
+    ? ['datesheet', schoolCode, classKey, examDate, slot, subjectCode, subjectName]
+    : ['datesheet', schoolCode, examDate, slot, subjectCode, subjectName];
+  return parts
+    .join(':')
     .toLowerCase()
     .replace(/\s+/g, '-');
 }
@@ -154,6 +167,9 @@ export async function collectCalendarRows(
       }
       published += 1;
       for (const slot of sheet.slots) {
+        const classKey = buildClassKey(slot.programme);
+        const shiftTime =
+          slot.slot === 'morning' ? '09:30 AM - 12:30 PM' : '02:00 PM - 05:00 PM';
         slots.push({
           slot_key: dateSlotKey(
             slot.schoolCode,
@@ -161,13 +177,17 @@ export async function collectCalendarRows(
             slot.slot,
             slot.subjectCode ?? '',
             slot.subjectName,
+            classKey,
           ),
           school_code: slot.schoolCode,
           programme: slot.programme,
+          class_key: classKey,
           exam_date: slot.date,
           slot: slot.slot,
+          shift_time: shiftTime,
           subject_code: slot.subjectCode ?? '',
           subject_name: slot.subjectName,
+          exam_type: 'end_sem',
           is_back_paper: slot.isBackPaper,
           source_url: sheet.url,
         });

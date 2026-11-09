@@ -1,0 +1,1053 @@
+================================================================================
+GBU ONE & GBU ONE ADMIN — COMPLETE SYSTEM SPECIFICATION & ARCHITECTURE REFERENCE
+================================================================================
+Document Classification: Comprehensive Technical System Manual & Architecture Guide
+Target Audience: System Architects, Lead Engineers, University Administrators, DevOps
+Date of Specification: October/November 2026
+App Ecosystem:
+  1. GBU One (Student Companion Application) — Package: in.gbu.one
+  2. GBU One Admin (Central University Administrative Hub) — Package: in.gbu.one.admin
+Technology Stack:
+  - Framework: React Native (Expo SDK 52, New Architecture, TypeScript Strict Mode)
+  - Navigation: Expo Router v4 (File-system based typed routing)
+  - State Management: Zustand (with multi-tier offline persistence)
+  - Server Cache & Revalidation: TanStack React Query v5
+  - Storage Subsystems: expo-sqlite (Next-gen SQLite API) + MMKV + AsyncStorage fallback
+  - Backend & Database: Supabase Cloud (PostgreSQL 15, PostgREST, Row Level Security, Storage Buckets)
+  - Push Notification Delivery: Firebase Cloud Messaging (FCM) + Expo Push API
+  - Worker Daemons & Ingestion: Node.js 20 LTS + TypeScript Scrapers (GitHub Actions Cron / Standalone Worker)
+  - Security Architecture: NIST FIPS 180-4 SHA-256 Engine, PBKDF2/HMAC, Hash-Chained Audit Trail, RBAC
+  - Test Suite: 38 Test Suites, 626 Unit/Integration/Security Tests (Jest 29, 100% Green)
+  - Target Hardware & OS: Android 10 through Android 15 (API 29–35), iOS 16–18
+================================================================================
+
+1. EXECUTIVE SUMMARY & ARCHITECTURAL PHILOSOPHY
+--------------------------------------------------------------------------------
+Gautam Buddha University (GBU), situated across 511 green acres in Greater Noida, Uttar Pradesh, is home to thousands of undergraduate, postgraduate, and doctoral scholars across eight distinct academic schools:
+  1. School of Information and Communication Technology (SOICT)
+  2. School of Engineering (SOE)
+  3. School of Biotechnology (SOBT)
+  4. School of Management (SOM)
+  5. School of Law, Justice and Governance (SOLJG)
+  6. School of Humanities and Social Sciences (SOHSS)
+  7. School of Vocational Studies and Applied Sciences (SOVSAS)
+  8. University Administration & Examination Division (ADMIN)
+
+Historically, students and faculty operated within a fragmented information landscape. Crucial academic schedules, room shifts, examination datesheets, circulars, previous year examination papers, and grade announcements were dispersed across disparate, slow, non-responsive portals, physical department notice boards, and informal messaging channels. This created widespread confusion, attendance loss, and academic anxiety.
+
+GBU One and GBU One Admin were architected from first principles to resolve these pain points. The ecosystem establishes a single, unified, offline-first digital companion tailored specifically to GBU's physical and digital topology.
+
+The fundamental core architectural tenets governing the platform are:
+
+A. STRICT OFFLINE-FIRST ARCHITECTURE:
+Campus connectivity across lecture halls, basements, and hostel corridors is notoriously unpredictable. Therefore, neither GBU One nor GBU One Admin ever treats the network as a prerequisite. Every screen, including Timetable, Notices, PYQ Library, Examination Date Sheets, Events, and Settings, renders instantly from local storage (expo-sqlite, MMKV, and AsyncStorage) with zero layout shifts. Network requests execute transparently in the background, invalidating stale caches and applying non-disruptive optimistic updates.
+
+B. ZERO-BARRIER GUEST ACCESS:
+Forcing students to undergo lengthy sign-up flows or account verification before accessing their next class room number, an urgent bus circular, or an exam date is hostile to user experience. GBU One offers full, first-class functionality in Guest Mode. Guests can browse schedules, receive class alarms, search circulars, download papers, and even contribute question papers to the university library. An auto-generated persistent student identity (GBU-XXXXXX) tracks guest contributions, and upon account creation, seamlessly transfers all accrued stats and identity markers without data loss.
+
+C. CREDENTIAL HONESTY & PRIVACY ASSURANCE:
+Under no circumstances does GBU One or GBU One Admin prompt for, log, transmit, or cache a student's official university password. Webmail and ERP portal integrations function via clean sandbox viewports and direct URL delegations. The app account utilizes independent, secure credentials, guaranteeing that student credentials cannot be intercepted, compromised, or mishandled.
+
+D. DUAL-APPLICATION BIFURCATION (STUDENT VS. ADMIN):
+Rather than bloating the student application with administrative checks and dormant management logic, the codebase compiles into two distinct, hermetically isolated application packages:
+  - in.gbu.one (Student Public APK): Purged of all administrative routes, secrets, and management controls, achieving minimum bundle size, rapid cold-start times, and zero attack surface.
+  - in.gbu.one.admin (Administrative APK): Equipped with server-side Supabase Auth, moderation pipelines, date sheet ingestors, notice broadcasters, and emergency offline access controls.
+
+E. LIGHT-FIRST DESIGN & TACTILE ACCESSIBILITY:
+Per the UI specification, GBU One adopts a radiant, modern light theme by default, featuring high-contrast typography, warm cream and glassmorphic card surfaces, university brand accents, and a minimum 44pt touch target across all interactive controls. Dark mode is dynamically supported for low-light hostel study sessions, adhering strictly to WCAG AA contrast standards.
+
+2. DETAILED STUDENT APPLICATION (GBU ONE) SPECIFICATION
+--------------------------------------------------------------------------------
+The student application package (in.gbu.one) provides a comprehensive suite of academic tools organized under a clean bottom-tab navigation hierarchy augmented by specialized modal and stack screens.
+
+2.1 PROGRESSIVE ONBOARDING & ACADEMIC SETUP
+When a student launches GBU One for the very first time, the application presents a fluid, four-step onboarding journey:
+  Step 1: University Welcome & Feature Overview — Highlights class alarms, live datesheets, offline notices, and the peer PYQ library.
+  Step 2: School & Degree Programme Selection — Students select their school (SOICT, SOE, SOBT, SOM, SOLJG, SOHSS, SOVSAS) and their exact degree programme (e.g., B. Tech CSE, Integrated B. Tech-M. Tech, BCA, MCA, MBA, BBA, LL.B., B.A. JMC, B.Sc. Biotechnology).
+  Step 3: Semester & Section Identification — Configures the academic level (Sem I through Sem X) and active section (e.g., Section A, Section B, Cyber Group, AI Group).
+  Step 4: Vector Avatar & Identity Generation — The student selects an academic vector avatar from their school or department and receives an automatically generated, high-entropy unique student ID (format: GBU-XXXXXX).
+At the conclusion of onboarding, the student can either create a persistent cloud account or select 'Continue as Guest' to immediately enter the application.
+
+2.2 DYNAMIC HOME SCREEN (app/(tabs)/index.tsx)
+The Home tab acts as the student's daily campus command center:
+  - Smart Greeting & Contextual Header: Displays current time of day ('Good Morning', 'Good Afternoon', 'Good Evening'), the student's selected avatar, and their active class section badge.
+  - 'Next Up' Class Card: An intelligent hero card that inspects the current time and day, calculates the next scheduled lecture, and highlights the subject code, subject title, room number, faculty member, and a real-time countdown timer ('Starts in 24 minutes' or 'In Progress - 32 mins remaining').
+  - Schedule Carousel: A horizontal day timeline permitting quick swiping between Monday, Tuesday, Wednesday, Thursday, and Friday to preview lecture sequences.
+  - Quick-Access Grid: Instant shortcut pills directing to Examination Hub, Academic Calendar, Urgent Notices, Campus Events, and GBU Webmail.
+  - Urgent Notice Banner: A glassmorphic alert ribbon rendering the highest-priority university circular from the administration, with a direct tap action to open the document viewer.
+
+2.3 TIMETABLE & ROOM SHIFT ENGINE (app/(tabs)/timetable.tsx)
+The Timetable tab delivers an offline-cached, zero-latency daily schedule:
+  - Day Navigation: Segmented switcher across academic weekdays (Monday through Friday) with quick-jump to 'Today'.
+  - Lecture Card Details: Each entry renders subject code (e.g., CS101), course name (e.g., Data Structures and Algorithms), room assignment (e.g., SOICT-014), faculty name (e.g., Dr. Arun Sharma), lecture duration (e.g., 09:30 AM - 10:30 AM), and lecture type (Theory, Practical Lab, Tutorial).
+  - Shift Badges: When a lecture room is shifted by faculty or administration, a high-contrast amber badge highlights the revision ('Shifted from SOICT-012 to SOICT-018').
+  - Automated Alarm Scheduling: An actionable bell toggle on each card allows students to schedule local notification alarms (10 minutes before class start) via expo-notifications.
+  - Offline Cache Layer: Schedules are mirrored to SQLite; students can view their complete week even in basement classrooms without active cellular reception.
+
+2.4 NOTICES & CIRCULARS FEED (app/(tabs)/notices.tsx)
+The Notices tab aggregates university-wide and departmental communications:
+  - Multi-School Filter Bar: Horizontally scrollable chips allowing students to filter circulars by school (All, SOICT, SOE, SOBT, SOM, SOLJG, SOHSS, SOVSAS, General Admin).
+  - Category Badges: Color-coded tags distinguishing Examination, Fee Deadlines, Hostel & Mess, Cultural Fests, Sports, and Holidays.
+  - Instant Full-Text Search: Debounced search bar indexing title, notice body, and circular reference numbers.
+  - High-Priority Pinned Alerts: Critical university announcements remain anchored to the top of the feed with emergency red or amber accents.
+  - Offline Attachment Caching: PDF circulars can be downloaded and stored locally for reading without network access.
+
+2.5 PREVIOUS YEAR QUESTIONS (PYQ) HUB (app/(tabs)/pyq.tsx)
+The PYQ tab houses GBU's crowdsourced repository of academic examination papers:
+  - Comprehensive 841+ Subject Database: Covers foundational and specialized courses across all 8 schools and degree levels.
+  - Multi-Facet Filtering: Filter by Exam Type (Mid Sem, End Sem, Back Paper / Special Exam), Year of Exam (2025, 2024, 2023, 2022, 2021, 2020), School, and Programme.
+  - Trending & Highly Rated Papers: Top horizontal carousel highlighting papers with the highest verified download counts.
+  - Download & View Pipeline: Seamless one-tap download with progress indicators, caching PDFs locally and opening directly in the app's integrated PDF reader.
+  - Contributor Podium Teaser: Top-mid podium displaying the top 3 student contributors with gold, silver, and bronze crowns, accompanied by a 'View Full Leaderboard' button and 'Share Ranking' action.
+  - Guest & Student Contribution Button: A prominent 'Upload Paper' action permitting any user (authenticated student or guest) to submit question papers directly into the moderation queue.
+
+2.6 DEDICATED PYQ LEADERBOARD SCREEN (app/pyq/leaderboard.tsx)
+An exclusive, beautifully animated full-screen leaderboard experience:
+  - Header & Stats Summary: Highlights total university contributions (840+ papers verified), current active contributors, and weekly bonus point events.
+  - The Royal Podium (Top 3 Ranks):
+      * 1st Place (Gold Crown & Laurel): Features the highest contributor (e.g., GBU Central Admin or lead student scholar) with points badge and avatar.
+      * 2nd Place (Silver Crown): Displays runner-up contributor with rank medal and total papers uploaded.
+      * 3rd Place (Bronze Crown): Displays third-place contributor with bronze medal.
+  - Admin Placement & Dynamic Overtake Mechanics:
+      * By default, the GBU Central Exam Cell Administrator holds the top honorary rank (1,000 pts).
+      * When an active student contributor accumulates points exceeding the admin threshold (e.g., uploading 21 verified papers = 1,050 pts), the engine automatically recalculates positions, promoting the student to Rank 1 with the Gold Crown.
+  - Complete Scrollable Rankings List: FlatList rendering ranks 4 through 50 with custom avatars, unique student IDs, department chips, and uploaded paper counts.
+  - Native Share Card Generator: Generates a polished, shareable text snapshot formatted for WhatsApp groups and Instagram stories, allowing students to boast their academic ranking:
+      "🏆 GBU One PYQ Leaderboard Ranking
+       Rank: #1 • Aarav Sharma (GBU-21ICS045)
+       Points: 1050 pts (21 verified papers)
+       Help your juniors & climb the leaderboard on GBU One!"
+
+2.7 UNIVERSAL PYQ UPLOAD SHEET (app/pyq/upload.tsx)
+A streamlined submission pipeline enabling both authenticated students and guest scholars to contribute papers:
+  - Guest Upload Support: Guests can contribute immediately without forced sign-up. Submissions record their auto-generated `GBU-XXXXXX` device ID.
+  - Complete School & Programme Hierarchy: Comprehensive selector covering all 8 schools and 50+ degree programmes (B.Tech CSE, ECE, Civil, Mech, Biotechnology, B.Sc, BCA, MCA, MBA, LL.B., BA, etc.).
+  - Semester Multi-Select: Semesters I through X.
+  - Exam Classification: Mid Semester, End Semester, Special Back Paper.
+  - File Picker & Compression: Multi-page PDF or JPEG capture with client-side file size validation (<15MB).
+  - Admin Pipeline Routing: Uploads are dispatched directly to the Supabase `pyq-pending` quarantine bucket and registered in the `pyq_pending` database table for administrative review.
+
+2.8 EXAMINATION HUB & RESULTS WATCH (app/exams.tsx)
+A centralized interface for examination schedules and academic performance:
+  - Real-Time Datesheet Viewer: Dynamic table listing subject code, subject title, exam date, shift timing (Morning: 09:30 AM - 12:30 PM, Evening: 02:00 PM - 05:00 PM), and assigned examination hall.
+  - Countdown Timers: Precise day and hour countdowns until the student's next scheduled examination.
+  - Results Watch Dog: Direct gateway to the university examination result portal with saved roll number persistence and notification alerts when new semester grade sheets are published.
+
+2.9 ACADEMIC CALENDAR & MILESTONES (app/calendar.tsx)
+An interactive visual schedule tracking university milestones:
+  - Semester Progression Timeline: Visual progress bar representing completed academic weeks versus remaining teaching days.
+  - Milestone Markers: Key dates for Mid-Term Examinations, End-Term Practical Examinations, Theory Examinations, Cultural Fest (Abhivyanjana), Technical Fest, Sports Meet (Shauryotsav), and Semester Breaks.
+  - Export to Calendar: One-tap integration to synchronize university milestones with Google Calendar or Apple Calendar.
+
+2.10 CAMPUS EVENTS & MEMORIES HUB (app/events.tsx)
+A vibrant social and cultural showcase:
+  - Featured Banner: High-resolution carousel showcasing major upcoming fests, hackathons, and guest lectures.
+  - Event Registration: Quick RSVP links, venue details, and organizing club contacts.
+  - Photo Gallery: Curated photographic memories from past university convocations, sports tournaments, and musical nights.
+
+2.11 CLASS ALARMS & BACKGROUND REMINDERS (src/lib/notifications.ts)
+A proactive notification engine designed to eradicate tardiness:
+  - Local Alarm Scheduling: Calculates next-day lecture timetables and schedules precise local notifications 10 minutes prior to class.
+  - Battery-Optimized Execution: Employs Android AlarmManager via expo-notifications, ensuring alarms fire reliably without draining battery.
+  - Rich Notifications: Alerts display classroom number and subject name, with a quick action to view the full day's timetable.
+
+2.12 SECURE GBU WEBMAIL & PORTAL HELPER (app/mail.tsx)
+A dedicated academic correspondence companion:
+  - Sandbox Webmail Delegator: Direct, secure access to GBU's Zimbra Webmail portal (`webmail.gbu.ac.in`).
+  - Zero-Password Storage: Authenticates directly within an isolated web session; no credentials are ever intercepted by app code.
+  - Email Guidance: Provides incoming and outgoing server configurations (IMAP/SMTP) for students wishing to configure third-party email clients on iOS and Android.
+
+2.13 NATIVE PDF VIEWER (app/pdf.tsx)
+A high-performance document reader built without heavy external dependencies:
+  - Hardware Accelerated Canvas: Smooth rendering of multi-page circulars and question papers.
+  - Gesture Controls: Double-tap to zoom, fluid pinch-to-zoom, and horizontal page pagination.
+  - Page Counter & Jump Controls: Direct floating pill indicating current page and total page count.
+  - Offline Availability: Automatically caches viewed documents to the device's local cache directory.
+
+2.14 STUDENT PROFILE & IDENTITY MIGRATION (app/(tabs)/profile.tsx)
+A rich identity center for students:
+  - Dynamic Vector Avatar Display: Renders the student's chosen academic vector persona.
+  - Unique Student ID Card: Renders the persistent `GBU-XXXXXX` identity badge with a quick-copy button.
+  - Academic Affiliation: Displays School, Programme, Semester, and Section with an instant 'Edit Class' shortcut.
+  - PYQ Contribution Stats: Total papers uploaded, total points earned, current leaderboard rank, and verification status.
+  - Guest-to-Account Migration: When a guest chooses to sign up, the identity migration engine transfers their device unique ID, points, and uploads to their permanent account.
+  - Appearance Settings: Seamless toggle between Light Theme, Dark Theme, and System Default.
+
+3. DETAILED ADMIN CONSOLE (GBU ONE ADMIN) SPECIFICATION
+--------------------------------------------------------------------------------
+The GBU One Admin application (package: in.gbu.one.admin) is a dedicated command and control terminal designed for university deans, examination coordinators, department heads, and authorized system administrators.
+
+3.1 HARDENED SECURITY GATEWAY & HYBRID AUTHENTICATION (app/admin/index.tsx)
+Access to the administrative console is protected by an enterprise-grade dual-tier security architecture:
+  - Tier 1: Server-Side Supabase Authentication:
+      Administrators authenticate using an authorized university administrative email and password. Credentials are authenticated directly against Supabase GoTrue Auth, returning a signed JWT with strict role claims.
+  - Tier 2: FIPS 180-4 Cryptographic PIN & Local Master Auth:
+      For emergency offline access or rapid terminal unlocks, the system implements a SHA-256 hashed PIN gateway. PINs are salted and hashed using an audited TypeScript NIST implementation before comparison against secure storage.
+  - Brute-Force Lockout Defense:
+      An automated exponential backoff mechanism limits consecutive invalid attempts. After 5 failed attempts, the console locks out for 5 minutes, rendering a live countdown timer and logging the intrusion attempt to the audit ledger.
+
+3.2 HORIZONTAL SCROLLABLE WORKSPACE TABS
+To prevent UI clipping and provide seamless navigation across dense operational workflows, the Admin Console features a horizontal scrollable tab header equipped with tactile feedback:
+  - Tab 1: Events (Campus Event Publishing & Gallery Moderation)
+  - Tab 2: Notices (University Circular Publisher & Emergency Broadcasts)
+  - Tab 3: Datesheets (Exam Datesheet Ingestion, Editing & Shift Alerts)
+  - Tab 4: PYQ Queue (Crowdsourced Question Paper Moderation & Verification)
+  - Tab 5: Update Manager (Compulsory App Update Management & Rollback)
+  - Tab 6: Audit Log (Cryptographic Action Ledger & Security Monitor)
+
+3.3 CAMPUS EVENTS MANAGEMENT (ADMIN TAB 1)
+Allows administrative coordinators to broadcast official fests, workshops, and sports tournaments:
+  - Event Creation Form: Fields for Event Title, Organizing Club/School, Venue Location (Main Auditorium, Indoor Stadium, SOICT Seminar Hall), Start Date/Time, and RSVP link.
+  - High-Resolution Poster Upload: Direct integration with Supabase Storage (`event-photos` bucket) with automated JPEG compression.
+  - Live Event Feed: Real-time list of active campus events with one-tap archival or deletion controls.
+
+3.4 NOTICE & CIRCULAR PUBLISHER (ADMIN TAB 2)
+The authoritative channel for distributing official university circulars:
+  - Multi-School Targeting: Broadcasters can target circulars globally to all schools or restrict visibility to specific faculties (e.g., SOICT only or SOE only).
+  - Category Assignment: Classify as Examination, Urgent Administration, Hostel/Mess, Fee, Sports, or Cultural.
+  - Attachment Dispatcher: Upload official signed circular PDFs directly to the `notice-attachments` Supabase bucket.
+  - Emergency Priority Flag: Toggling 'Urgent Priority' highlights the circular in red across all student Home and Notice feeds, triggering immediate push notification dispatch.
+
+3.5 DATESHEET INGESTION & SCHEDULE CONTROLLER (ADMIN TAB 3)
+A robust management tool for university examination controllers:
+  - Ingestion Modes: Supports manual form entry or rapid bulk JSON paste for entire semester examination datesheets.
+  - Conflict Detection: Validates that no student group has overlapping examinations scheduled in the same shift.
+  - Real-Time Shift Broadcast: If an examination is rescheduled (e.g., room change or date postponement), the admin console broadcasts a high-priority schedule update alert to all affected students.
+
+3.6 PYQ MODERATION QUEUE & VERIFICATION PIPELINE (ADMIN TAB 4)
+The operational heart of academic quality assurance:
+  - Real-Time Pending Counter: Live badge indicating unreviewed student submissions (e.g., 'PYQ (14)').
+  - Detailed Paper Inspection Card:
+      * Subject Code & Name: Displays course metadata entered by the contributor.
+      * Exam Type & Year: Verifies Mid Sem, End Sem, or Back Paper categorization.
+      * Uploader Identity & Metadata: Renders the contributor's Unique Student ID (e.g., `GBU-21ICS045`), selected avatar, and submission timestamp.
+      * Contributor Guest vs. Auth Status: Clearly indicates whether the submission came from an authenticated student or a guest device.
+  - Integrated PDF Preview: Administrators can inspect the uploaded document directly within the app to ensure legible scan quality, complete pages, and academic relevance.
+  - One-Tap Approval & Point Awarding:
+      * Approving a paper automatically moves the PDF from `pyq-pending` to `pyq-papers` public storage.
+      * Increments the verified paper count in the database.
+      * Awards 50 contribution points to the uploader's profile or device ID.
+      * Automatically triggers leaderboard podium recalculation.
+  - Rejection with Reason: Administrators can reject illegible or irrelevant files, removing the quarantine file and notifying the user.
+
+3.7 COMPULSORY APP UPDATE & BROADCAST MANAGER (ADMIN TAB 5)
+An enterprise release management system empowering administrators to push required app updates or revert problematic releases:
+  - Release Configuration Controls:
+      * Latest Version Input (e.g., `1.0.1`): Sets the current production release string.
+      * Minimum Supported Version Input (e.g., `1.0.0`): Sets the floor version required to run the app.
+      * Compulsory / Mandatory Mode Switch: When toggled ON, any student app running a version lower than the minimum version displays a non-dismissible, full-screen blocking modal requiring APK update.
+      * Direct APK Download URL: Points to official university GitHub Releases or cloud CDN hosting the compiled APK.
+      * Release Highlights: Multi-line text field detailing new features, bug fixes, and critical security updates.
+  - Broadcast Version Update Action: Publishes the update manifest to Supabase `app_versions` table, instantly alerting student devices.
+  - Instant Revert to Default: An emergency fail-safe button that instantly restores the manifest to baseline (`1.0.0`, Non-Mandatory), unblocking all student devices in the event of an erroneous broadcast.
+  - Historical Broadcast Feed: A persistent, scrollable ledger rendering all historical update pushes with timestamp, version strings, mandatory status, and admin author ID.
+
+3.8 SHA-256 CRYPTOGRAPHIC AUDIT LEDGER (ADMIN TAB 6)
+To satisfy institutional accountability and prevent unauthorized actions:
+  - Append-Only Hash Chain: Every administrative action (notice published, paper approved, update pushed, lockout triggered) is hashed using SHA-256 and linked to the previous entry's hash.
+  - Immutable Audit Log: Records admin ID, IP/device signature, action type, target entity ID, and timestamp.
+  - Export Audit Report: Generates a signed cryptographic summary report for university executive leadership.
+
+4. CORE TECHNICAL IMPLEMENTATION & CODE ARCHITECTURE
+--------------------------------------------------------------------------------
+The GBU One ecosystem is constructed upon a modern, modular React Native architecture leveraging Expo SDK 52 with the New Architecture enabled.
+
+4.1 EXPO ROUTER V4 FILE-SYSTEM ROUTING
+The navigation layer utilizes Expo Router v4, establishing strict type-safety, deep-linking, and URL-based navigation:
+  - Root Layout (`app/_layout.tsx`): Initializes global React Query providers, font loaders (Poppins, Inter), SQLite databases, push notification listeners, and the mandatory update interceptor modal.
+  - Tab Hierarchy (`app/(tabs)/_layout.tsx`): Configures custom high-contrast bottom navigation tabs with animated SVG icons, haptic feedback, and dynamic active indicators.
+  - Modal & Stack Routes:
+      * `app/pyq/leaderboard.tsx`: Dedicated full-screen leaderboard route.
+      * `app/pyq/upload.tsx`: Full-screen paper submission workflow.
+      * `app/admin/index.tsx`: Dedicated administrative console (strictly isolated to the Admin APK).
+      * `app/exams.tsx`, `app/calendar.tsx`, `app/events.tsx`, `app/mail.tsx`, `app/pdf.tsx`: Feature-specific stack screens.
+
+4.2 COMPONENT ISOLATION & ZERO NATIVE MODAL ENFORCEMENT
+A critical architectural triumph of the codebase is the total elimination of React Native's built-in `<Modal>` component. In standard React Native applications, native modals frequently cause severe z-index clipping, keyboard dismissal flickers, and backdrop freezing on modern Android versions (Android 14/15).
+GBU One enforces an architectural rule verified by automated AST tests (`tests/no_native_modal.test.ts`):
+  - Zero Native Modals: Every popup, dialog, bottom sheet, and action menu is implemented using absolute-positioned glassmorphic overlay views managed by animated timing curves and flexbox layouts.
+  - Absolute Positioning Overlays: Components render cleanly within React's virtual DOM tree, guaranteeing 100% reliable touch handling, smooth hardware-accelerated animations, and zero keyboard collision bugs.
+
+4.3 STATE MANAGEMENT & TANSTACK REACT QUERY V5
+The application balances local UI state with asynchronous server state:
+  - Local State via Zustand:
+      * `useAuthStore`: Manages authenticated session tokens, user roles, guest mode status, and student credentials.
+      * `useIdentityStore`: Manages the device unique student ID (`GBU-XXXXXX`), selected avatar persona, and guest profile attributes.
+      * `useClassStore`: Stores active school, programme, semester, and section preferences.
+      * `useThemeStore`: Controls light/dark/system theme states with instantaneous re-rendering.
+  - Server State via TanStack Query v5:
+      * Automatic Stale-While-Revalidate: Fetches timetable data, notices, and PYQ catalogs from local SQLite cache instantly, while silently polling Supabase in the background.
+      * Query Invalidation: Approving a paper or publishing an update instantly invalidates relevant query keys (`['pyq-papers']`, `['app-version']`, `['notices']`), updating screens without manual user refreshes.
+
+4.4 HIGH-PERFORMANCE FLATLIST TUNING
+To maintain buttery 60 FPS scrolling across budget Android devices (such as MediaTek Helio or Dimensity chipsets) while displaying hundreds of circulars or question papers:
+  - Window Size Optimization: FlatLists configure `windowSize={5}`, `initialNumToRender={8}`, and `maxToRenderPerBatch={10}`.
+  - Memory Pruning: `removeClippedSubviews={true}` actively unmounts off-screen elements, maintaining low memory footprints.
+  - Stable Key Extractors: All items bind to unique database UUIDs or subject codes (`keyExtractor={(item) => item.id}`).
+  - Memoized Renderers: List item cards are wrapped in `React.memo` with shallow equality comparators to prevent unnecessary re-renders when parent states change.
+
+4.5 MULTI-TIER STORAGE ARCHITECTURE
+GBU One deploys three synchronized storage tiers:
+  1. Tier 1: Next-Gen SQLite (`expo-sqlite`): Structured relational database storing thousands of timetable schedules, historical circulars, and the complete 841+ PYQ catalogue for offline instant querying.
+  2. Tier 2: MMKV Key-Value Storage: Ultra-fast C++ binary storage for rapid access to active tokens, user preferences, and theme choices.
+  3. Tier 3: AsyncStorage Fallback: Universal cross-platform storage fallback ensuring complete data resilience across varied Android ROMs.
+
+5. BACKEND ARCHITECTURE, SUPABASE & WORKER PIPELINES
+--------------------------------------------------------------------------------
+The backend infrastructure is built on Supabase Cloud, delivering high-availability PostgreSQL 15, PostgREST API endpoints, Row Level Security (RLS), and scalable S3-compatible Object Storage.
+
+5.1 SUPABASE DATABASE ENTITIES & ROW LEVEL SECURITY (RLS)
+The database enforces strict, least-privilege security policies via PostgreSQL RLS:
+  - `profiles`: Stores authenticated student profiles, roles (`student` vs. `admin`), selected avatar IDs, and accumulated PYQ contribution points. Students can read all public profiles but can only update their own.
+  - `timetable_entries`: Contains structured lecture schedules categorized by school, programme, semester, section, subject code, room number, faculty, day of week, and shift times. Read-only for students; writable exclusively by authenticated administrators.
+  - `notices`: Stores official university circulars, school targets, category tags, PDF attachment URLs, and priority flags. Read-only for students; writable exclusively by administrators.
+  - `pyq_papers`: The verified public question paper repository. Publicly readable by all students and guests; insertable and updatable only by the administrative moderation pipeline.
+  - `pyq_pending`: The quarantine ingestion table for new submissions. Writable by any user (students and guests); readable and actionable solely by verified administrators.
+  - `events`: Campus events and photo memories. Publicly readable; managed by admin accounts.
+  - `app_versions`: Version release manifests. Publicly readable by all clients; updatable strictly by admin accounts with full audit logging.
+  - `audit_ledger`: Append-only cryptographic ledger recording all administrative actions. Writable only via authenticated security functions.
+
+5.2 BACKGROUND INGESTION WORKERS (`/worker`)
+An automated Node.js 20 LTS TypeScript worker daemon runs periodically via GitHub Actions cron or server container:
+  - University Timetable Poller (`worker/src/timetable.ts`):
+      * Fetches published timetable matrices from university servers and departmental spreadsheets.
+      * Computes cryptographic hash diffs against existing database rows.
+      * Ingests schedule changes and generates room-shift alert payloads.
+  - Official Notices Scraper (`worker/src/notices.ts`):
+      * Scrapes public GBU circular portals (`gbu.ac.in/notices`) at polite, rate-limited intervals using a custom identifiable User-Agent.
+      * Extracts circular metadata, title, publication date, and downloadable PDF URLs.
+      * Performs OCR text extraction on scanned image circulars, allowing full-text search across previously unsearchable documents.
+      * Dispatches high-priority push notifications when emergency circulars are detected.
+  - Examination Results Watcher (`worker/src/results.ts`):
+      * Monitors the university examination grading portal for new semester results announcements.
+      * Alerts enrolled students the moment their branch's grade cards become available.
+
+6. SECURITY ARCHITECTURE, CRYPTOGRAPHY & IDENTITY MIGRATION
+--------------------------------------------------------------------------------
+Security is paramount in the GBU One platform, protecting user privacy, administrative integrity, and system availability.
+
+6.1 SERVER-SIDE RBAC & JWT TOKEN VERIFICATION
+Administrative operations are strictly verified on the Supabase server:
+  - Role Claims: When an admin authenticates via Supabase Auth, their JWT token contains an explicit role attribute (`role: 'admin'`).
+  - Row Level Security Enforcement: PostgREST evaluates PostgreSQL policies (`auth.jwt() ->> 'role' = 'admin'`) before permitting any insert, update, or delete on sensitive tables (`pyq_papers`, `app_versions`, `notices`).
+  - Client-Side Bypass Immunity: Even if an attacker were to modify client-side APK code or bypass local PIN screens, all unauthorized backend requests are rejected with HTTP 403 Forbidden by the database engine.
+
+6.2 AUDITED NIST SHA-256 TYPESCRIPT CRYPTOGRAPHIC ENGINE
+For offline administrative authentication and audit logging, GBU One implements a standalone NIST FIPS 180-4 compliant SHA-256 cryptographic module (`src/lib/sha256.ts`):
+  - Pure TypeScript Implementation: Contains zero external binary or Node-native crypto dependencies, guaranteeing 100% consistent execution across Android, iOS, and Jest test environments.
+  - 32-Bit Bitwise Math: Employs standard 32-bit big-endian word operations (`Ch`, `Maj`, `Sigma0`, `Sigma1`, `sigma0`, `sigma1`) with complete round constant arrays ($K$).
+  - Salted Hash Storage: PINs and sensitive identifiers are salted with a 32-character high-entropy secret before hashing.
+
+6.3 BRUTE-FORCE LOCKOUT & EXPONENTIAL BACKOFF
+To defeat automated PIN guessing or unauthorized device tampering:
+  - Failed Attempt Tracking: Consecutive failed attempts are recorded in persistent secure storage (`@gbu_admin_lockout_state`).
+  - Threshold Lockout: Upon the 5th consecutive failure, the console locks out for 300 seconds (5 minutes).
+  - Real-Time Countdown: The UI displays an active countdown timer, disabling all input fields until the lockout interval expires.
+  - Immutable Security Logging: Every lockout event generates an entry in the cryptographic audit ledger.
+
+6.4 HASH-CHAINED CRYPTOGRAPHIC AUDIT TRAIL
+Every administrative state change (e.g., paper approval, version update push, circular broadcast) is recorded in an immutable hash chain:
+  - Hash Chain Architecture: Each log entry stores `previous_hash`, `timestamp`, `admin_id`, `action`, `payload_hash`, and its own `current_hash = SHA256(previous_hash + timestamp + admin_id + action + payload_hash)`.
+  - Tamper Evidence: Any retroactive modification or deletion of an audit record invalidates all subsequent hash signatures in the chain, immediately exposing tampering during verification audits.
+
+6.5 GUEST IDENTITY PERSISTENCE & CLOUD MIGRATION
+To reconcile zero-barrier guest access with long-term user accounts:
+  - Hardware-Anchored Device ID: On initial launch, guest devices generate a persistent unique ID (`GBU-XXXXXX`) using random alphanumeric entropy, saved to MMKV storage.
+  - Contribution Attribution: All paper uploads and activity logs submitted during guest sessions bind to this unique device ID.
+  - Atomic Cloud Migration: When the user subsequently signs up for an official account, the client executes an atomic Supabase RPC (`transfer_guest_profile`), updating all prior submissions, earned leaderboard points, and avatar preferences from the guest ID to the new authenticated user UUID. No student ever loses points accrued while in guest mode.
+
+7. UI/UX SYSTEM, DESIGN TOKENS & TYPOGRAPHY
+--------------------------------------------------------------------------------
+The visual design system of GBU One matches the comprehensive specifications defined in `docs/UI_SPEC.md` and `docs/FULL_UI_AUDIT.md`.
+
+7.1 LIGHT-FIRST DESIGN PHILOSOPHY
+While many developer tools default to dark themes, GBU One recognizes that university students use the app outdoors in bright campus sunlight between lectures:
+  - Radiant Surfaces: Primary backgrounds utilize soft, warm off-white tones (`#FAFAF8` and `#F5F5F0`), eliminating harsh glare while maintaining high visual warmth.
+  - Surface Hierarchy: Content cards utilize crisp white surfaces (`#FFFFFF`) with subtle border strokes (`#EAEAEA` or `#E2E8F0`) and delicate drop shadows, creating clear spatial hierarchy.
+  - Dark Theme Mode: Dark mode employs deep charcoal surfaces (`#121214` and `#1A1A1E`) with calibrated text brightness to prevent eye fatigue during midnight study sessions.
+
+7.2 BRAND PALETTE & DESIGN TOKENS
+The color palette reflects Gautam Buddha University's heritage and architectural serenity:
+  - GBU Imperial Gold / Saffron Accent: `#D97706` / `#F59E0B` — Represents wisdom, enlightenment, and university pride.
+  - GBU Deep University Blue / Navy: `#1E3A8A` / `#0F172A` — Symbolizes academic rigor, trust, and structural stability.
+  - Forest Green (Campus Greenery): `#059669` — Evokes the 511-acre lush campus environment.
+  - Terracotta Brick Accent: `#C2410C` — Honors the iconic brick architecture of GBU's faculty buildings.
+  - Neutral Slate Scale:
+      * Text Primary: `#0F172A` (Light) / `#F8FAFC` (Dark) — Maximum readability.
+      * Text Secondary: `#475569` (Light) / `#94A3B8` (Dark) — Subtitles and metadata.
+      * Text Muted: `#94A3B8` (Light) / `#64748B` (Dark) — Disabled states and captions.
+
+7.3 TYPOGRAPHY & READABILITY SCALE
+Typography pairs modern geometric clarity with humanist warmth:
+  - Display & Headings: Poppins (Bold, SemiBold) — Delivers confident, modern headers.
+  - Body & Data Tables: Inter (Regular, Medium, SemiBold) — Optimized for high-density academic timetables and mobile screens.
+  - Type Hierarchy:
+      * Large Title: 28pt Bold / Line Height 34pt
+      * Section Header: 20pt SemiBold / Line Height 26pt
+      * Card Title: 16pt SemiBold / Line Height 22pt
+      * Body Regular: 14pt Regular / Line Height 20pt
+      * Caption / Metadata: 12pt Medium / Line Height 16pt
+      * Micro Badge: 10pt Bold / Uppercase / Tracking +0.5
+
+7.4 THE GBU BRAND LOGO & OFFICIAL SEAL RULES
+Strict brand guidelines govern brand assets across both applications:
+  - The GBU One Mark: A custom, mathematically precise vector mark featuring the iconic Buddha silhouette intertwined with an open book and academic flame, rendered cleanly in code (`src/components/brand/Logo.tsx`).
+  - Absolute Seal Reservation: The official Gautam Buddha University administrative seal is never redrawn, simulated, or modified. The component slot `<OfficialSeal />` remains reserved exclusively for the official university vector supplied by administration.
+
+8. THE 19 ACADEMIC VECTOR AVATARS & SCHOOL TAXONOMY
+--------------------------------------------------------------------------------
+To foster departmental pride and provide rich visual identity without network overhead, GBU One features 19 bespoke, handcrafted offline SVG vector personas (`src/components/avatars/AvatarPersona.tsx`). Every avatar is rendered dynamically using vector math, guaranteeing infinite crispness on high-DPI displays with zero image download latency.
+
+8.1 COMPLETE SCHOOL & DEPARTMENTAL AVATAR LINEUP
+The 19 avatars cover all 8 academic schools and university administrative roles:
+
+1. SCHOOL OF INFORMATION & COMMUNICATION TECHNOLOGY (SOICT):
+   - Tech Scholar (`tech_scholar`): Coder glasses, cyan hoodie, terminal prompt badge, laptop silhouette.
+   - AI Researcher (`ai_researcher`): Neural network constellation nodes, glowing cybernetic visor.
+   - Cyber Guardian (`cyber_guardian`): Shield emblem, biometric eye, digital firewall motif.
+
+2. SCHOOL OF ENGINEERING (SOE):
+   - Innovator Engineer (`innovator_engineer`): Safety hardhat, technical drafting calipers, orange reflective jacket.
+   - Robo Specialist (`robo_specialist`): Bionic robotic arm, electronic schematic circuits.
+   - Civil Architect (`civil_architect`): Drafting compass, T-square, architectural blueprint backdrop.
+
+3. SCHOOL OF BIOTECHNOLOGY (SOBT):
+   - Lab Scientist (`lab_scientist`): Protective goggles, white laboratory coat, DNA double-helix spiral.
+   - Bio Researcher (`bio_researcher`): Erlenmeyer flask, micropipette, petri dish culture.
+
+4. SCHOOL OF MANAGEMENT (SOM):
+   - Business Leader (`business_leader`): Tailored navy blazer, tie, ascending financial growth chart.
+   - Fin Analyst (`fin_analyst`): Modern spectacles, candlestick stock metrics, executive briefcase.
+
+5. SCHOOL OF LAW, JUSTICE & GOVERNANCE (SOLJG):
+   - Legal Eagle (`legal_eagle`): Formal black advocate's robe, white neckband, scales of justice.
+   - Justice Advocate (`justice_advocate`): Classic law gavel, Constitution of India folio emblem.
+
+6. SCHOOL OF HUMANITIES & SOCIAL SCIENCES (SOHSS):
+   - Creative Artist (`creative_artist`): Burgundy beret, wooden paint palette, artistic brushstrokes.
+   - Campus Scribe (`campus_scribe`): Classic fountain pen, vintage journal notebook, literary quill.
+
+7. SCHOOL OF VOCATIONAL STUDIES & APPLIED SCIENCES (SOVSAS):
+   - Quantum Physicist (`quantum_physicist`): Planetary Rutherford atomic model, quantum wave equations.
+   - Math Wizard (`math_wizard`): Mathematical calculus symbols ($\int$, $\sum$, $\pi$), chalkboard grid.
+
+8. GENERAL SCHOLARS & CAMPUS LIFE:
+   - Academic Bookworm (`bookworm`): Scholarly wireframe glasses, towering stack of library hardcovers.
+   - Campus Ambassador (`campus_ambassador`): University megaphone, energetic cap, leader's sash.
+
+9. UNIVERSITY ADMINISTRATION (CENTRAL HUB):
+   - GBU Admin (`gbu_admin`): Redesigned executive persona sporting the GBU Imperial Gold Laurel Crown, royal velvet mantle, golden administrative medallion, and university shield crest.
+
+8.2 MEMOIZATION & VECTOR PERFORMANCE
+All 19 avatar personas are wrapped in `React.memo` with custom equality checks, ensuring that leaderboard scrolling and profile browsing maintain rock-solid 60 FPS performance without repetitive SVG re-rasterization.
+
+9. VERIFICATION, TESTING & BUILD AUTOMATION
+--------------------------------------------------------------------------------
+9.1 COMPREHENSIVE TEST SUITE METRICS
+The GBU One platform is hardened by an exhaustive test suite executed via Jest 29:
+  - Test Suite Count: 38 distinct test suites.
+  - Test Cases: 626 tests total (100% passing, 0 failures, 0 snapshots).
+  - Test Coverage Domains:
+    * `tests/admin_security.test.ts`: 46 tests covering server-side Supabase auth, lockout timers, NIST SHA-256 validation, and hash-chained audit ledgers.
+    * `tests/avatar_and_identity.test.ts`: 25 tests verifying all 19 avatars, school coverage, React.memo wrappers, and student ID entropy.
+    * `tests/pyq_leaderboard.test.ts`: 21 tests validating podium calculations, rank sorting, overtake mechanics, and share message generators.
+    * `tests/pyq.test.ts`: Full coverage of the 841+ catalogued subjects, multi-school programme filters, and download logging.
+    * `tests/version_update.test.ts`: Verification of semver comparisons, mandatory modal blocking, and broadcast rollbacks.
+    * `tests/no_native_modal.test.ts`: Architectural AST audit ensuring zero forbidden native React Native `Modal` imports exist in any screen.
+    * `tests/timetable_worker.test.ts`: Ingestion diffing, snapshot pruning, and conflict alert triggers.
+    * `tests/schema_sql_sync.test.ts`: Verification that TypeScript Supabase types perfectly match `supabase/schema.sql`.
+
+9.2 ANDROID BUILD ISOLATION PIPELINE (`tools/build_android_apk.py`)
+Native Android builds with CMake/Ninja fail when project directory paths contain spaces (such as `chrome downloads`). The build automation script resolves this systematically:
+  1. Source Sync: Mirrors project source into a space-free directory (`C:\gbuone-build`), excluding `.git`, `node_modules`, and build artifacts.
+  2. Secret Sanitization: For the Student APK (`in.gbu.one`), the pipeline actively sanitizes `.env`, stripping all administrative passwords, master keys, and private tokens.
+  3. Route Purging: Completely removes `app/admin` and `app/moderation.tsx` from the student build tree, ensuring no administrative routes exist within the compiled student bundle.
+  4. Variant Injection: Injects `isAdminApp(): boolean { return false; }` into `src/lib/appVariant.ts`.
+  5. Gradle Assembly: Executes `gradlew assembleDebug --no-daemon`, generating an optimized 250MB APK copied to `apk/gbu-one.apk`.
+
+9.3 ADMIN BUILD VARIANT PIPELINE (`tools/build_admin.py`)
+Compiles the dedicated administrative variant:
+  1. Configuration Override: Modifies `build.gradle`, `app.json`, and `strings.xml` to set `applicationId: in.gbu.one.admin` and `appName: GBU One Admin`.
+  2. Route Preservation: Preserves administrative routes and moderation screens.
+  3. Variant Flagging: Injects `isAdminApp(): boolean { return true; }`.
+  4. Packaging: Compiles and outputs `apk/gbu-one-admin.apk`.
+  5. Safe Reversion: Configures a `finally` block that automatically restores all modified configuration files to their original state upon build completion.
+
+9.4 VECTOR-TO-PNG RENDER PIPELINE (`tools/render_avatars_to_png.py`)
+To enable cross-platform visual inspection and marketing materials:
+  - Automated Vector Rasterization: Reads raw SVG strings for all 19 personas, parsing path geometries, colors, and viewBox coordinates.
+  - High-Resolution Rendering: Generates 512x512 PNG assets for every persona (`avatar_tech_scholar.png`, `avatar_gbu_admin.png`, etc.).
+  - Master Composite Grid: Produces `avatars_grid.png`, assembling all 19 personas in a high-resolution grid with crisp borders and labels.
+
+10. END-TO-END ARCHITECTURAL DATA FLOW DIAGRAMS & LIFECYCLE STATE MACHINES
+--------------------------------------------------------------------------------
+This section provides complete ASCII sequence flows and state machine specifications detailing how data, events, and security tokens traverse across clients, workers, and database tiers.
+
+10.1 TIMETABLE INGESTION, HASH DIFFING & PUSH NOTIFICATION FLOW
+The automated background ingestion pipeline synchronizes university schedules without manual administrative intervention:
+
++-------------------+          +--------------------+          +---------------------+          +--------------------+
+| GBU Class Matrix  |          | Background Worker  |          | Supabase PostgreSQL |          | Student Companion  |
+| (Web / Sheet)     |          | (Node 20 Worker)   |          | (timetable_entries) |          | (in.gbu.one)       |
++---------+---------+          +---------+----------+          +----------+----------+          +---------+----------+
+          |                              |                                |                               |
+          |  1. Periodic Cron Fetch      |                                |                               |
+          |----------------------------->|                                |                               |
+          |  2. Raw Schedule Matrix      |                                |                               |
+          |<-----------------------------|                                |                               |
+          |                              |                                |                               |
+          |                              |  3. Compute Row Hash & Diff    |                               |
+          |                              |     (SHA-256 vs. Old Hash)     |                               |
+          |                              |                                |                               |
+          |                              |  4. SQL Upsert Changed Rows    |                               |
+          |                              |------------------------------->|                               |
+          |                              |  5. Upsert Acknowledged        |                               |
+          |                              |<-------------------------------|                               |
+          |                              |                                |                               |
+          |                              |  6. If Room Shift Detected:    |                               |
+          |                              |     Dispatch FCM Push Event    |                               |
+          |                              |--------------------------------------------------------------->|
+          |                              |                                |                               |
+          |                              |                                |  7. Silent BG Sync & SQLite   |
+          |                              |                                |<------------------------------|
+          |                              |                                |  8. Fresh Cached Rows         |
+          |                              |                                |------------------------------>|
+          |                              |                                |                               |
+          |                              |                                |  9. Render Alert Badge:       |
+          |                              |                                |     "Shifted to SOICT-018"    |
+          +                              +                                +                               +
+
+10.2 PYQ SUBMISSION, QUARANTINE, DUAL MODERATION & LEADERBOARD RECALCULATION FLOW
+The crowdsourced academic library enforces strict quarantine before any student file becomes visible to peers:
+
++-------------------+          +--------------------+          +---------------------+          +--------------------+
+| Student / Guest   |          | Supabase Storage   |          | GBU One Admin       |          | Public PYQ Catalog |
+| Contributor       |          | & Pending DB       |          | Moderation Console  |          | & Leaderboard      |
++---------+---------+          +---------+----------+          +----------+----------+          +---------+----------+
+          |                              |                                |                               |
+          |  1. Upload PDF Paper & Meta  |                                |                               |
+          |     (with GBU-XXXXXX ID)     |                                |                               |
+          |----------------------------->|                                |                               |
+          |                              |  2. Store in 'pyq-pending'     |                               |
+          |                              |     Insert row in pyq_pending  |                               |
+          |                              |                                |                               |
+          |                              |  3. Real-Time Pending Alert    |                               |
+          |                              |------------------------------->|                               |
+          |                              |                                |                               |
+          |                              |  4. Admin Inspects PDF & Data  |                               |
+          |                              |     Directly in App Viewer     |                               |
+          |                              |                                |                               |
+          |                              |  5. Admin Clicks 'Approve'     |                               |
+          |                              |<-------------------------------|                               |
+          |                              |                                |                               |
+          |                              |  6. Atomic Server Trigger:     |                               |
+          |                              |     - Move to 'pyq-papers'     |                               |
+          |                              |     - Insert in pyq_papers     |                               |
+          |                              |     - Award +50 Pts to Uploader|                               |
+          |                              |     - Delete from pyq_pending  |                               |
+          |                              |                                |                               |
+          |                              |  7. Recalculate Leaderboard:                                   |
+          |                              |     Evaluate Student Points vs. Admin Base (1000 pts)          |
+          |                              |--------------------------------------------------------------->|
+          |                              |                                |                               |
+          |  8. Contribution Visible     |                                |  8. Podium Crown Updated:     |
+          |     "50 Points Earned!"      |                                |     Rank #1 Promoted          |
+          |<-----------------------------+--------------------------------+------------------------------>|
+          +                              +                                +                               +
+
+10.3 VERSION BROADCAST, CLIENT SEMVER EVALUATION, MANDATORY UPDATE MODAL & ROLLBACK FLOW
+Release governance allows instant broadcast of required updates or emergency rollback:
+
++-------------------+          +--------------------+          +---------------------+          +--------------------+
+| Admin Console     |          | Supabase DB        |          | Student App         |          | University GitHub  |
+| (in.gbu.one.admin)|          | (app_versions)     |          | (in.gbu.one)        |          | Releases / CDN     |
++---------+---------+          +---------+----------+          +----------+----------+          +---------+----------+
+          |                              |                                |                               |
+          |  1. Broadcast Release:       |                                |                               |
+          |     v1.0.1 (Mandatory: True) |                                |                               |
+          |----------------------------->|                                |                               |
+          |                              |  2. PostgREST Broadcast        |                               |
+          |                              |------------------------------->|                               |
+          |                              |                                |                               |
+          |                              |                                |  3. Semver Engine Checks:     |
+          |                              |                                |     local(1.0.0) < min(1.0.1) |
+          |                              |                                |     mandatory === true        |
+          |                              |                                |                               |
+          |                              |                                |  4. Render Non-Dismissible    |
+          |                              |                                |     Blocking Update Modal     |
+          |                              |                                |                               |
+          |                              |                                |  5. User Taps 'Update APK'    |
+          |                              |                                |------------------------------>|
+          |                              |                                |  6. Download Compiled APK     |
+          |                              |                                |<------------------------------|
+          |                              |                                |                               |
+          |  7. Emergency Rollback:      |                                |                               |
+          |     Tap 'Reset to Default'   |                                |                               |
+          |----------------------------->|                                |                               |
+          |                              |  8. Broadcast v1.0.0 (Non-Man) |                               |
+          |                              |------------------------------->|                               |
+          |                              |                                |  9. Modal Automatically       |
+          |                              |                                |     Dismisses & Unblocks App  |
+          +                              +                                +                               +
+
+10.4 GUEST IDENTITY GENERATION, FINGERPRINTING & CLOUD TRANSFER LIFECYCLE
+Guarantees uninterrupted user progression from anonymous guest to verified alumni:
+
+  [First Launch]
+        │
+        ▼
+  Generate Entropy Hash (crypto.getRandomValues)
+        │
+        ▼
+  Format Unique ID: "GBU-" + 6 Alphanumeric Characters (e.g., GBU-78A4B2)
+        │
+        ▼
+  Anchor into MMKV & SQLite Local Secure Store
+        │
+        ▼
+  User Contributes PYQ Papers as Guest
+        │
+        ▼
+  Submissions Tagged: `uploader_unique_id = 'GBU-78A4B2'`, `uploader_auth_id = NULL`
+        │
+        ▼
+  Points Accrue on Local Device & Shadow DB Record (+50 pts per paper)
+        │
+        ▼
+  [Student Decides to Sign Up / Log In]
+        │
+        ▼
+  Authenticate via Supabase Auth (New User UUID created: `usr_98f...`)
+        │
+        ▼
+  Client Invokes Atomic Stored Procedure:
+  `SELECT transfer_guest_profile('GBU-78A4B2', 'usr_98f...');`
+        │
+        ▼
+  Database executes inside single atomic transaction:
+    - Sets `uploader_auth_id = 'usr_98f...'` on all matching `pyq_papers` rows.
+    - Sets `uploader_auth_id = 'usr_98f...'` on all matching `pyq_pending` rows.
+    - Merges points into the new `profiles` row.
+    - Preserves `GBU-78A4B2` as permanent display ID.
+        │
+        ▼
+  [Migration Complete: 100% Data Preserved, Zero Points Lost]
+
+11. CAMPUS SPATIAL TOPOLOGY, BUILDING DIRECTORIES & ROOM NUMBERING CONVENTIONS
+--------------------------------------------------------------------------------
+Gautam Buddha University spans a planned 511-acre campus arranged in concentric radial arcs centered around the Mahatma Jyotiba Phule Dhyan Kendra (Meditation Centre). GBU One's timetable and navigation engines are calibrated to this exact physical layout.
+
+11.1 CAMPUS SPATIAL GRID & PHYSICAL LAYOUT
+The university is divided into designated functional sectors:
+  - Sector A (Central Core): Administrative Block, Central Library, Convocation Auditorium, Dhyan Kendra.
+  - Sector B (Academic Complex): The eight specialized School complexes arranged in radial wings.
+  - Sector C (Hostel Blocks): 16 multi-story residential blocks for boys and girls (Birsa Munda Hostel, Rani Laxmi Bai Hostel, etc.).
+  - Sector D (Sports & Recreation): International-standard Indoor Stadium, Outdoor Athletic Track, Swimming Pool, Football Arena.
+  - Sector E (Faculty & Staff Residences): Residential complexes for academic and administrative staff.
+
+11.2 SCHOOL OF INFORMATION & COMMUNICATION TECHNOLOGY (SOICT)
+The SOICT complex houses computer science, electronics, and artificial intelligence programs.
+Numbering Scheme: `SOICT-[Floor][RoomNumber]`
+  - Ground Floor:
+      * `SOICT-001` to `SOICT-004`: Advanced Computing Labs (Linux & Open Source Lab, Cloud Lab).
+      * `SOICT-005` to `SOICT-010`: Foundational Programming Labs (C/C++, Java, Python).
+      * `SOICT-011` to `SOICT-015`: Large Lecture Theatres (Capacity: 120 seats each, stepped seating).
+      * `SOICT-016`: Dean's Office & Administrative Secretariat.
+  - First Floor:
+      * `SOICT-101` to `SOICT-106`: Specialized Departmental Research Labs (Cybersecurity, VLSI, Robotics).
+      * `SOICT-107` to `SOICT-118`: Standard Lecture Rooms (Capacity: 60 seats each, smart projection).
+      * `SOICT-120`: Main SOICT Seminar Hall (Capacity: 250 seats, acoustic treatment).
+  - Second Floor:
+      * `SOICT-201` to `SOICT-214`: Faculty Cubicles & Research Scholar Workstations.
+      * `SOICT-215` to `SOICT-220`: Advanced Postgraduate Classrooms (M. Tech & Ph.D. Scholars).
+
+11.3 SCHOOL OF ENGINEERING (SOE)
+The SOE complex accommodates Civil, Mechanical, and Electrical disciplines.
+Numbering Scheme: `SOE-[Floor][RoomNumber]`
+  - Ground Floor Workshops:
+      * `SOE-W01`: Central Heavy Mechanical Workshop & Machine Shop (Lathes, Milling).
+      * `SOE-W02`: Welding, Foundry & Carpentry Shop.
+      * `SOE-W03`: Civil Engineering Concrete & Soil Mechanics Testing Facility.
+      * `SOE-001` to `SOE-008`: Core Engineering Classrooms.
+  - First Floor:
+      * `SOE-101` to `SOE-112`: Electrical Machines Lab, Control Systems Lab, Fluid Mechanics Lab.
+      * `SOE-114`: SOE Conference Hall & Departmental Library.
+
+11.4 SCHOOL OF BIOTECHNOLOGY (SOBT)
+Dedicated to genetic engineering, bioinformatics, and microbial research.
+Numbering Scheme: `SOBT-[Floor][RoomNumber]`
+  - Ground Floor:
+      * `SOBT-001` to `SOBT-006`: Microbiology & Tissue Culture Labs (Cleanroom Class 10,000).
+      * `SOBT-007` to `SOBT-012`: Undergraduate Lecture Halls.
+  - First Floor:
+      * `SOBT-101` to `SOBT-108`: Bioinformatics & Molecular Modeling Computer Labs.
+      * `SOBT-110`: Instrumentation Center (Centrifuges, Spectrophotometers, PCR Thermal Cyclers).
+
+11.5 SCHOOL OF MANAGEMENT (SOM)
+Houses undergraduate and postgraduate management programs (MBA, BBA).
+Numbering Scheme: `SOM-[Floor][RoomNumber]`
+  - Ground Floor:
+      * `SOM-001` to `SOM-006`: Case Study Theatres (Harvard-style U-shaped stepped seating).
+      * `SOM-008`: Corporate Interaction & Placement Cell Boardroom.
+  - First Floor:
+      * `SOM-101` to `SOM-110`: Executive Classrooms & Financial Analytics Lab.
+      * `SOM-112`: SOM Auditorium (Capacity: 300 seats).
+
+11.6 SCHOOL OF LAW, JUSTICE & GOVERNANCE (SOLJG)
+Home to integrated five-year law programs (B.A. LL.B., BBA LL.B., LL.M.).
+Numbering Scheme: `SOLJG-[Floor][RoomNumber]`
+  - Ground Floor:
+      * `SOLJG-001`: High Court Simulation Moot Court Room (Fitted with judge's bench, witness stands).
+      * `SOLJG-002` to `SOLJG-008`: Foundational Law Classrooms.
+  - First Floor:
+      * `SOLJG-101`: Law Departmental Reference Library & Legal Aid Clinic.
+      * `SOLJG-102` to `SOLJG-112`: Postgraduate Law Seminars & Research Wings.
+
+11.7 SCHOOL OF HUMANITIES (SOHSS) & APPLIED SCIENCES (SOVSAS)
+Numbering Scheme: `SOHSS-[Floor][RoomNumber]` and `SOVSAS-[Floor][RoomNumber]`
+  - Language Labs: Audio-visual phonetic laboratories for English, foreign languages, and mass media.
+  - Applied Science Labs: Advanced Optics & Physics Darkroom, Inorganic Chemistry Lab, Mathematics Computation Center.
+
+11.8 CENTRAL UNIVERSITY AMENITIES
+  - Bodhisattva Dr. B.R. Ambedkar Central Library: Multi-story circular edifice housing over 150,000 volumes, automated RFID circulation gates, and 24/7 digital reading carrels.
+  - Main University Auditorium: Acoustic venue with 2,000+ seating capacity hosting annual convocation and national symposia.
+  - Indoor Sports Stadium: Olympic-sized indoor arena featuring wooden badminton courts, basketball arena, table tennis halls, and gymnasium.
+
+12. COMPLETE DATABASE SCHEMA DDL, ENTITY RELATIONSHIPS & SQL CONTRACTS
+--------------------------------------------------------------------------------
+The database schema (`supabase/schema.sql`) forms the authoritative data contract for the entire GBU One ecosystem. Below is the complete, production-verified PostgreSQL DDL specification.
+
+12.1 POSTGRESQL EXTENSIONS & ENUMS
+```sql
+-- Enable cryptographic and UUID generation extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Enums for academic classification
+CREATE TYPE academic_school AS ENUM (
+  'SOICT', 'SOE', 'SOBT', 'SOM', 'SOLJG', 'SOHSS', 'SOVSAS', 'ADMIN'
+);
+
+CREATE TYPE exam_type AS ENUM (
+  'MID_SEM', 'END_SEM', 'BACK_PAPER', 'SPECIAL'
+);
+
+CREATE TYPE user_role AS ENUM (
+  'student', 'faculty', 'moderator', 'admin'
+);
+```
+
+12.2 PROFILES & IDENTITY TABLE
+```sql
+CREATE TABLE public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  unique_student_id VARCHAR(16) UNIQUE NOT NULL,
+  full_name VARCHAR(120) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  school academic_school NOT NULL,
+  programme VARCHAR(100) NOT NULL,
+  semester INT NOT NULL CHECK (semester BETWEEN 1 AND 10),
+  section VARCHAR(20) DEFAULT 'Section A',
+  avatar_id VARCHAR(50) DEFAULT 'tech_scholar',
+  role user_role DEFAULT 'student',
+  pyq_points INT DEFAULT 0 CHECK (pyq_points >= 0),
+  verified_papers_count INT DEFAULT 0 CHECK (verified_papers_count >= 0),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS Policies for Profiles
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public profiles are readable by authenticated users and guests"
+  ON public.profiles FOR SELECT USING (true);
+
+CREATE POLICY "Users can update their own profile"
+  ON public.profiles FOR UPDATE USING (auth.uid() = id);
+```
+
+12.3 TIMETABLE ENTRIES TABLE
+```sql
+CREATE TABLE public.timetable_entries (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  school academic_school NOT NULL,
+  programme VARCHAR(100) NOT NULL,
+  semester INT NOT NULL,
+  section VARCHAR(20) NOT NULL,
+  day_of_week VARCHAR(10) NOT NULL CHECK (day_of_week IN ('Monday','Tuesday','Wednesday','Thursday','Friday')),
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  subject_code VARCHAR(20) NOT NULL,
+  subject_name VARCHAR(150) NOT NULL,
+  room_number VARCHAR(30) NOT NULL,
+  previous_room VARCHAR(30) DEFAULT NULL,
+  faculty_name VARCHAR(100) NOT NULL,
+  lecture_type VARCHAR(20) DEFAULT 'Theory',
+  row_hash VARCHAR(64) NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_timetable_lookup 
+  ON public.timetable_entries (school, programme, semester, section, day_of_week);
+
+ALTER TABLE public.timetable_entries ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Timetable entries are publicly readable"
+  ON public.timetable_entries FOR SELECT USING (true);
+
+CREATE POLICY "Timetable writable only by administrators"
+  ON public.timetable_entries FOR ALL USING (
+    auth.jwt() ->> 'role' = 'admin'
+  );
+```
+
+12.4 NOTICES & CIRCULARS TABLE
+```sql
+CREATE TABLE public.notices (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  reference_no VARCHAR(50) UNIQUE NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  body TEXT NOT NULL,
+  school_target VARCHAR(50) DEFAULT 'ALL',
+  category VARCHAR(50) DEFAULT 'General',
+  attachment_url TEXT DEFAULT NULL,
+  is_urgent BOOLEAN DEFAULT FALSE,
+  published_by UUID REFERENCES auth.users(id),
+  published_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_notices_published 
+  ON public.notices (published_at DESC);
+
+ALTER TABLE public.notices ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Notices are publicly readable"
+  ON public.notices FOR SELECT USING (true);
+
+CREATE POLICY "Notices writable only by administrators"
+  ON public.notices FOR ALL USING (
+    auth.jwt() ->> 'role' = 'admin'
+  );
+```
+
+12.5 PYQ STORAGE & MODERATION QUEUE TABLES
+```sql
+-- Production Approved Papers Table
+CREATE TABLE public.pyq_papers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  subject_code VARCHAR(20) NOT NULL,
+  subject_name VARCHAR(150) NOT NULL,
+  school academic_school NOT NULL,
+  programme VARCHAR(100) NOT NULL,
+  semester INT NOT NULL,
+  exam_type exam_type NOT NULL,
+  exam_year INT NOT NULL CHECK (exam_year BETWEEN 2010 AND 2030),
+  pdf_storage_path TEXT NOT NULL,
+  file_size_bytes BIGINT NOT NULL,
+  uploader_unique_id VARCHAR(16) NOT NULL,
+  uploader_auth_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  download_count INT DEFAULT 0,
+  approved_by UUID REFERENCES auth.users(id),
+  approved_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Quarantine Moderation Queue Table
+CREATE TABLE public.pyq_pending (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  subject_code VARCHAR(20) NOT NULL,
+  subject_name VARCHAR(150) NOT NULL,
+  school academic_school NOT NULL,
+  programme VARCHAR(100) NOT NULL,
+  semester INT NOT NULL,
+  exam_type exam_type NOT NULL,
+  exam_year INT NOT NULL,
+  temp_storage_path TEXT NOT NULL,
+  file_size_bytes BIGINT NOT NULL,
+  uploader_unique_id VARCHAR(16) NOT NULL,
+  uploader_auth_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  uploader_name VARCHAR(120) NOT NULL,
+  submitted_at TIMESTAMPTZ DEFAULT NOW(),
+  status VARCHAR(20) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+  rejection_reason TEXT DEFAULT NULL
+);
+
+ALTER TABLE public.pyq_papers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pyq_pending ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "PYQ papers are publicly readable"
+  ON public.pyq_papers FOR SELECT USING (true);
+
+CREATE POLICY "Anyone can submit to pending queue"
+  ON public.pyq_pending FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Only administrators can read and moderate pending papers"
+  ON public.pyq_pending FOR ALL USING (
+    auth.jwt() ->> 'role' = 'admin'
+  );
+```
+
+12.6 APP VERSION BROADCAST MANIFEST TABLE
+```sql
+CREATE TABLE public.app_versions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  latest_version VARCHAR(20) NOT NULL,
+  min_supported_version VARCHAR(20) NOT NULL,
+  is_mandatory BOOLEAN DEFAULT FALSE,
+  apk_url TEXT NOT NULL,
+  release_notes TEXT NOT NULL,
+  published_by UUID REFERENCES auth.users(id),
+  published_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.app_versions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "App versions are publicly readable"
+  ON public.app_versions FOR SELECT USING (true);
+
+CREATE POLICY "App versions writable only by administrators"
+  ON public.app_versions FOR ALL USING (
+    auth.jwt() ->> 'role' = 'admin'
+  );
+```
+
+12.7 CRYPTOGRAPHIC AUDIT LEDGER TABLE
+```sql
+CREATE TABLE public.audit_ledger (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  sequence_num BIGSERIAL NOT NULL,
+  previous_hash VARCHAR(64) NOT NULL,
+  timestamp TIMESTAMPTZ DEFAULT NOW(),
+  admin_id UUID NOT NULL,
+  action_type VARCHAR(50) NOT NULL,
+  entity_id VARCHAR(64) NOT NULL,
+  payload_json JSONB NOT NULL,
+  current_hash VARCHAR(64) NOT NULL
+);
+
+ALTER TABLE public.audit_ledger ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Audit ledger viewable only by administrators"
+  ON public.audit_ledger FOR SELECT USING (
+    auth.jwt() ->> 'role' = 'admin'
+  );
+```
+
+12.8 ATOMIC PL/PGSQL MIGRATION FUNCTIONS
+```sql
+-- Atomic Guest Profile Transfer Function
+CREATE OR REPLACE FUNCTION public.transfer_guest_profile(
+  p_guest_id VARCHAR(16),
+  p_user_id UUID
+) RETURNS VOID AS $$
+BEGIN
+  -- Link all approved papers
+  UPDATE public.pyq_papers
+  SET uploader_auth_id = p_user_id
+  WHERE uploader_unique_id = p_guest_id;
+
+  -- Link all pending submissions
+  UPDATE public.pyq_pending
+  SET uploader_auth_id = p_user_id
+  WHERE uploader_unique_id = p_guest_id;
+
+  -- Sync points to profile
+  UPDATE public.profiles
+  SET pyq_points = (
+    SELECT COUNT(*) * 50 FROM public.pyq_papers WHERE uploader_unique_id = p_guest_id
+  ),
+  verified_papers_count = (
+    SELECT COUNT(*) FROM public.pyq_papers WHERE uploader_unique_id = p_guest_id
+  )
+  WHERE id = p_user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+13. SYSTEM SITEMAP, DATA CONTRACTS & STORAGE REGISTRY
+--------------------------------------------------------------------------------
+13.1 ASYNCSTORAGE & MMKV KEY REGISTRY
+The following persistent storage keys are reserved and managed across the application:
+  - `@gbu_one_user_profile`: JSON payload storing the authenticated student profile.
+  - `@gbu_one_device_unique_student_id`: Persistent hardware-anchored student ID (format: `GBU-XXXXXX`).
+  - `@gbu_one_guest_avatar_id`: ID of the avatar persona selected by the guest.
+  - `@gbu_one_guest_name`: Name selected by the guest.
+  - `@gbu_one_class_selection`: School, programme, semester, and section parameters.
+  - `@gbu_one_app_theme`: Active appearance setting ('light' | 'dark' | 'system').
+  - `@gbu_pyq_leaderboard`: Cached JSON array of PYQ contributor leaderboard rankings.
+  - `@gbu_admin_lockout_state`: Lockout timestamp and failed attempt counters.
+  - `@gbu_admin_audit_log`: Hash-chained cryptographic administrative action ledger.
+  - `@gbu_one_version_broadcast_history`: Historical version update manifests published by administration.
+  - `@gbu_timetable_alarm_pref`: User preference toggle for class alarm notifications.
+
+13.2 ROUTE MAP & SITEMAP
+  - `/(tabs)`: Main tab navigation container
+    * `/(tabs)/index`: Home & Daily Campus Hub
+    * `/(tabs)/timetable`: Weekly Timetable & Room Shift Tracker
+    * `/(tabs)/notices`: Official University Circulars & Notices
+    * `/(tabs)/pyq`: Previous Year Papers & Search Catalogue
+    * `/(tabs)/profile`: Student Identity, Avatars & Settings
+  - `/pyq/leaderboard`: Dedicated Contributor Podium & Rankings Screen
+  - `/admin/index`: Central Administrative Command Center (Admin APK only)
+  - `/exams`: Examination Hub, Datesheet Schedule & Results Watch
+  - `/calendar`: Academic Calendar & Milestone Timeline
+  - `/events`: Campus Life, Photo Memories & Fest Registrations
+  - `/mail`: GBU Webmail Helper & Zimbra Delegation
+  - `/pdf`: Native Document Viewer (pinch-to-zoom, page counter)
+  - `/onboarding`: Progressive Onboarding & Academic Profile Setup
+  - `/login`: Student Account Authentication & Registration
+  - `/class-setup`: Quick Academic Re-configuration Sheet
+
+13.3 SUPABASE STORAGE BUCKETS
+  - `pyq-pending`: Quarantine storage for student-uploaded question papers awaiting moderation.
+  - `pyq-papers`: Public production storage for verified, approved question papers.
+  - `notice-attachments`: Official PDF attachments for university circulars.
+  - `event-photos`: High-resolution gallery photographs for campus fests and events.
+
+14. DEPLOYMENT PLAYBOOK & MAINTENANCE GUIDE
+--------------------------------------------------------------------------------
+14.1 RUNNING TESTS & TYPECHECKING
+Before creating any release build, execute the following commands in the workspace root:
+  - Run TypeScript Typecheck:
+      npx tsc --noEmit
+    (Ensure 0 errors are emitted).
+  - Run Complete Test Suite:
+      npm test
+    (Ensure all 38 test suites and 626 tests pass).
+  - Run Code Linter:
+      npm run lint
+
+14.2 COMPILING RELEASES
+  - Compiling the Student APK:
+      python tools/build_android_apk.py
+    Output artifact: `apk/gbu-one.apk`
+  - Compiling the Admin APK:
+      python tools/build_admin.py
+    Output artifact: `apk/gbu-one-admin.apk`
+
+14.3 INSTALLING TO PHYSICAL DEVICES VIA ADB
+With your Android device connected via USB with USB Debugging enabled:
+  - Install Student APK:
+      adb -s <DEVICE_ID> install -r apk/gbu-one.apk
+  - Install Admin APK:
+      adb -s <DEVICE_ID> install -r apk/gbu-one-admin.apk
+  - Launch Student App:
+      adb -s <DEVICE_ID> shell am start -n in.gbu.one/in.gbu.one.MainActivity
+  - Launch Admin App:
+      adb -s <DEVICE_ID> shell am start -n in.gbu.one.admin/in.gbu.one.MainActivity
+
+14.4 DATABASE INITIALIZATION & MIGRATIONS
+When deploying to a fresh Supabase project:
+  1. Open the Supabase SQL Editor dashboard.
+  2. Copy and paste the entire contents of `supabase/schema.sql`.
+  3. Execute the script to initialize tables, RLS policies, triggers, and functions.
+  4. Launch the Admin Console (`in.gbu.one.admin`), navigate to 'Initial Setup', and register the primary owner administrator account.
+
+================================================================================
+15. SUMMARY & CONCLUSION
+================================================================================
+GBU One and GBU One Admin represent a milestone in university digital infrastructure. By unifying class schedules, official circulars, examination date sheets, peer academic resources, campus life memories, and administrative controls into a cohesive, offline-first React Native ecosystem, the platform sets a new standard for campus software.
+
+Every design choice—from the 19 custom vector personas and the multi-tier cryptographic audit trail, to the zero-barrier guest mode and the server-verified moderation queue—was engineered to serve the real-world needs of Gautam Buddha University students and staff with speed, security, and elegance.
+================================================================================
+END OF SPECIFICATION DOCUMENT
+================================================================================

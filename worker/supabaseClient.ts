@@ -8,6 +8,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { SCHEMA_SQL } from '../supabase/schema';
 import type { NoticeItem } from '../src/features/notices/noticeService';
 import type { CalendarEventRow, DateSlotRow } from './calendarJob';
+import { examSlotToRow, type ExamDateSlot } from '../src/features/exams/examDateSheetParser';
 
 let client: SupabaseClient | null = null;
 
@@ -120,14 +121,22 @@ export async function upsertCalendarEvents(
   return written;
 }
 
-/** Stores the date-sheet slots read from the per-school PDFs. */
-export async function upsertExamDateSlots(slots: DateSlotRow[]): Promise<number> {
+/** Stores the date-sheet slots read from the per-school PDFs or Excel uploads. */
+export async function upsertExamDateSlots(
+  slots: (DateSlotRow | ExamDateSlot)[],
+): Promise<number> {
   const sb = getWorkerSupabase();
   if (!sb || slots.length === 0) return 0;
+  const rowMap = new Map<string, DateSlotRow>();
+  for (const s of slots) {
+    const row = 'slot_key' in s ? s : examSlotToRow(s);
+    rowMap.set(row.slot_key, row);
+  }
+  const rows = Array.from(rowMap.values());
   const BATCH = 100;
   let written = 0;
-  for (let i = 0; i < slots.length; i += BATCH) {
-    const batch = slots.slice(i, i + BATCH);
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH);
     try {
       const { error } = await sb
         .from('exam_date_slots')
@@ -139,6 +148,95 @@ export async function upsertExamDateSlots(slots: DateSlotRow[]): Promise<number>
       }
     } catch (err) {
       console.warn('Worker: exam_date_slots upsert threw:', err);
+    }
+  }
+  return written;
+}
+
+/** Fetches exam date slots for a specific class key from Supabase. */
+export async function fetchExamDateSlotsForClass(
+  classKey: string,
+): Promise<DateSlotRow[]> {
+  const sb = getWorkerSupabase();
+  if (!sb) return [];
+  try {
+    const { data, error } = await sb
+      .from('exam_date_slots')
+      .select('*')
+      .eq('class_key', classKey.trim().toLowerCase())
+      .order('exam_date', { ascending: true });
+    if (error || !data) return [];
+    return data as DateSlotRow[];
+  } catch (err) {
+    console.warn('Worker: fetchExamDateSlotsForClass threw:', err);
+    return [];
+  }
+}
+
+export interface ResultRecord {
+  id?: string;
+  programme: string;
+  semester?: string;
+  academic_year?: string;
+  academicYear?: string;
+  title?: string;
+  file_url?: string;
+  fileUrl?: string;
+  posted_at?: string;
+  postedAt?: string;
+  text_index_url?: string | null;
+  textIndexUrl?: string | null;
+}
+
+/** Loads all known result URLs so reruns do not re-push old results. */
+export async function fetchKnownResultUrls(): Promise<Set<string>> {
+  const sb = getWorkerSupabase();
+  if (!sb) return new Set();
+  try {
+    const { data, error } = await sb.from('results').select('file_url').limit(2000);
+    if (error || !data) return new Set();
+    const urls = (data as Array<{ file_url: string }>).map((r) => r.file_url).filter(Boolean);
+    return new Set(urls);
+  } catch {
+    return new Set();
+  }
+}
+
+/** Stores result announcements. Keyed on file_url. */
+export async function upsertResults(results: ResultRecord[]): Promise<number> {
+  const sb = getWorkerSupabase();
+  if (!sb || results.length === 0) return 0;
+  const uniqueResults = Array.from(
+    new Map(
+      results
+        .filter((r) => Boolean(r.fileUrl || r.file_url))
+        .map((r) => [(r.fileUrl || r.file_url)!, r]),
+    ).values(),
+  );
+
+  const BATCH = 100;
+  let written = 0;
+  for (let i = 0; i < uniqueResults.length; i += BATCH) {
+    const batch = uniqueResults.slice(i, i + BATCH).map((r) => ({
+      programme: r.programme,
+      semester: r.semester ?? '',
+      academic_year: r.academicYear ?? r.academic_year ?? '',
+      title: r.title ?? `${r.programme} Result`,
+      file_url: (r.fileUrl || r.file_url)!,
+      posted_at: r.postedAt || r.posted_at || new Date().toISOString(),
+      text_index_url: r.textIndexUrl ?? r.text_index_url ?? null,
+    }));
+    try {
+      const { error } = await sb
+        .from('results')
+        .upsert(batch, { onConflict: 'file_url' });
+      if (error) {
+        console.warn('Worker: results upsert failed:', error.message);
+      } else {
+        written += batch.length;
+      }
+    } catch (err) {
+      console.warn('Worker: results upsert threw:', err);
     }
   }
   return written;

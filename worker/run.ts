@@ -9,6 +9,7 @@
 import 'dotenv/config';
 import { NoticesWorkerJob, fetchWithTlsTolerance } from './noticesJob';
 import { collectCalendarRows } from './calendarJob';
+import { runResultsStage } from './resultsJob';
 import {
   ensureSchema, upsertNotices, recordWorkerRun, fetchKnownSourceIds,
   isWorkerSupabaseConfigured, fetchTimetableSnapshots, upsertTimetableSnapshots,
@@ -96,15 +97,35 @@ async function main(): Promise<void> {
   }
 
   if (supa) {
-    await runTimetableStage();
+    try {
+      await runTimetableStage();
+    } catch (err) {
+      console.warn(JSON.stringify({ event: 'worker_timetable_stage_error', error: String(err) }));
+    }
   }
 
   if (supa) {
-    await runCalendarStage();
+    try {
+      await runCalendarStage();
+    } catch (err) {
+      console.warn(JSON.stringify({ event: 'worker_calendar_stage_error', error: String(err) }));
+    }
   }
 
   if (supa) {
-    await runAttachmentStage(result.notices);
+    try {
+      await runResultsStage();
+    } catch (err) {
+      console.warn(JSON.stringify({ event: 'worker_results_stage_error', error: String(err) }));
+    }
+  }
+
+  if (supa) {
+    try {
+      await runAttachmentStage(result.notices);
+    } catch (err) {
+      console.warn(JSON.stringify({ event: 'worker_attachment_stage_error', error: String(err) }));
+    }
   }
 
   console.log(JSON.stringify({

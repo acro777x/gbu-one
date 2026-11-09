@@ -29,6 +29,35 @@
 import zlib from 'zlib';
 import { WORD_SPACE_KERN, extractPdfText, parseToUnicode } from './pdfText';
 import { fetchWithTlsTolerance } from './noticesJob';
+import {
+  parseExcelDateSheet,
+  buildClassKey,
+  matchClassKey,
+  parseDateValue,
+  parseSubjectCell,
+  dateSlotKey,
+  examSlotToRow,
+  rowToExamSlot,
+  examSlotToDatesheetEntry,
+  filterSlotsForStudent,
+  type ExamDateSlot,
+  type DateSheetParseOptions,
+} from '../src/features/exams/examDateSheetParser';
+
+export {
+  parseExcelDateSheet,
+  buildClassKey,
+  matchClassKey,
+  parseDateValue,
+  parseSubjectCell,
+  dateSlotKey,
+  examSlotToRow,
+  rowToExamSlot,
+  examSlotToDatesheetEntry,
+  filterSlotsForStudent,
+  type ExamDateSlot,
+  type DateSheetParseOptions,
+};
 
 /** One exam slot of a date sheet. */
 export interface DateSheetSlot {
@@ -1191,3 +1220,90 @@ export async function fetchDateSheet(
     clearTimeout(timer);
   }
 }
+
+/**
+ * Reads date sheet slots from a PDF buffer and maps to ExamDateSlot[].
+ */
+export function parsePdfDateSheet(
+  buffer: Buffer,
+  options: DateSheetParseOptions = {},
+): ExamDateSlot[] {
+  const schoolCode = options.schoolCode ?? 'soict';
+  let dateSheetSlots = parseDateSheetLayout(buffer, schoolCode);
+  let pdfText = '';
+  if (dateSheetSlots.length === 0) {
+    const textRes = extractPdfText(buffer);
+    if (!textRes.isScanned && textRes.text) {
+      pdfText = textRes.text;
+      dateSheetSlots = parseDateSheetText(textRes.text, schoolCode);
+    }
+  }
+
+  let examType = options.examType;
+  if (!examType) {
+    if (!pdfText) {
+      const textRes = extractPdfText(buffer);
+      pdfText = textRes.text || '';
+    }
+    examType = /mid\s*[- ]?sem/i.test(pdfText) ? 'mid_sem' : 'end_sem';
+  }
+
+  return dateSheetSlots.map((slot) => {
+    const classKey = buildClassKey(slot.programme);
+    const key = dateSlotKey(
+      slot.schoolCode,
+      slot.date,
+      slot.slot,
+      slot.subjectCode ?? '',
+      slot.subjectName,
+      classKey,
+    );
+    const shiftTime =
+      examType === 'mid_sem'
+        ? slot.slot === 'morning'
+          ? '10:00 AM - 11:30 AM'
+          : '03:30 PM - 05:00 PM'
+        : slot.slot === 'morning'
+          ? '09:30 AM - 12:30 PM'
+          : '02:00 PM - 05:00 PM';
+    return {
+      slotKey: key,
+      schoolCode: slot.schoolCode,
+      programme: slot.programme,
+      classKey,
+      examDate: slot.date,
+      slot: slot.slot,
+      shiftTime,
+      subjectCode: slot.subjectCode ?? '',
+      subjectName: slot.subjectName,
+      examType: examType ?? 'end_sem',
+      isBackPaper: slot.isBackPaper,
+      sourceUrl: options.sourceUrl,
+    };
+  });
+}
+
+/**
+ * Universal date sheet ingestion: handles PDF, Excel (.xlsx, .xls), or CSV.
+ */
+export function parseAnyDateSheet(
+  buffer: ArrayBuffer | Buffer | string,
+  fileName?: string,
+  options?: DateSheetParseOptions,
+): ExamDateSlot[] {
+  const buf = Buffer.isBuffer(buffer)
+    ? buffer
+    : typeof buffer === 'string'
+      ? Buffer.from(buffer, 'utf8')
+      : Buffer.from(buffer);
+
+  const isPdf =
+    (fileName && fileName.toLowerCase().endsWith('.pdf')) ||
+    buf.subarray(0, 1024).toString('latin1').includes('%PDF-');
+
+  if (isPdf) {
+    return parsePdfDateSheet(buf, options);
+  }
+  return parseExcelDateSheet(buffer, options);
+}
+

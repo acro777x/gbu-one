@@ -2,6 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   useAuthStore,
   USER_PROFILE_STORAGE_KEY,
+  DEVICE_UNIQUE_STUDENT_ID_KEY,
+  GUEST_AVATAR_ID_KEY,
+  GUEST_NAME_KEY,
   MIN_PASSWORD_LENGTH,
   INVALID_CREDENTIALS_MESSAGE,
   NETWORK_ERROR_MESSAGE,
@@ -50,11 +53,14 @@ describe('Auth Store', () => {
     useAuthStore.getState().logout();
   });
 
-  it('allows guest mode without any credentials or network call', () => {
+  it('allows guest mode without any credentials or network call and maintains guest profile', () => {
     useAuthStore.getState().loginAsGuest();
     const state = useAuthStore.getState();
     expect(state.isGuest).toBe(true);
-    expect(state.user).toBeNull();
+    expect(state.user).toBeDefined();
+    expect(state.user?.id).toBe('guest');
+    expect(state.user?.rollNo).toBe('GUEST');
+    expect(state.user?.uniqueStudentId).toMatch(/^GBU-[A-Z0-9]{6}$/);
     expect(state.isAuthenticated).toBe(false);
   });
 
@@ -273,5 +279,54 @@ describe('Auth Store', () => {
     const stored = await AsyncStorage.getItem(USER_PROFILE_STORAGE_KEY);
     expect(stored).toBeTruthy();
     expect(stored).not.toContain('password123');
+  });
+
+  describe('Guest Identity Persistence & Account Transfer', () => {
+    it('persists guest student ID, avatar, and name to dedicated AsyncStorage keys', async () => {
+      useAuthStore.getState().loginAsGuest();
+      const guestUser = useAuthStore.getState().user;
+      expect(guestUser).toBeDefined();
+
+      const storedDeviceId = await AsyncStorage.getItem(DEVICE_UNIQUE_STUDENT_ID_KEY);
+      const storedAvatarId = await AsyncStorage.getItem(GUEST_AVATAR_ID_KEY);
+      expect(storedDeviceId).toBe(guestUser?.uniqueStudentId);
+      expect(storedAvatarId).toBe(guestUser?.avatarId);
+    });
+
+    it('transfers guest student ID and avatar to account profile on register', async () => {
+      // Set existing guest keys in AsyncStorage
+      const existingDeviceId = 'GBU-PERSIST1';
+      const existingAvatarId = 'cyber-guardian';
+      await AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, existingDeviceId);
+      await AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, existingAvatarId);
+
+      const res = await useAuthStore.getState().register({
+        rollNo: '22/BCS/077',
+        name: 'Kabir Mehta',
+        email: 'kabir@gbu.ac.in',
+        password: 'password123',
+      });
+
+      expect(res.success).toBe(true);
+      const user = useAuthStore.getState().user;
+      expect(user?.uniqueStudentId).toBe(existingDeviceId);
+      expect(user?.avatarId).toBe(existingAvatarId);
+      expect(user?.rollNo).toBe('22/BCS/077');
+    });
+
+    it('transfers guest student ID and avatar to account profile on login', async () => {
+      const existingDeviceId = 'GBU-LOGIN99';
+      const existingAvatarId = 'ai-researcher';
+      await AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, existingDeviceId);
+      await AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, existingAvatarId);
+
+      const res = await useAuthStore.getState().login('22/BCS/088', 'password123');
+
+      expect(res.success).toBe(true);
+      const user = useAuthStore.getState().user;
+      expect(user?.uniqueStudentId).toBe(existingDeviceId);
+      expect(user?.avatarId).toBe(existingAvatarId);
+      expect(user?.rollNo).toBe('22/BCS/088');
+    });
   });
 });

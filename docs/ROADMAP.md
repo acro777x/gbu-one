@@ -15,11 +15,11 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Splash sequence with native handoff, 2.3s cap, skip and warm-start variant
 - [x] Bootstrap loading screen, skeleton shimmer, custom pull-to-refresh, button loading morph
 - [x] `FloatingTabBar` matching `signal-bloom.png` (capsule, glass, avatar tab, glow, animation)
-- [x] Splash + 3-slide onboarding
+- [x] Splash + 4-slide onboarding with student identity customization (12 offline vector avatars, student name input & unique student ID generation)
 - [x] Login screen: roll number + password, Create account, Continue as guest
 - [x] Supabase auth wiring + guest mode + "Create account" bottom sheet for gated features
 - [x] Class setup flow (school → programme → semester → section)
-- [x] Profile screen with preferences, guest variant, delete account
+- [x] Profile screen with preferences, guest variant, delete account, chosen vector avatar & editable persona sheet
 - [x] Screenshots vs references in `docs/qa/`
 
 ## Phase 2 — Timetable
@@ -64,6 +64,8 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] An admin that can actually approve — a real Supabase Auth account with `role = 'owner'` in `public.moderators`, seeded by `scripts/_seed-admin.js`; the login field takes an email address as well as a roll number (`toLoginEmail()`), and the Moderation Queue says *why* it refuses instead of always answering "Moderator access required"
 - [x] Approve-all for the owner — a confirmed "Approve all N" clears the imported archive in one pass, while `approveAllPending()` still writes one `pyq_moderation_log` entry per paper
 - [x] Results that announce themselves — `src/features/exams/resultsWatch.ts` and `resultAlerts.ts` compare the public per-school result sheet's `Last-Modified`/size on the device (one HEAD per sheet, nothing sent to GBU One) and raise a local `results` notification when it moves; the Exams → Results tab carries the switch and a "Check the portal now" action. The portal's own login stays a link-out, because it is captcha-gated (`docs/OPEN_QUESTIONS.md` #22)
+- [x] Crowdsourced PYQ Contributor Leaderboard & Gamification — podium view with animated Rank 1 pulse/glow, silver/bronze crowns, dynamic admin overtake (>1000 pts natural #1), 44pt touch targets, native sharing, and automated upload points awarding (+50 pts) across cloud and offline queue (`src/features/pyq/pyqLeaderboard.ts`, `src/components/pyq/PyqLeaderboardPodium.tsx`, `tests/pyq_leaderboard.test.ts`)
+
 
 ## Phase 5 — Exams, results, deadlines, calendar, events
 - [x] Exam hub: date sheet for my programme, revision alerts, countdown, admit card reminder
@@ -79,6 +81,11 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 - [x] Streamlined 1.7s splash with UI-thread TypeWriter & 512px native splash mark
 - [x] Supabase client config (`src/lib/supabase.ts`) + Create Account bottom sheet in login
 - [x] Dedicated Admin APK build (`gbu-one-admin.apk`, package `in.gbu.one.admin`) — independent APK installable side-by-side with student app, auto-booting to GBU Admin Console with live events publisher, photo gallery manager, PYQ queue, and version update manager
+- [x] Production Readiness & Multi-Layered Admin Security Hardening — root/route-level `ErrorBoundary` (zero red screen crashes), NIST FIPS 180-4 SHA-256 security engine, brute-force lockout (5 attempts, 300s cooldown), secondary MFA key, 15-minute session auto-lock, and tamper-evident SHA-256 hash-chained audit ledger (`src/features/admin/adminSecurity.ts`, `tests/admin_security.test.ts`)
+- [x] 12-Avatar Vector Pack & Student Identity Customization — 100% offline vector personas across GBU schools (SOICT, SOE, SOBT, SOM, SOLJG, SOHSS, SOVSAS), Onboarding Slide 4 avatar selector, unique student ID generator (`GBU-XXXXXX`), and Profile avatar editor (`src/components/avatar/AvatarPack.tsx`, `tests/avatar_and_identity.test.ts`)
+- [x] Admin Broadcast Push History, Revert / Recall Broadcast & PYQ Attribution — scrollable push history, instant cloud notice deletion with tombstone + Supabase Realtime broadcast recall, and uploader persona attribution in moderation queue (`src/features/notices/adminNoticesService.ts`, `tests/admin_push_history.test.ts`)
+- [x] Dual-Format Date Sheet Ingestion (Excel & PDF) — robust parsing engine handling both tabular .xlsx/.csv theory schedules and official examination PDF notifications with auto-assignment and countdown widgets
+- [x] Dual-APK Physical Device Verification — both `in.gbu.one.admin` and `in.gbu.one` compiled, installed, and verified live via ADB on Tecno Pova 6 Pro (Android 14) with 100% green test suite (38 suites, 599 tests passed)
 - [x] Central Compulsory Auto-Update Engine (`MandatoryUpdateModal.tsx` & `versionChecker.ts`) — remote version check with non-dismissible hardware-back-trapped modal overlay for critical releases
 - [x] Campus Events Photo Gallery (`app/events.tsx`) — horizontal thumbnail scroller, full-screen image viewer overlay, and live admin publishing
 - [x] Open PYQ Access for All 8 Schools — SOICT, SOE, SOBT, SOM, SOL, SOVSAS, SOHSS open download with direct single-tap reader launch

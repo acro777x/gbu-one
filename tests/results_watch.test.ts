@@ -1,7 +1,10 @@
 /**
- * Unit tests for the results watch: does a re-published sheet raise exactly one
- * alert, and does an unpublished sheet raise none? (docs/NOTIFICATIONS.md,
- * docs/DATA_SOURCES.md, docs/OPEN_QUESTIONS.md #22.)
+ * Unit tests for the results watch and results pipeline:
+ * - Does a re-published sheet raise exactly one alert, and does an unpublished sheet raise none?
+ * - Results announcements scraping, keyword detection, and metadata extraction
+ * - Student portal URL builder with prefilled roll/session/dob
+ * - Fallback seed data for declared results
+ * (docs/NOTIFICATIONS.md, docs/DATA_SOURCES.md, docs/OPEN_QUESTIONS.md #22.)
  */
 import {
   detectSheetChanges,
@@ -15,6 +18,28 @@ import {
   type ResultsWatchState,
   type SheetFingerprint,
 } from '../src/features/exams/resultsWatch';
+import {
+  isResultAnnouncement,
+  extractProgramme,
+  extractSemester,
+  extractAcademicYear,
+  parseResultAnnouncementsHtml,
+  ResultsWorkerJob,
+} from '../worker/resultsJob';
+import {
+  buildPortalResultUrl,
+  buildGbuDirectResultUrl,
+  COMMON_RESULT_SESSIONS,
+  normaliseSemester,
+  matchesStudentBatch,
+} from '../src/features/exams/resultPortals';
+import {
+  notifyBatchResultDeclared,
+  BATCH_WATCH_STORAGE_KEY,
+} from '../src/features/exams/resultAlerts';
+import {
+  SEED_DECLARED_RESULTS,
+} from '../src/features/exams/useResultsQuery';
 
 const sheet = (overrides: Partial<SheetFingerprint> = {}): SheetFingerprint => ({
   code: 'soict',
@@ -125,5 +150,305 @@ describe('stored state', () => {
     expect(parseWatchState('{"soict":{"lastModified":7,"bytes":"big"}}')).toEqual({
       soict: { lastModified: null, bytes: null },
     });
+  });
+});
+
+describe('worker results scraping and keyword matching', () => {
+  it('correctly identifies result announcements using keywords', () => {
+    expect(isResultAnnouncement('Result of B.Tech (CSE) IV Semester Examination')).toBe(true);
+    expect(isResultAnnouncement('Grade Card for MBA II Semester Declared')).toBe(true);
+    expect(isResultAnnouncement('Declaration of Result of Ph.D Coursework 2026')).toBe(true);
+    expect(isResultAnnouncement('ODD SEM 2026 Examination Results Published')).toBe(true);
+    expect(isResultAnnouncement('EVEN SEM Regular & Back Paper Results')).toBe(true);
+    expect(isResultAnnouncement('End Sem Result of SOICT All Branches')).toBe(true);
+  });
+
+  it('rejects circulars, fee notices, and admit cards without results', () => {
+    expect(isResultAnnouncement('Admit Cards for End Semester Examination')).toBe(false);
+    expect(isResultAnnouncement('Tender notice for university hostel mess')).toBe(false);
+    expect(isResultAnnouncement('Notice regarding fee payment last date')).toBe(false);
+    expect(isResultAnnouncement('Hostel allotment second list')).toBe(false);
+    expect(isResultAnnouncement('')).toBe(false);
+    expect(isResultAnnouncement('1234')).toBe(false);
+  });
+
+  it('extracts programme from diverse announcement titles', () => {
+    expect(extractProgramme('Declaration of Result of B.Tech (CSE) IV Semester')).toBe('B.Tech CSE');
+    expect(extractProgramme('Result of B.Tech. (ECE) VI Semester (EVEN SEM 2026)')).toBe('B.Tech ECE');
+    expect(extractProgramme('Result of B.Tech (CS) IV Semester')).toBe('B.Tech CSE');
+    expect(extractProgramme('Result of B.Tech. (EC) VI Semester')).toBe('B.Tech ECE');
+    expect(extractProgramme('Result of B.Tech (IT) IV Semester Declared')).toBe('B.Tech IT');
+    expect(extractProgramme('Result of B.Tech (AI) II Semester')).toBe('B.Tech AI');
+    expect(extractProgramme('Result of B.Tech. (EE) IV Semester')).toBe('B.Tech EE');
+    expect(extractProgramme('Grade Card for MCA IV Semester Declared')).toBe('MCA');
+    expect(extractProgramme('Result of MBA II Semester 2026')).toBe('MBA');
+    expect(extractProgramme('Result of B.A. LL.B VIII Semester (EVEN SEM)')).toBe('B.A. LL.B');
+    expect(extractProgramme('Result of SOICT End Semester Examination')).toBe('SOICT');
+    expect(extractProgramme('General Examination Results Declared')).toBe('All Programmes');
+  });
+
+  it('extracts and normalizes semester', () => {
+    expect(extractSemester('Result of B.Tech Sem - IV')).toBe('IV');
+    expect(extractSemester('Result of MBA Semester II')).toBe('II');
+    expect(extractSemester('Result of MCA 4th Semester Declared')).toBe('IV');
+    expect(extractSemester('Result of B.Tech 1st Sem')).toBe('I');
+    expect(extractSemester('Result of B.Tech IVth Semester')).toBe('IV');
+    expect(extractSemester('Result of B.Tech IInd Sem')).toBe('II');
+    expect(extractSemester('Result of B.Tech Sem-IVth')).toBe('IV');
+    expect(extractSemester('Result of B.Tech Sem. IIIrd')).toBe('III');
+    expect(extractSemester('Result of B.Tech Ist Semester')).toBe('I');
+    expect(extractSemester('ODD SEM Examination Results Declared')).toBe('ODD');
+    expect(extractSemester('EVEN SEMESTER Result 2026')).toBe('EVEN');
+    expect(extractSemester('General Results Announcement')).toBe('');
+  });
+
+  it('extracts academic year and session', () => {
+    expect(extractAcademicYear('Result of B.Tech IV Sem 2025-26')).toBe('2025-26');
+    expect(extractAcademicYear('Declaration of Result 2026-2027')).toBe('2026-2027');
+    expect(extractAcademicYear('Result Notice', '2026-10-15')).toBe('2026-27');
+  });
+
+  it('parses notice-item blocks from exams portal HTML including text month dates', () => {
+    const html = `
+      <div class="notice-item">
+        <h3><a href="/uploads/results/btech_cse_4.pdf">Result of B.Tech (CSE) IV Semester Declared</a></h3>
+        <p>Posted on: 15-10-2026</p>
+      </div>
+      <div class="notice-item">
+        <h3><a href="/uploads/results/btech_ec_6.pdf">Result of B.Tech (EC) VIth Semester</a></h3>
+        <p>Posted on: 15 Oct 2026</p>
+      </div>
+      <div class="notice-item">
+        <h3><a href="/uploads/notices/mess_bill.pdf">Mess Bill Oct 2026</a></h3>
+        <p>Posted on: 12-10-2026</p>
+      </div>
+      <div class="notice-item">
+        <h3><a href="https://gbuexam.in/result/mba.pdf">Grade Card for MBA II Semester ODD SEM</a></h3>
+        <p>Date: 10-10-2026</p>
+      </div>
+    `;
+
+    const records = parseResultAnnouncementsHtml(html, 'https://exams.gbu.ac.in');
+    expect(records).toHaveLength(3);
+
+    expect(records[0]).toMatchObject({
+      programme: 'B.Tech CSE',
+      semester: 'IV',
+      fileUrl: 'https://exams.gbu.ac.in/uploads/results/btech_cse_4.pdf',
+    });
+
+    expect(records[1]).toMatchObject({
+      programme: 'B.Tech ECE',
+      semester: 'VI',
+      fileUrl: 'https://exams.gbu.ac.in/uploads/results/btech_ec_6.pdf',
+      postedAt: '2026-10-15T00:00:00.000Z',
+    });
+
+    expect(records[2]).toMatchObject({
+      programme: 'MBA',
+      semester: 'II',
+      fileUrl: 'https://gbuexam.in/result/mba.pdf',
+    });
+  });
+
+  it('parses table rows from university results page', () => {
+    const html = `
+      <table>
+        <tr>
+          <td>20 Oct 2026</td>
+          <td><a href="/uploads/results/soict_even.pdf">Result of SOICT EVEN SEM 2026</a></td>
+        </tr>
+        <tr>
+          <td>18 Oct 2026</td>
+          <td><a href="/notices/holiday.pdf">Holiday Notice</a></td>
+        </tr>
+      </table>
+    `;
+
+    const records = parseResultAnnouncementsHtml(html, 'https://exams.gbu.ac.in');
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      programme: 'SOICT',
+      semester: 'EVEN',
+      fileUrl: 'https://exams.gbu.ac.in/uploads/results/soict_even.pdf',
+    });
+  });
+
+  it('ResultsWorkerJob seeds known URLs and computes fresh push candidates', async () => {
+    const job = new ResultsWorkerJob(['https://exams.gbu.ac.in/uploads/results/old_result.pdf']);
+    expect(job).toBeDefined();
+
+    const html = `
+      <div class="notice-item">
+        <h3><a href="/uploads/results/old_result.pdf">Result of MCA IV Semester</a></h3>
+      </div>
+      <div class="notice-item">
+        <h3><a href="/uploads/results/new_result.pdf">Result of B.Tech CSE IV Semester Declared</a></h3>
+      </div>
+    `;
+
+    const items = parseResultAnnouncementsHtml(html, 'https://exams.gbu.ac.in');
+    expect(items).toHaveLength(2);
+
+    const knownSet = new Set(['https://exams.gbu.ac.in/uploads/results/old_result.pdf']);
+    const fresh = items.filter((r) => !knownSet.has(r.fileUrl ?? ''));
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0].fileUrl).toBe('https://exams.gbu.ac.in/uploads/results/new_result.pdf');
+  });
+});
+
+describe('student portal URL generation and query parameters', () => {
+  it('builds portal login URL with prefilled roll, session, and dob', () => {
+    const url = buildPortalResultUrl({
+      rollNo: '22/ICS/042',
+      session: '2026-27 ODD SEM',
+      dob: '15/08/2004',
+    });
+    expect(url).toContain('gbuexam.in/result/login.php');
+    expect(url).toContain('roll_no=22%2FICS%2F042');
+    expect(url).toContain('session=2026-27%20ODD%20SEM');
+    expect(url).toContain('dob=15%2F08%2F2004');
+  });
+
+  it('builds direct GBU result gateway URL', () => {
+    const url = buildGbuDirectResultUrl({
+      rollNo: '22/ICS/042',
+      session: '2025-26 EVEN SEM',
+    });
+    expect(url).toContain('https://www.gbu.ac.in/results');
+    expect(url).toContain('roll=22%2FICS%2F042');
+    expect(url).toContain('session=2025-26%20EVEN%20SEM');
+  });
+
+  it('supplies standard common sessions for student picker', () => {
+    expect(COMMON_RESULT_SESSIONS).toContain('2026-27 ODD SEM');
+    expect(COMMON_RESULT_SESSIONS).toContain('2025-26 EVEN SEM');
+    expect(COMMON_RESULT_SESSIONS.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('provides bundled declared results seed for offline-first support', () => {
+    expect(SEED_DECLARED_RESULTS.length).toBeGreaterThanOrEqual(4);
+    for (const seed of SEED_DECLARED_RESULTS) {
+      expect(seed.id).toBeDefined();
+      expect(seed.programme).toBeDefined();
+      expect(seed.title).toBeDefined();
+      expect(seed.fileUrl).toMatch(/^https?:\/\//);
+    }
+  });
+});
+
+describe('batch matching and student notifications', () => {
+  it('normalises semester numbers, Roman numerals, and ordinals', () => {
+    expect(normaliseSemester('4')).toBe('IV');
+    expect(normaliseSemester('4th')).toBe('IV');
+    expect(normaliseSemester('IVth')).toBe('IV');
+    expect(normaliseSemester('2nd')).toBe('II');
+    expect(normaliseSemester('IInd')).toBe('II');
+    expect(normaliseSemester('1st')).toBe('I');
+    expect(normaliseSemester('VI')).toBe('VI');
+    expect(normaliseSemester('ODD')).toBe('ODD');
+    expect(normaliseSemester('EVEN')).toBe('EVEN');
+    expect(normaliseSemester('')).toBe('');
+    expect(normaliseSemester(null)).toBe('');
+  });
+
+  it('matches B.Tech CSE (BCS) student with declared B.Tech CSE results', () => {
+    const student = {
+      programmeCode: 'BCS',
+      programmeName: 'B.Tech (CS)',
+      school: 'SOICT',
+      semester: 'IV',
+      selectedSession: '2025-26 EVEN SEM',
+    };
+
+    expect(
+      matchesStudentBatch(
+        { programme: 'B.Tech CSE', semester: 'IV' },
+        student,
+      ),
+    ).toBe(true);
+
+    expect(
+      matchesStudentBatch(
+        { programme: 'B.Tech (CS)', semester: 'IV' },
+        student,
+      ),
+    ).toBe(true);
+
+    // EVEN SEM session match
+    expect(
+      matchesStudentBatch(
+        { programme: 'B.Tech CSE', semester: 'EVEN' },
+        student,
+      ),
+    ).toBe(true);
+
+    // School-level batch declaration
+    expect(
+      matchesStudentBatch(
+        { programme: 'SOICT', semester: 'EVEN' },
+        student,
+      ),
+    ).toBe(true);
+
+    // Wrong semester
+    expect(
+      matchesStudentBatch(
+        { programme: 'B.Tech CSE', semester: 'VI' },
+        student,
+      ),
+    ).toBe(false);
+
+    // Wrong programme
+    expect(
+      matchesStudentBatch(
+        { programme: 'MBA', semester: 'IV' },
+        student,
+      ),
+    ).toBe(false);
+  });
+
+  it('matches other degrees (ECE, MCA, MBA, B.A. LL.B)', () => {
+    expect(
+      matchesStudentBatch(
+        { programme: 'B.Tech ECE', semester: 'II' },
+        { programmeCode: 'BEC', semester: 'II', school: 'SOICT' },
+      ),
+    ).toBe(true);
+
+    expect(
+      matchesStudentBatch(
+        { programme: 'MCA', semester: 'IV' },
+        { programmeCode: 'MCA', semester: 'IV', school: 'SOICT' },
+      ),
+    ).toBe(true);
+
+    expect(
+      matchesStudentBatch(
+        { programme: 'MBA', semester: 'II' },
+        { programmeCode: 'MBA', semester: 'II', school: 'SOM' },
+      ),
+    ).toBe(true);
+
+    expect(
+      matchesStudentBatch(
+        { programme: 'B.A. LL.B', semester: 'VIII' },
+        { programmeCode: 'BALLB', semester: 'VIII', school: 'SOL' },
+      ),
+    ).toBe(true);
+  });
+
+  it('provides persistent storage key for batch result watch', () => {
+    expect(BATCH_WATCH_STORAGE_KEY).toBe('@gbu_one_batch_result_watch');
+  });
+
+  it('schedules notification when batch result is published', async () => {
+    const success = await notifyBatchResultDeclared({
+      programme: 'B.Tech CSE',
+      semester: 'IV',
+      title: 'Result of B.Tech CSE IV Semester Declared',
+      fileUrl: 'https://exams.gbu.ac.in/uploads/results/soict.pdf',
+    });
+    expect(success).toBe(true);
   });
 });

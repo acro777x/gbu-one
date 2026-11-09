@@ -1,5 +1,6 @@
 import {
   publishNoticeToCampus,
+  updateNoticeOnCampus,
   deleteNoticeFromCampus,
   fetchCloudNotices,
   getLocalDeletedNoticeIds,
@@ -96,5 +97,16 @@ describe('Admin Notices Service & Cloud Sync Pipeline', () => {
     // Next fetch should exclude it
     const cloudRes = await fetchCloudNotices();
     expect(cloudRes.notices.find((n) => n.id === 'seed_notice_1')).toBeUndefined();
+  });
+
+  it('updates an existing notice and persists changes', async () => {
+    const updateRes = await updateNoticeOnCampus('seed_notice_1', {
+      title: 'Revised Mid Sem Schedule Released',
+      importance: 5,
+    });
+
+    expect(updateRes.ok).toBe(true);
+    expect(updateRes.notice?.title).toBe('Revised Mid Sem Schedule Released');
+    expect(updateRes.notice?.importance).toBe(5);
   });
 });

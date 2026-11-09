@@ -153,7 +153,7 @@ export default function HomeScreen() {
     const stamp = new Date().toISOString();
     setLastSeenAt(stamp);
     AsyncStorage.setItem(NOTICES_LAST_SEEN_KEY, stamp).catch(() => {});
-    router.push('/notices' as never);
+    router.push('/(tabs)/notices' as never);
   };
 
   const validNotices = notices.filter(
@@ -386,7 +386,7 @@ export default function HomeScreen() {
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Latest Notices</Text>
             <TouchableOpacity
-              onPress={() => router.push('/notices' as never)}
+              onPress={() => router.push('/(tabs)/notices' as never)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={{ paddingVertical: 8 }}
             >

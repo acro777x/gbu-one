@@ -7,7 +7,7 @@
 import type { NoticeItem } from '../src/features/notices/noticeService';
 import { normaliseClassKey } from '../src/lib/classKey';
 import type { TimetableChangeRecord } from './timetableJob';
-import { getWorkerSupabase, markTimetablePush } from './supabaseClient';
+import { getWorkerSupabase, markTimetablePush, type ResultRecord } from './supabaseClient';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -269,6 +269,107 @@ export async function sendPushForCandidates(
       console.warn('Worker: push send failed:', err);
     }
     receipts.push({ noticeId: n.sourceId, sent, skipped: sent === 0 });
+  }
+  return receipts;
+}
+
+export interface ResultPushReceipt {
+  fileUrl: string;
+  programme: string;
+  sent: number;
+  skipped: boolean;
+  reason?: string;
+}
+
+/**
+ * Sends push notifications to all devices when a new result batch is published.
+ */
+export async function sendPushForResults(
+  results: ResultRecord[],
+  alreadyPushedUrls: Set<string> = new Set(),
+): Promise<ResultPushReceipt[]> {
+  const receipts: ResultPushReceipt[] = [];
+  const accessToken = process.env.EXPO_ACCESS_TOKEN || '';
+  if (results.length === 0) return receipts;
+
+  for (const r of results) {
+    const url = r.fileUrl || r.file_url || '';
+    if (!url) continue;
+    if (alreadyPushedUrls.has(url)) {
+      receipts.push({
+        fileUrl: url,
+        programme: r.programme,
+        sent: 0,
+        skipped: true,
+        reason: 'already-pushed',
+      });
+      continue;
+    }
+    if (!accessToken) {
+      receipts.push({
+        fileUrl: url,
+        programme: r.programme,
+        sent: 0,
+        skipped: true,
+        reason: 'no-EXPO_ACCESS_TOKEN',
+      });
+      continue;
+    }
+
+    const tokens = await fetchTokensForNotice();
+    if (tokens.length === 0) {
+      receipts.push({
+        fileUrl: url,
+        programme: r.programme,
+        sent: 0,
+        skipped: true,
+        reason: 'no-tokens',
+      });
+      continue;
+    }
+
+    let sent = 0;
+    const title = 'GBU One — Results Declared';
+    const body = `${r.title || `Result declared for ${r.programme} (${r.semester ? `Sem ${r.semester}` : 'Latest'})`}. Tap to view.`.slice(0, 140);
+    const data = {
+      type: 'result_declared',
+      fileUrl: url,
+      programme: r.programme,
+      semester: r.semester,
+    };
+
+    try {
+      for (const batch of chunk(tokens, 100)) {
+        const messages = batch.map((to) => ({
+          to,
+          sound: 'default',
+          priority: 'high',
+          title,
+          body,
+          channelId: 'results',
+          data,
+        }));
+        const res = await fetch(EXPO_PUSH_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify(messages),
+        });
+        if (res.ok) sent += batch.length;
+      }
+    } catch (err) {
+      console.warn('Worker: result push send failed:', err);
+    }
+
+    receipts.push({
+      fileUrl: url,
+      programme: r.programme,
+      sent,
+      skipped: sent === 0,
+      reason: sent === 0 ? 'send-failed' : undefined,
+    });
   }
   return receipts;
 }

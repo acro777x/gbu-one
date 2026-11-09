@@ -1,3 +1,4 @@
+import React, { useEffect } from 'react';
 import { OCT_NOV_REAL_GBU_NOTICES } from './realGbuNotices';
 /**
  * GBU One — Notices query (offline-first: cache, then refresh).
@@ -15,9 +16,14 @@ import { MOCK_NOTICES, NoticeItem } from './noticeService';
 import { fetchLiveNotices } from './liveNotices';
 import { toNoticeItems } from './liveNoticeMapping';
 import { useNoticesStatusStore } from './noticesStatus';
-import { readCachedNotices, writeCachedNotices } from '../../lib/db';
-import { NOTICE_QUERY_KEY } from '../../lib/queryClient';
-import { fetchCloudNotices, getLocalDeletedNoticeIds } from './adminNoticesService';
+import { readCachedNotices, writeCachedNotices, deleteCachedNotice } from '../../lib/db';
+import { NOTICE_QUERY_KEY, queryClient } from '../../lib/queryClient';
+import {
+  fetchCloudNotices,
+  getLocalDeletedNoticeIds,
+  setLocalDeletedNoticeIds,
+  NOTICES_REALTIME_CHANNEL,
+} from './adminNoticesService';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 function rowToNotice(r: Record<string, unknown>): NoticeItem {
@@ -95,6 +101,52 @@ export async function fetchNoticesFromUniversity(): Promise<{
 
 export function useNoticesQuery() {
   const setStatus = useNoticesStatusStore((state) => state.set);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const channel = supabase.channel(NOTICES_REALTIME_CHANNEL);
+    channel
+      .on('broadcast', { event: 'notice_deleted' }, (msg) => {
+        const id = msg?.payload?.id;
+        if (!id) return;
+        queryClient.setQueryData<NoticeItem[]>(NOTICE_QUERY_KEY, (old) =>
+          old ? old.filter((n) => n.id !== id && n.sourceId !== id) : [],
+        );
+        deleteCachedNotice(id);
+        void getLocalDeletedNoticeIds().then((existing) => {
+          if (!existing.includes(id)) {
+            void setLocalDeletedNoticeIds([...existing, id]);
+          }
+        });
+      })
+      .on('broadcast', { event: 'notice_published' }, (msg) => {
+        const notice = msg?.payload as NoticeItem;
+        if (!notice || !notice.id) return;
+        queryClient.setQueryData<NoticeItem[]>(NOTICE_QUERY_KEY, (old) => {
+          const filtered = (old || []).filter((n) => n.id !== notice.id && n.sourceId !== notice.sourceId);
+          return [notice, ...filtered];
+        });
+        writeCachedNotices([notice]);
+      })
+      .on('broadcast', { event: 'notice_updated' }, (msg) => {
+        const notice = msg?.payload as NoticeItem;
+        if (!notice || !notice.id) return;
+        queryClient.setQueryData<NoticeItem[]>(NOTICE_QUERY_KEY, (old) => {
+          if (!old) return [notice];
+          return old.map((n) => (n.id === notice.id || n.sourceId === notice.id ? { ...n, ...notice } : n));
+        });
+        writeCachedNotices([notice]);
+      })
+      .subscribe();
+
+    return () => {
+      try {
+        void supabase.removeChannel(channel);
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
 
   return useQuery<NoticeItem[]>({
     queryKey: NOTICE_QUERY_KEY,

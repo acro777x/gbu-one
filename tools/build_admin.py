@@ -41,18 +41,12 @@ try:
 
     source_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # Ensure admin routes are available in BUILD for admin build
-    src_admin = os.path.join(source_dir, 'app', 'admin')
-    dst_admin = r'C:\gbuone-build\app\admin'
-    if os.path.isdir(src_admin):
-        shutil.copytree(src_admin, dst_admin, dirs_exist_ok=True)
-        print("Injected app/admin into Admin build.")
-
-    src_mod = os.path.join(source_dir, 'app', 'moderation.tsx')
-    dst_mod = r'C:\gbuone-build\app\moderation.tsx'
-    if os.path.exists(src_mod):
-        shutil.copy2(src_mod, dst_mod)
-        print("Injected app/moderation.tsx into Admin build.")
+    # Ensure app routes and components are available in BUILD
+    src_app = os.path.join(source_dir, 'app')
+    dst_app = r'C:\gbuone-build\app'
+    if os.path.isdir(src_app):
+        shutil.copytree(src_app, dst_app, dirs_exist_ok=True)
+        print("Injected app/ into Admin build.")
 
     src_dir = os.path.join(source_dir, 'src')
     dst_src = r'C:\gbuone-build\src'

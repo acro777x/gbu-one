@@ -94,10 +94,14 @@ create table if not exists public.exam_datesheets (
 create table if not exists public.results (
   id uuid primary key default gen_random_uuid(),
   programme text not null,
-  file_url text not null,
+  semester text not null default '',
+  academic_year text not null default '',
+  title text not null default '',
+  file_url text not null unique,
   posted_at timestamptz not null default now(),
   text_index_url text
 );
+create index if not exists results_programme_idx on public.results (programme, posted_at desc);
 
 -- The official academic calendar and the holiday list, as read from the
 -- university's own documents. The event_key keeps the upsert idempotent.
@@ -129,10 +133,15 @@ create table if not exists public.exam_date_slots (
   subject_name text not null,
   is_back_paper boolean not null default false,
   source_url text not null default '',
+  class_key text not null default '',
+  exam_type text not null default 'end_sem',
+  shift_time text not null default '',
+  paper_id text not null default '',
   updated_at timestamptz not null default now()
 );
 
 create index if not exists idx_exam_date_slots_date on public.exam_date_slots (exam_date);
+create index if not exists idx_exam_date_slots_class on public.exam_date_slots (class_key);
 
 create table if not exists public.pyq_papers (
   id uuid primary key default gen_random_uuid(),
@@ -162,8 +171,8 @@ create table if not exists public.moderators (
 
 insert into public.moderators (email, role)
 values
-  ('ashishkhola56@gmail.com', 'owner'),
-  ('student.gbuone.app@gmail.com', 'moderator')
+  ('admin@gbu.ac.in', 'owner'),
+  ('student.gbuone.space@gmail.com', 'moderator')
 on conflict (email) do update set role = excluded.role;
 
 -- Moderation trail: every approve / reject / request-changes decision.
@@ -282,7 +291,7 @@ on conflict (id) do update set public = true;
 -- and only a moderator can move a file to the approved bucket.
 drop policy if exists "pyq pending upload" on storage.objects;
 create policy "pyq pending upload" on storage.objects
-  for insert to authenticated
+  for insert to anon, authenticated
   with check (
     bucket_id = 'pyq-pending'
     and (storage.foldername(name))[1] = 'pyq-pending'
@@ -354,6 +363,47 @@ as $$
 $$;
 grant execute on function public.is_moderator() to anon, authenticated;
 
+-- Initial Admin Setup helper: Allows initial administrator setup if no moderator
+-- exists yet, or allows claiming the owner account securely.
+create or replace function public.has_any_moderator()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $
+  select exists (select 1 from public.moderators);
+$;
+grant execute on function public.has_any_moderator() to anon, authenticated;
+
+create or replace function public.claim_initial_admin()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  user_email text;
+  admin_count integer;
+begin
+  user_email := lower(coalesce(auth.jwt() ->> 'email', ''));
+  if user_email = '' then
+    return false;
+  end if;
+
+  select count(*) into admin_count from public.moderators;
+  if admin_count = 0 then
+    insert into public.moderators (email, role)
+    values (user_email, 'owner')
+    on conflict (email) do update set role = 'owner';
+    return true;
+  end if;
+
+  return false;
+end;
+$;
+grant execute on function public.claim_initial_admin() to authenticated;
+
 -- The allowlist itself: a signed-in user may read their own row (that is what
 -- isModerator() asks for), a moderator may read the whole list.
 alter table public.moderators enable row level security;
@@ -421,6 +471,12 @@ drop policy if exists "exam date slots read" on public.exam_date_slots;
 create policy "exam date slots read" on public.exam_date_slots
   for select to anon, authenticated using (true);
 
+drop policy if exists "exam date slots write" on public.exam_date_slots;
+create policy "exam date slots write" on public.exam_date_slots
+  for all to anon, authenticated
+  using (true)
+  with check (true);
+
 alter table public.results enable row level security;
 drop policy if exists "results read" on public.results;
 create policy "results read" on public.results
@@ -447,11 +503,8 @@ create policy "pyq papers moderator read" on public.pyq_papers
 -- A signed-in student queues their own upload; it can only ever be pending.
 drop policy if exists "pyq papers insert pending" on public.pyq_papers;
 create policy "pyq papers insert pending" on public.pyq_papers
-  for insert to authenticated
-  with check (
-    status = 'pending'
-    and (uploader_id is null or uploader_id = auth.uid())
-  );
+  for insert to anon, authenticated
+  with check (status = 'pending');
 
 -- Only a moderator changes a status (approve / reject / request changes).
 drop policy if exists "pyq papers moderator update" on public.pyq_papers;

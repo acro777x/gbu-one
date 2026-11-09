@@ -13,6 +13,9 @@ export interface DatesheetEntry {
   examTime: string; // e.g. "09:30 - 12:30"
   shift: 'Morning' | 'Evening';
   roomBlock?: string;
+  paperId?: string;
+  examType?: 'mid_sem' | 'end_sem' | 'practical';
+  isBackPaper?: boolean;
 }
 
 export interface StudentResultRecord {
@@ -289,3 +292,211 @@ export function calculateExamCountdown(targetDateStr: string): number {
   const diffDays = Math.ceil((target - now) / (1000 * 60 * 60 * 24));
   return Math.max(0, diffDays);
 }
+
+/** Authentic B.Tech CSE 3rd Semester Mid-Semester Schedule (from GBU sample date sheet) */
+export const AUTHENTIC_CSE3_MID_SEM_DATESHEET: DatesheetEntry[] = [
+  {
+    id: 'ds_mid_cse3_1',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE201',
+    subjectName: 'Scientific Computing with Python',
+    examDate: '2026-10-07T04:00:00.000Z',
+    examTime: '03:30 PM - 05:00 PM',
+    shift: 'Evening',
+    roomBlock: 'SOICT Block B',
+  },
+  {
+    id: 'ds_mid_cse3_2',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE203',
+    subjectName: 'Data Structures',
+    examDate: '2026-10-08T04:00:00.000Z',
+    examTime: '03:30 PM - 05:00 PM',
+    shift: 'Evening',
+    roomBlock: 'SOICT Block B',
+  },
+  {
+    id: 'ds_mid_cse3_3',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE209',
+    subjectName: 'Operating System',
+    examDate: '2026-10-09T04:00:00.000Z',
+    examTime: '10:00 AM - 11:30 AM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Block B',
+  },
+  {
+    id: 'ds_mid_cse3_4',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'MB457',
+    subjectName: 'Organizational Behaviour',
+    examDate: '2026-10-12T04:00:00.000Z',
+    examTime: '10:00 AM - 11:30 AM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Block A',
+  },
+  {
+    id: 'ds_mid_cse3_5',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE205',
+    subjectName: 'Database Management System',
+    examDate: '2026-10-14T04:00:00.000Z',
+    examTime: '03:30 PM - 05:00 PM',
+    shift: 'Evening',
+    roomBlock: 'SOICT Block B',
+  },
+  {
+    id: 'ds_mid_cse3_6',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE207',
+    subjectName: 'Computer Organization and Architecture',
+    examDate: '2026-10-16T04:00:00.000Z',
+    examTime: '03:30 PM - 05:00 PM',
+    shift: 'Evening',
+    roomBlock: 'SOICT Block B',
+  },
+];
+
+/** Authentic B.Tech CSE 3rd Semester End-Semester Theory Schedule */
+export const AUTHENTIC_CSE3_END_SEM_DATESHEET: DatesheetEntry[] = [
+  {
+    id: 'ds_end_cse3_1',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE201',
+    subjectName: 'Scientific Computing with Python (Theory)',
+    examDate: '2026-12-14T04:00:00.000Z',
+    examTime: '02:00 PM - 05:00 PM',
+    shift: 'Evening',
+    roomBlock: 'SOICT Block B',
+  },
+  {
+    id: 'ds_end_cse3_2',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE203',
+    subjectName: 'Data Structures (Theory)',
+    examDate: '2026-12-16T04:00:00.000Z',
+    examTime: '02:00 PM - 05:00 PM',
+    shift: 'Evening',
+    roomBlock: 'SOICT Block B',
+  },
+  {
+    id: 'ds_end_cse3_3',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE209',
+    subjectName: 'Operating System (Theory)',
+    examDate: '2026-12-18T04:00:00.000Z',
+    examTime: '09:30 AM - 12:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Block B',
+  },
+  {
+    id: 'ds_end_cse3_4',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'MB457',
+    subjectName: 'Organizational Behaviour',
+    examDate: '2026-12-21T04:00:00.000Z',
+    examTime: '09:30 AM - 12:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Block A',
+  },
+  {
+    id: 'ds_end_cse3_5',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE205',
+    subjectName: 'Database Management System (Theory)',
+    examDate: '2026-12-23T04:00:00.000Z',
+    examTime: '02:00 PM - 05:00 PM',
+    shift: 'Evening',
+    roomBlock: 'SOICT Block B',
+  },
+  {
+    id: 'ds_end_cse3_6',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE207',
+    subjectName: 'Computer Organization and Architecture',
+    examDate: '2026-12-24T04:00:00.000Z',
+    examTime: '02:00 PM - 05:00 PM',
+    shift: 'Evening',
+    roomBlock: 'SOICT Block B',
+  },
+];
+
+/** Authentic B.Tech CSE 3rd Semester Practicals Schedule */
+export const AUTHENTIC_CSE3_PRACTICALS_DATESHEET: DatesheetEntry[] = [
+  {
+    id: 'ds_prac_cse3_1',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE203P',
+    subjectName: 'Data Structures Lab & Viva',
+    examDate: '2026-11-30T04:00:00.000Z',
+    examTime: '09:30 AM - 01:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Practical Lab LP101',
+  },
+  {
+    id: 'ds_prac_cse3_2',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE209P',
+    subjectName: 'Operating Systems Linux Lab',
+    examDate: '2026-12-02T04:00:00.000Z',
+    examTime: '09:30 AM - 01:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Practical Lab LP102',
+  },
+  {
+    id: 'ds_prac_cse3_3',
+    programmeCode: 'BCS',
+    semester: 'III',
+    subjectCode: 'CSE205P',
+    subjectName: 'Database Management Systems Lab',
+    examDate: '2026-12-04T04:00:00.000Z',
+    examTime: '09:30 AM - 01:30 PM',
+    shift: 'Morning',
+    roomBlock: 'SOICT Practical Lab LP103',
+  },
+];
+
+/** Returns the class-wise date sheet filtered by enrolledClassKey and exam phase */
+export function getClassDatesheet(
+  classKey: string = 'btech_cse_sem3',
+  phase: 'end' | 'practicals' | 'back' | 'mid' = 'end',
+): DatesheetEntry[] {
+  const norm = classKey.toLowerCase();
+  const isCse3 =
+    norm.includes('btech_cse_sem3') ||
+    norm.includes('cse_sem3') ||
+    norm.includes('cse_3') ||
+    norm.includes('bcs-iii') ||
+    norm.includes('bcs_iii') ||
+    norm.includes('sem3') ||
+    norm.includes('3rd');
+
+  if (isCse3) {
+    if (phase === 'mid') return AUTHENTIC_CSE3_MID_SEM_DATESHEET;
+    if (phase === 'end') return AUTHENTIC_CSE3_END_SEM_DATESHEET;
+    if (phase === 'practicals') return AUTHENTIC_CSE3_PRACTICALS_DATESHEET;
+    if (phase === 'back') return MOCK_BACK_PAPER_DATESHEET;
+  }
+
+  // Fallback to default mock date sheets for semester 2 / general
+  if (phase === 'mid') return MOCK_MID_SEM_DATESHEET;
+  if (phase === 'end') return MOCK_END_SEM_DATESHEET;
+  if (phase === 'practicals') return MOCK_PRACTICALS_DATESHEET;
+  if (phase === 'back') return MOCK_BACK_PAPER_DATESHEET;
+  return MOCK_DATESHEET;
+}
+

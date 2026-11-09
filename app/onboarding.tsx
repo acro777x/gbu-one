@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,17 +7,28 @@ import {
   Dimensions,
   FlatList,
   Pressable,
+  TextInput,
+  ScrollView,
   NativeSyntheticEvent,
   NativeScrollEvent,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
-import { Bell, Calendar, BookOpen, ChevronRight } from 'lucide-react-native';
+import { Bell, Calendar, BookOpen, User, Sparkles, ChevronRight } from 'lucide-react-native';
 import { WordReveal } from '../src/components/motion/WordReveal';
 import { PillButton } from '../src/components/ui/PillButton';
-import { useAuthStore } from '../src/store/useAuthStore';
+import { Avatar } from '../src/components/ui/Avatar';
+import { AvatarPicker } from '../src/components/avatar/AvatarPack';
+import {
+  useAuthStore,
+  generateUniqueStudentId,
+  DEVICE_UNIQUE_STUDENT_ID_KEY,
+  GUEST_AVATAR_ID_KEY,
+  GUEST_NAME_KEY,
+} from '../src/store/useAuthStore';
 import { useAppTheme } from '../src/lib/ThemeContext';
 import { theme } from '../src/lib/theme';
 
@@ -25,7 +36,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface Slide {
   id: string;
-  iconName: 'bell' | 'calendar' | 'book';
+  iconName: 'bell' | 'calendar' | 'book' | 'user';
   tag: string;
   title: string;
   subtitle: string;
@@ -53,13 +64,67 @@ const SLIDES: Slide[] = [
     title: 'PYQs and exam dates in one place',
     subtitle: 'Browse semester question papers, track date sheet revisions, and prepare smarter.',
   },
+  {
+    id: '4',
+    iconName: 'user',
+    tag: 'CAMPUS IDENTITY',
+    title: 'Claim Your GBU Identity',
+    subtitle: 'Choose your academic avatar and student alias. Works 100% offline.',
+  },
 ];
 
 export default function OnboardingScreen() {
   const { colors } = useAppTheme();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
-  const { completeOnboarding } = useAuthStore();
+  const { user, completeOnboarding, updateProfile } = useAuthStore();
+
+  const [studentName, setStudentName] = useState(user?.name || '');
+  const [selectedAvatarId, setSelectedAvatarId] = useState(user?.avatarId || 'tech-scholar');
+  const [generatedStudentId, setGeneratedStudentId] = useState(() => user?.uniqueStudentId || generateUniqueStudentId());
+
+  useEffect(() => {
+    // Immediately persist generated unique student ID and initial avatar to dedicated keys
+    AsyncStorage.getItem(DEVICE_UNIQUE_STUDENT_ID_KEY)
+      .then((existingId) => {
+        if (existingId) {
+          setGeneratedStudentId(existingId);
+        } else {
+          AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, generatedStudentId).catch(() => {});
+        }
+      })
+      .catch(() => {});
+
+    AsyncStorage.getItem(GUEST_AVATAR_ID_KEY)
+      .then((existingAvatar) => {
+        if (existingAvatar) {
+          setSelectedAvatarId(existingAvatar);
+        } else {
+          AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, selectedAvatarId).catch(() => {});
+        }
+      })
+      .catch(() => {});
+
+    AsyncStorage.getItem(GUEST_NAME_KEY)
+      .then((existingName) => {
+        if (existingName && !studentName) {
+          setStudentName(existingName);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSelectAvatar = (avatarId: string) => {
+    setSelectedAvatarId(avatarId);
+    AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, avatarId).catch(() => {});
+  };
+
+  const handleNameChange = (text: string) => {
+    setStudentName(text);
+    if (text.trim()) {
+      AsyncStorage.setItem(GUEST_NAME_KEY, text.trim()).catch(() => {});
+    }
+  };
 
   const isLastSlide = currentIndex === SLIDES.length - 1;
 
@@ -92,16 +157,25 @@ export default function OnboardingScreen() {
   };
 
   /**
-   * Onboarding never picks a class: the class names change between sessions,
-   * so the only place that knows them is the class setup screen, which reads
-   * the list the university publishes right now.
+   * Onboarding saves the identity and never picks a class: the class names
+   * change between sessions, so class setup screen reads the live catalogue.
    */
   const finishOnboarding = async (destination: '/class-setup' | '/(tabs)') => {
     try {
       await AsyncStorage.setItem('@gbu_one_has_seen_onboarding', 'true');
+      await AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, generatedStudentId);
+      await AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, selectedAvatarId);
+      if (studentName.trim()) {
+        await AsyncStorage.setItem(GUEST_NAME_KEY, studentName.trim());
+      }
     } catch {
       // ignore
     }
+    await updateProfile({
+      name: studentName.trim() || user?.name || 'Student',
+      avatarId: selectedAvatarId,
+      uniqueStudentId: generatedStudentId,
+    });
     completeOnboarding();
     router.replace(destination);
 
@@ -122,6 +196,8 @@ export default function OnboardingScreen() {
         return <Bell size={42} color={colors.accent} />;
       case 'calendar':
         return <Calendar size={42} color={colors.accent} />;
+      case 'user':
+        return <User size={42} color={colors.accent} />;
       default:
         return <BookOpen size={42} color={colors.accent} />;
     }
@@ -168,66 +244,153 @@ export default function OnboardingScreen() {
           }, 100);
         }}
         onMomentumScrollEnd={onMomentumScrollEnd}
-        renderItem={({ item, index }) => (
-          <View style={styles.slide}>
-            <View
-              style={[
-                styles.iconCircle,
-                {
-                  backgroundColor: colors.accentSoft,
-                  borderColor: colors.accent,
-                },
-              ]}
-            >
-              {renderIcon(item.iconName)}
-            </View>
+        renderItem={({ item, index }) => {
+          if (index === 3) {
+            return (
+              <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={styles.slide}
+              >
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.identitySlideScroll}
+                  style={styles.identityScrollView}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  <View style={[styles.tagPill, { backgroundColor: colors.accentSoft }]}>
+                    <Text style={[styles.tagText, { color: colors.accent }]}>{item.tag}</Text>
+                  </View>
 
-            <View style={[styles.tagPill, { backgroundColor: colors.accentSoft }]}>
-              <Text style={[styles.tagText, { color: colors.accent }]}>{item.tag}</Text>
-            </View>
+                  <Text style={[styles.identityTitle, { color: colors.textPrimary }]}>
+                    {item.title}
+                  </Text>
+                  <Text style={[styles.identitySubtitle, { color: colors.textSecondary }]}>
+                    {item.subtitle}
+                  </Text>
 
-            <View style={styles.titleContainer}>
-              {index === currentIndex ? (
-                <WordReveal
-                  key={`slide-${item.id}-${index}`}
-                  text={item.title}
-                  style={{ ...styles.slideTitle, color: colors.textPrimary }}
-                  duration={280}
-                />
-              ) : (
-                <Text style={[styles.slideTitle, { color: colors.textPrimary }]}>{item.title}</Text>
-              )}
-            </View>
+                  {/* Live Avatar Preview */}
+                  <View style={styles.previewContainer}>
+                    <Avatar
+                      avatarId={selectedAvatarId}
+                      name={studentName || 'Student'}
+                      size={76}
+                    />
+                    {/* Unique Student ID Badge Preview */}
+                    <View
+                      style={[
+                        styles.idBadgePreview,
+                        {
+                          backgroundColor: colors.accentSoft,
+                          borderColor: colors.accent,
+                        },
+                      ]}
+                    >
+                      <Sparkles size={12} color={colors.accent} />
+                      <Text style={[styles.idBadgeText, { color: colors.accent }]}>
+                        {generatedStudentId}
+                      </Text>
+                    </View>
+                  </View>
 
-            <Text style={[styles.slideSubtitle, { color: colors.textSecondary }]}>
-              {item.subtitle}
-            </Text>
+                  {/* Name Input Field */}
+                  <View style={styles.inputContainer}>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+                      STUDENT NAME
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.nameInput,
+                        {
+                          backgroundColor: colors.surfaceAlt,
+                          borderColor: colors.borderGlass,
+                          color: colors.textPrimary,
+                        },
+                      ]}
+                      placeholder="Your Full Name"
+                      placeholderTextColor={colors.textTertiary}
+                      value={studentName}
+                      onChangeText={handleNameChange}
+                      autoCapitalize="words"
+                      maxLength={36}
+                    />
+                  </View>
 
-            {/* Permission explainer (docs/SCREENS_AUTH.md: ask on the last
-                slide with a clear explanation, not on launch). It sits with
-                the last slide so it is read before the action. */}
-            {index === SLIDES.length - 1 && (
+                  {/* Avatar Persona Selector */}
+                  <View style={styles.pickerContainer}>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+                      SELECT AVATAR PERSONA
+                    </Text>
+                    <View style={styles.avatarPickerWrapper}>
+                      <AvatarPicker
+                        selectedId={selectedAvatarId}
+                        onSelect={handleSelectAvatar}
+                        size={48}
+                        horizontal
+                      />
+                    </View>
+                  </View>
+
+                  {/* Permission explainer */}
+                  <View
+                    style={[
+                      styles.permissionNote,
+                      { backgroundColor: colors.surface, borderColor: colors.borderGlass, marginTop: 14 },
+                    ]}
+                  >
+                    <View style={styles.permissionNoteHead}>
+                      <Bell size={14} color={colors.accent} />
+                      <Text style={[styles.permissionNoteTitle, { color: colors.textPrimary }]}>
+                        STAY IN THE LOOP
+                      </Text>
+                    </View>
+                    <Text style={[styles.permissionNoteText, { color: colors.textSecondary }]}>
+                      We will ask for notification permission next, so you can get alerts
+                      about new notices and timetable changes for your class. You can turn
+                      them off any time in Profile.
+                    </Text>
+                  </View>
+                </ScrollView>
+              </KeyboardAvoidingView>
+            );
+          }
+
+          return (
+            <View style={styles.slide}>
               <View
                 style={[
-                  styles.permissionNote,
-                  { backgroundColor: colors.surface, borderColor: colors.borderGlass },
+                  styles.iconCircle,
+                  {
+                    backgroundColor: colors.accentSoft,
+                    borderColor: colors.accent,
+                  },
                 ]}
               >
-                <View style={styles.permissionNoteHead}>
-                  <Bell size={14} color={colors.accent} />
-                  <Text style={[styles.permissionNoteTitle, { color: colors.textPrimary }]}>
-                    STAY IN THE LOOP
-                  </Text>
-                </View>
-                <Text style={[styles.permissionNoteText, { color: colors.textSecondary }]}>
-                  We will ask for notification permission next, so you can get alerts
-                  about new notices and timetable changes for your class. You can turn
-                  them off any time in Profile.
-                </Text>
+                {renderIcon(item.iconName)}
               </View>
-            )}
-          </View>
-        )}
+
+              <View style={[styles.tagPill, { backgroundColor: colors.accentSoft }]}>
+                <Text style={[styles.tagText, { color: colors.accent }]}>{item.tag}</Text>
+              </View>
+
+              <View style={styles.titleContainer}>
+                {index === currentIndex ? (
+                  <WordReveal
+                    key={`slide-${item.id}-${index}`}
+                    text={item.title}
+                    style={{ ...styles.slideTitle, color: colors.textPrimary }}
+                    duration={280}
+                  />
+                ) : (
+                  <Text style={[styles.slideTitle, { color: colors.textPrimary }]}>{item.title}</Text>
+                )}
+              </View>
+
+              <Text style={[styles.slideSubtitle, { color: colors.textSecondary }]}>
+                {item.subtitle}
+              </Text>
+            </View>
+          );
+        }}
       />
 
       {/* Bottom Controls */}
@@ -386,5 +549,71 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     width: 26,
+  },
+  identityScrollView: {
+    width: '100%',
+    flex: 1,
+  },
+  identitySlideScroll: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  identityTitle: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 22,
+    lineHeight: 28,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  identitySubtitle: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    maxWidth: 300,
+    marginBottom: 12,
+  },
+  previewContainer: {
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  idBadgePreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  idBadgeText: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 12,
+    letterSpacing: 0.8,
+  },
+  inputContainer: {
+    width: '100%',
+    marginBottom: 12,
+  },
+  inputLabel: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 11,
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  nameInput: {
+    height: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    fontFamily: 'Inter-Medium',
+  },
+  pickerContainer: {
+    width: '100%',
+  },
+  avatarPickerWrapper: {
+    width: '100%',
   },
 });

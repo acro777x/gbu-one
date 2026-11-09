@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   Switch,
   Platform,
 } from 'react-native';
@@ -27,11 +28,28 @@ import {
   Moon,
   Smartphone,
   Compass,
+  Pencil,
+  ShieldCheck,
+  MessageSquare,
+  AlertTriangle,
+  Send,
+  CornerDownRight,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react-native';
-import { Avatar, GlassCard, PillButton } from '../../src/components/ui';
+import {
+  submitStudentReport,
+  getLocalReports,
+  fetchStudentReports,
+  REPORT_CATEGORIES,
+  type StudentReport,
+  type ReportCategory,
+} from '../../src/features/reports/reportsService';
+import { Avatar, GlassCard, PillButton, SheetOverlay } from '../../src/components/ui';
+import { AvatarPicker } from '../../src/components/avatar/AvatarPack';
 import { CountUp } from '../../src/components/motion/CountUp';
 import { OfficialSeal } from '../../src/components/brand/OfficialSeal';
-import { useAuthStore } from '../../src/store/useAuthStore';
+import { useAuthStore, generateUniqueStudentId } from '../../src/store/useAuthStore';
 import {
   useAttendanceStore,
   calculateAttendanceStatus,
@@ -43,7 +61,66 @@ import { setTimetablePushEnabled } from '../../src/lib/pushNotifications';
 export default function ProfileScreen() {
   const { colors, isDark, themeMode, setThemeMode } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { user, isGuest, classSelection, logout } = useAuthStore();
+  const { user, isGuest, classSelection, updateProfile, logout } = useAuthStore();
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+
+  // Student Issue Reporting & Admin Answers State
+  const [isReportSheetOpen, setIsReportSheetOpen] = useState(false);
+  const [reportCategory, setReportCategory] = useState<ReportCategory>('Timetable Error');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportSubmitLoading, setReportSubmitLoading] = useState(false);
+  const [myReports, setMyReports] = useState<StudentReport[]>([]);
+  const [reportSuccessMsg, setReportSuccessMsg] = useState('');
+
+  const loadMyReports = useCallback(async () => {
+    try {
+      const allReports = await fetchStudentReports(
+        user?.uniqueStudentId || user?.rollNo,
+        user?.email,
+      );
+      const studentId = user?.uniqueStudentId || user?.rollNo || 'GBU-SCHOLAR';
+      const mine = allReports.filter(
+        (r) =>
+          r.reporterStudentId === studentId ||
+          (user?.email && r.reporterEmail === user.email) ||
+          r.type === 'general' ||
+          r.category === 'PYQ Paper',
+      );
+      setMyReports(mine);
+    } catch {
+      // ignore
+    }
+  }, [user?.uniqueStudentId, user?.rollNo, user?.email]);
+
+  useEffect(() => {
+    void loadMyReports();
+  }, [loadMyReports]);
+
+  const handleSendReport = async () => {
+    if (!reportDetails.trim()) return;
+    setReportSubmitLoading(true);
+    try {
+      const studentId = user?.uniqueStudentId || user?.rollNo || generateUniqueStudentId();
+      const studentName = user?.name || 'GBU Student';
+      await submitStudentReport({
+        type: 'general',
+        category: reportCategory,
+        reason: reportDetails.trim(),
+        reporterName: studentName,
+        reporterStudentId: studentId,
+        reporterEmail: user?.email,
+      });
+      setReportDetails('');
+      setIsReportSheetOpen(false);
+      setReportSuccessMsg('Report submitted! University admin will review and respond here.');
+      await loadMyReports();
+      setTimeout(() => setReportSuccessMsg(''), 4500);
+    } catch {
+      // ignore
+    } finally {
+      setReportSubmitLoading(false);
+    }
+  };
 
   // Persistent notification preferences
   const [notifyNotices, setNotifyNotices] = useState(true);
@@ -81,6 +158,16 @@ export default function ProfileScreen() {
       mounted = false;
     };
   }, []);
+
+  // Ensure an offline unique student ID is assigned if student has not been through onboarding
+  useEffect(() => {
+    if (!user?.uniqueStudentId) {
+      void updateProfile({
+        uniqueStudentId: generateUniqueStudentId(),
+        avatarId: user?.avatarId || 'tech-scholar',
+      });
+    }
+  }, [user?.uniqueStudentId, user?.avatarId, updateProfile]);
 
   const toggleNotices = (val: boolean) => {
     setNotifyNotices(val);
@@ -154,16 +241,55 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]} showsVerticalScrollIndicator={false}>
         {/* Profile Header */}
         <View style={styles.profileHeader}>
-          <Avatar
-            url={user?.avatarUrl}
-            name={user?.name}
-            isGuest={isGuest}
-            size={72}
-          />
-          <Text style={[styles.userName, { color: colors.textPrimary }]}>{isGuest ? 'Guest Student' : user?.name}</Text>
+          <TouchableOpacity
+            style={styles.avatarTouchTarget}
+            onPress={() => setIsAvatarPickerOpen(true)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Edit avatar persona"
+          >
+            <Avatar
+              url={user?.avatarUrl}
+              avatarId={user?.avatarId || 'tech-scholar'}
+              name={user?.name}
+              isGuest={isGuest && !user?.avatarId && !user?.name}
+              size={80}
+            />
+            <View style={[styles.editAvatarBadge, { backgroundColor: colors.accent, borderColor: colors.surface }]}>
+              <Pencil size={12} color={colors.onAccent} />
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setIsAvatarPickerOpen(true)}
+            hitSlop={8}
+            style={styles.editAvatarPill}
+            accessibilityRole="button"
+            accessibilityLabel="Edit avatar persona"
+          >
+            <Sparkles size={12} color={colors.accent} />
+            <Text style={[styles.editAvatarText, { color: colors.accent }]}>Edit Avatar</Text>
+          </TouchableOpacity>
+
+          <Text style={[styles.userName, { color: colors.textPrimary }]}>
+            {isGuest && !user?.name ? 'Guest Student' : (user?.name || 'Guest Student')}
+          </Text>
           <Text style={[styles.userRoll, { color: colors.textSecondary }]}>
             {isGuest ? 'Guest Mode' : user?.rollNo}
           </Text>
+
+          {/* Unique Student ID Badge */}
+          <View
+            style={[
+              styles.uniqueIdBadge,
+              { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+            ]}
+          >
+            <ShieldCheck size={13} color={colors.accent} />
+            <Text style={[styles.uniqueIdText, { color: colors.accent }]}>
+              {user?.uniqueStudentId || 'GBU-XXXXXX'}
+            </Text>
+          </View>
 
           {/* Chips */}
           <View style={styles.chipRow}>
@@ -499,6 +625,160 @@ export default function ProfileScreen() {
           </GlassCard>
         )}
 
+        {/* Student Reports & Admin Feedback Section */}
+        <GlassCard style={styles.card} variant="elevated">
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <MessageSquare size={20} color={colors.accent} />
+              <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Report Issue & Support</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setIsReportSheetOpen(true)}
+              style={{
+                backgroundColor: colors.accent,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 20,
+              }}
+            >
+              <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: '#FFFFFF' }}>
+                + New Report
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.settingValue, { color: colors.textSecondary, marginBottom: 12 }]}>
+            Report wrong timetables, missing notices, syllabus errors, or PYQ paper issues. University admin reviews and responds directly here.
+          </Text>
+
+          {Boolean(reportSuccessMsg) && (
+            <View style={{ backgroundColor: colors.successSoft, padding: 10, borderRadius: 8, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <CheckCircle2 size={16} color={colors.success} />
+              <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: colors.success, flex: 1 }}>
+                {reportSuccessMsg}
+              </Text>
+            </View>
+          )}
+
+          {/* List of Student's Reports and Admin Answers */}
+          {myReports.length === 0 ? (
+            <View style={{ paddingVertical: 12, alignItems: 'center' }}>
+              <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
+                No active reports. Found a discrepancy or issue in the app? Tap "+ New Report" above.
+              </Text>
+            </View>
+          ) : (
+            <View style={{ gap: 10, marginTop: 4 }}>
+              <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Your Submitted Reports ({myReports.length})
+              </Text>
+              {myReports.slice(0, 5).map((rep) => {
+                const isResolved = rep.status === 'resolved';
+                const isDismissed = rep.status === 'dismissed';
+
+                return (
+                  <View
+                    key={rep.id}
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      backgroundColor: colors.surfaceAlt,
+                      borderWidth: 1,
+                      borderColor: isResolved ? colors.success : colors.borderGlass,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <Text style={{ fontFamily: 'Inter-Bold', fontSize: 12, color: colors.accent }}>
+                        {rep.category}
+                      </Text>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                          borderRadius: 12,
+                          backgroundColor: isResolved
+                            ? colors.successSoft
+                            : isDismissed
+                            ? 'rgba(148, 163, 184, 0.15)'
+                            : 'rgba(245, 158, 11, 0.15)',
+                        }}
+                      >
+                        {isResolved ? (
+                          <CheckCircle2 size={11} color={colors.success} />
+                        ) : isDismissed ? (
+                          <Clock size={11} color={colors.textTertiary} />
+                        ) : (
+                          <Clock size={11} color="#F59E0B" />
+                        )}
+                        <Text
+                          style={{
+                            fontFamily: 'Inter-SemiBold',
+                            fontSize: 10.5,
+                            color: isResolved
+                              ? colors.success
+                              : isDismissed
+                              ? colors.textTertiary
+                              : '#F59E0B',
+                            textTransform: 'capitalize',
+                          }}
+                        >
+                          {rep.status}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: colors.textPrimary, marginTop: 2 }}>
+                      {rep.reason}
+                    </Text>
+
+                    {Boolean(rep.customNote) && (
+                      <Text style={{ fontFamily: 'Inter-Regular', fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                        Note: {rep.customNote}
+                      </Text>
+                    )}
+
+                    <Text style={{ fontFamily: 'Inter-Regular', fontSize: 10, color: colors.textTertiary, marginTop: 4 }}>
+                      Submitted: {new Date(rep.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                    </Text>
+
+                    {/* Official Admin Response */}
+                    {Boolean(rep.adminResponse) && (
+                      <View
+                        style={{
+                          backgroundColor: colors.surface,
+                          borderLeftWidth: 3,
+                          borderLeftColor: colors.success,
+                          padding: 8,
+                          borderRadius: 6,
+                          marginTop: 8,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                          <CornerDownRight size={12} color={colors.success} />
+                          <Text style={{ fontFamily: 'Inter-Bold', fontSize: 11, color: colors.success }}>
+                            Admin Answer:
+                          </Text>
+                        </View>
+                        <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textPrimary }}>
+                          {rep.adminResponse}
+                        </Text>
+                        {Boolean(rep.adminResponseAt) && (
+                          <Text style={{ fontFamily: 'Inter-Regular', fontSize: 9.5, color: colors.textTertiary, marginTop: 2 }}>
+                            {new Date(rep.adminResponseAt!).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </GlassCard>
+
         {/* Account / Logout */}
         <GlassCard style={styles.card}>
           {!isGuest && (
@@ -539,6 +819,113 @@ export default function ProfileScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <SheetOverlay
+        visible={isAvatarPickerOpen}
+        onClose={() => setIsAvatarPickerOpen(false)}
+        title="Choose Avatar Persona"
+        height={480}
+      >
+        <View style={styles.pickerSheetBody}>
+          <Text style={[styles.pickerSheetHint, { color: colors.textSecondary }]}>
+            Select your academic avatar persona. The chosen vector avatar and unique student ID are stored offline.
+          </Text>
+          <AvatarPicker
+            selectedId={user?.avatarId || 'tech-scholar'}
+            onSelect={(avatarId) => {
+              void updateProfile({ avatarId });
+              setIsAvatarPickerOpen(false);
+            }}
+            size={52}
+          />
+        </View>
+      </SheetOverlay>
+      {/* Report an Issue Bottom Sheet */}
+      <SheetOverlay
+        visible={isReportSheetOpen}
+        onClose={() => setIsReportSheetOpen(false)}
+        title="Report Issue to University Admin"
+        height={540}
+      >
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48 }}>
+          <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: colors.textSecondary, marginBottom: 10 }}>
+            Select Issue Category:
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+            {REPORT_CATEGORIES.map((cat) => {
+              const active = reportCategory === cat.category;
+              return (
+                <TouchableOpacity
+                  key={cat.category}
+                  onPress={() => setReportCategory(cat.category)}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                    borderRadius: 20,
+                    backgroundColor: active ? colors.accent : colors.surfaceAlt,
+                    borderWidth: 1,
+                    borderColor: active ? colors.accent : colors.borderGlass,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: 'Inter-SemiBold',
+                      fontSize: 12,
+                      color: active ? '#FFFFFF' : colors.textPrimary,
+                    }}
+                  >
+                    {cat.category}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: colors.textSecondary, marginBottom: 6 }}>
+            Describe the problem or discrepancy:
+          </Text>
+          <TextInput
+            value={reportDetails}
+            onChangeText={setReportDetails}
+            placeholder="e.g. Wednesday 11:30 AM CSE201 room is wrong in timetable, or End-Sem question paper is missing page 2..."
+            placeholderTextColor={colors.textTertiary}
+            multiline
+            numberOfLines={4}
+            style={{
+              height: 100,
+              borderWidth: 1,
+              borderColor: colors.borderGlass,
+              borderRadius: 12,
+              padding: 12,
+              textAlignVertical: 'top',
+              color: colors.textPrimary,
+              backgroundColor: colors.surfaceAlt,
+              fontFamily: 'Inter-Regular',
+              fontSize: 13,
+              marginBottom: 14,
+            }}
+          />
+
+          <View style={{ backgroundColor: colors.surfaceAlt, padding: 10, borderRadius: 10, marginBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter-Regular', fontSize: 11, color: colors.textTertiary }}>
+              Submitting as: {user?.name || 'GBU Student'} (ID: {user?.uniqueStudentId || user?.rollNo || 'GBU-SCHOLAR'})
+            </Text>
+            <Text style={{ fontFamily: 'Inter-Regular', fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
+              Your report will sync directly to the GBU One Admin Console.
+            </Text>
+          </View>
+
+          <PillButton
+            label={reportSubmitLoading ? 'Submitting...' : 'Submit Report'}
+            variant="primary"
+            size="md"
+            disabled={reportSubmitLoading || !reportDetails.trim()}
+            onPress={handleSendReport}
+            icon={<Send size={15} color="#FFFFFF" style={{ marginRight: 6 }} />}
+            style={{ width: '100%', opacity: reportSubmitLoading || !reportDetails.trim() ? 0.6 : 1 }}
+          />
+        </ScrollView>
+      </SheetOverlay>
     </SafeAreaView>
   );
 }
@@ -820,5 +1207,58 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'center',
     lineHeight: 16,
+  },
+  avatarTouchTarget: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editAvatarBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+  },
+  editAvatarPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  editAvatarText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+  },
+  uniqueIdBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  uniqueIdText: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 12,
+    letterSpacing: 0.8,
+  },
+  pickerSheetBody: {
+    paddingBottom: 24,
+  },
+  pickerSheetHint: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
   },
 });

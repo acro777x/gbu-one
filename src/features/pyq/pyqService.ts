@@ -491,6 +491,8 @@ const ARABIC_TO_ROMAN_SEM: Record<string, string> = {
   '6': 'VI',
   '7': 'VII',
   '8': 'VIII',
+  '9': 'IX',
+  '10': 'X',
 };
 
 export function normalizeSemester(sem?: string): string {
@@ -548,7 +550,7 @@ export function filterPapers(
       p.subjectName.toLowerCase().includes(cleanQ) ||
       p.subjectCode.toLowerCase().includes(cleanQ);
 
-    const matchesSchool = school === 'All' || p.school.toUpperCase() === school.toUpperCase();
+    const matchesSchool = school === 'All' || p.school.toUpperCase() === school.toUpperCase() || (school.toUpperCase() === 'SOLJG' && p.school.toUpperCase() === 'SOL') || (school.toUpperCase() === 'SOL' && p.school.toUpperCase() === 'SOLJG');
     const matchesSemester =
       semester === 'All' ||
       p.semester === semester ||

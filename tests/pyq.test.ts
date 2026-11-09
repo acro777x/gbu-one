@@ -129,4 +129,63 @@ describe('PYQ Browser & Management Logic', () => {
     // Verifies full subject catalogue remains visible for students
     expect(availableSubjects.slice(0, 60)).toHaveLength(60);
   });
+  it('normalizes semester correctly including Sem IX and Sem X', () => {
+    const { normalizeSemester } = require('../src/features/pyq/pyqService');
+    expect(normalizeSemester('Sem 1')).toBe('Sem I');
+    expect(normalizeSemester('Sem 8')).toBe('Sem VIII');
+    expect(normalizeSemester('Sem 9')).toBe('Sem IX');
+    expect(normalizeSemester('Sem 10')).toBe('Sem X');
+    expect(normalizeSemester('IX')).toBe('Sem IX');
+    expect(normalizeSemester('X')).toBe('Sem X');
+  });
+
+  it('matches SOL and SOLJG school aliases bidirectionally in filterPapers', () => {
+    const lawPapers = [
+      {
+        id: 'law_1',
+        school: 'SOL',
+        programme: 'LAW',
+        semester: 'Sem I',
+        subjectCode: 'LAW101',
+        subjectName: 'Constitutional Law',
+        year: 2024,
+        examType: 'End Sem' as const,
+        downloads: 50,
+        status: 'approved' as const,
+      },
+    ];
+
+    const matchSOLJG = filterPapers(lawPapers, '', 'SOLJG', 'All');
+    expect(matchSOLJG).toHaveLength(1);
+    expect(matchSOLJG[0].subjectCode).toBe('LAW101');
+
+    const matchSOL = filterPapers(lawPapers, '', 'SOL', 'All');
+    expect(matchSOL).toHaveLength(1);
+    expect(matchSOL[0].subjectCode).toBe('LAW101');
+  });
+
+  it('provides comprehensive programmes across all Gautam Buddha University schools', () => {
+    const { PROGRAMMES_BY_SCHOOL } = require('../src/features/pyq/pyqProgrammes');
+    const schools = ['SOICT', 'SOE', 'SOBT', 'SOM', 'SOLJG', 'SOHSS', 'SOVSAS', 'SOUS'];
+    for (const school of schools) {
+      expect(PROGRAMMES_BY_SCHOOL[school]).toBeDefined();
+      expect(PROGRAMMES_BY_SCHOOL[school].length).toBeGreaterThanOrEqual(2);
+    }
+
+    // Verify key programmes
+    const soictCodes = PROGRAMMES_BY_SCHOOL['SOICT'].map((p: any) => p.code);
+    expect(soictCodes).toContain('BCS');
+    expect(soictCodes).toContain('BAI');
+    expect(soictCodes).toContain('BCA');
+    expect(soictCodes).toContain('MCA');
+
+    const soeCodes = PROGRAMMES_BY_SCHOOL['SOE'].map((p: any) => p.code);
+    expect(soeCodes).toContain('ECE');
+    expect(soeCodes).toContain('ME');
+    expect(soeCodes).toContain('CE');
+
+    const somCodes = PROGRAMMES_BY_SCHOOL['SOM'].map((p: any) => p.code);
+    expect(somCodes).toContain('MBA');
+    expect(somCodes).toContain('BBA');
+  });
 });

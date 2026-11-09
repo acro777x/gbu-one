@@ -384,6 +384,26 @@ export async function clearAppVersionOverride(): Promise<void> {
       } catch {
         // ignore
       }
+
+      // Postgres sync reset (clear forced update back to baseline)
+      try {
+        await supabase
+          .from('app_versions')
+          .upsert(
+            {
+              platform: 'android',
+              latest_version: resetManifest.latestVersion,
+              min_supported_version: resetManifest.minSupportedVersion,
+              is_mandatory: resetManifest.isMandatory,
+              apk_url: resetManifest.apkUrl,
+              release_notes: resetManifest.releaseNotes,
+              released_at: new Date().toISOString(),
+            },
+            { onConflict: 'platform' },
+          );
+      } catch {
+        // Table might not exist or storage CDN is authoritative
+      }
     } catch {
       // ignore
     }

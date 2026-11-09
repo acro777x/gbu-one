@@ -170,7 +170,7 @@ export function parseExamsNoticesHtml(html: string): ScrapedRawNotice[] {
 
   // 1. Structure on https://exams.gbu.ac.in: <div class="notice-item ...">
   const blockRegex =
-    /<div\b[^>]*class\s*=\s*"[^"]*notice-item[^"]*"[^>]*>([\s\S]*?)(?=<div\b[^>]*class\s*=\s*"[^"]*notice-item[^"]*"[^>]*>|\Z)/gi;
+    /<div\b[^>]*class\s*=\s*"[^"]*notice-item[^"]*"[^>]*>([\s\S]*?)(?=<div\b[^>]*class\s*=\s*"[^"]*notice-item[^"]*"[^>]*>|$)/gi;
   let blockMatch: RegExpExecArray | null;
 
   while ((blockMatch = blockRegex.exec(html)) !== null) {
@@ -217,7 +217,7 @@ export function parseExamsNoticesHtml(html: string): ScrapedRawNotice[] {
         source: 'exams',
         rawTitle,
         url: href,
-        dateStr: new Date().toISOString().split('T')[0],
+        dateStr: 'undated',
       });
     }
   }
@@ -244,7 +244,7 @@ export function parseHostelNoticesHtml(html: string): ScrapedRawNotice[] {
         source: 'hostel',
         rawTitle,
         url: href,
-        dateStr: new Date().toISOString().split('T')[0],
+        dateStr: 'undated',
       });
     }
   }
@@ -266,7 +266,7 @@ export function parseHostelNoticesHtml(html: string): ScrapedRawNotice[] {
           source: 'hostel',
           rawTitle,
           url: href,
-          dateStr: dateMatch ? dateMatch[1].trim() : new Date().toISOString().split('T')[0],
+          dateStr: dateMatch ? dateMatch[1].trim() : 'undated',
         });
       }
     }
@@ -298,7 +298,7 @@ export function parseSubdomainHtml(
         source,
         rawTitle,
         url: href,
-        dateStr: new Date().toISOString().split('T')[0],
+        dateStr: 'undated',
       });
     }
   }
@@ -320,7 +320,7 @@ export function parseSubdomainHtml(
           source,
           rawTitle,
           url: href,
-          dateStr: dateMatch ? dateMatch[1].trim() : new Date().toISOString().split('T')[0],
+          dateStr: dateMatch ? dateMatch[1].trim() : 'undated',
         });
       }
     }

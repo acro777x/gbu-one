@@ -142,3 +142,38 @@ async function notifyChanges(changes: SheetChange[]): Promise<boolean> {
     return false;
   }
 }
+
+/** Storage key for batch result alerts toggle */
+export const BATCH_WATCH_STORAGE_KEY = '@gbu_one_batch_result_watch';
+
+/** Raises an instant local notification for a declared batch result */
+export async function notifyBatchResultDeclared(item: {
+  programme: string;
+  semester?: string;
+  title: string;
+  fileUrl: string;
+}): Promise<boolean> {
+  try {
+    const permission = await Notifications.getPermissionsAsync();
+    if (!permission.granted) return false;
+    await ensureResultsChannel();
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'GBU One — Results Declared',
+        body:
+          item.title ||
+          `Result declared for ${item.programme} (${item.semester ? `Sem ${item.semester}` : 'Latest'}). Tap to view.`,
+        data: {
+          type: 'batch_result',
+          programme: item.programme,
+          semester: item.semester,
+          url: item.fileUrl,
+        },
+      },
+      trigger: null,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}

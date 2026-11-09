@@ -4,6 +4,9 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export const CLASS_SELECTION_STORAGE_KEY = '@gbu_one_class_selection';
 export const USER_PROFILE_STORAGE_KEY = '@gbu_one_user_profile';
+export const DEVICE_UNIQUE_STUDENT_ID_KEY = '@gbu_one_device_unique_student_id';
+export const GUEST_AVATAR_ID_KEY = '@gbu_one_guest_avatar_id';
+export const GUEST_NAME_KEY = '@gbu_one_guest_name';
 export const MIN_PASSWORD_LENGTH = 8;
 
 export const INVALID_CREDENTIALS_MESSAGE = "That roll number or password doesn't match.";
@@ -26,8 +29,19 @@ export interface UserProfile {
   name: string;
   email: string;
   avatarUrl?: string | null;
+  avatarId?: string;
+  uniqueStudentId?: string;
   classSelection?: ClassSelection | null;
   isOfflineSession?: boolean;
+}
+
+export function generateUniqueStudentId(): string {
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `GBU-${result}`;
 }
 
 export interface AuthResult {
@@ -52,6 +66,7 @@ export interface AuthState {
   loginAsGuest: () => void;
   completeOnboarding: () => void;
   setClassSelection: (selection: ClassSelection) => void;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   logout: () => void;
 }
 
@@ -144,6 +159,10 @@ const describeAuthError = (
   return 'Sign-in failed. Please try again.';
 };
 
+let cachedDeviceId: string | null = null;
+let cachedAvatarId: string | null = null;
+let cachedGuestName: string | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isGuest: true, // Default to guest mode during development
@@ -160,10 +179,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   initAuth: async () => {
     try {
-      const [savedClass, savedUser] = await Promise.all([
-        AsyncStorage.getItem(CLASS_SELECTION_STORAGE_KEY),
-        AsyncStorage.getItem(USER_PROFILE_STORAGE_KEY),
-      ]);
+      const [savedClass, savedUser, savedDeviceId, savedAvatarId, savedGuestName] =
+        await Promise.all([
+          AsyncStorage.getItem(CLASS_SELECTION_STORAGE_KEY),
+          AsyncStorage.getItem(USER_PROFILE_STORAGE_KEY),
+          AsyncStorage.getItem(DEVICE_UNIQUE_STUDENT_ID_KEY),
+          AsyncStorage.getItem(GUEST_AVATAR_ID_KEY),
+          AsyncStorage.getItem(GUEST_NAME_KEY),
+        ]);
+
+      cachedDeviceId = savedDeviceId;
+      cachedAvatarId = savedAvatarId;
+      cachedGuestName = savedGuestName;
 
       const updates: Partial<AuthState> = {};
 
@@ -178,12 +205,73 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (savedUser) {
         try {
-          const user = JSON.parse(savedUser);
+          const user: UserProfile = JSON.parse(savedUser);
+          if (!user.uniqueStudentId) {
+            user.uniqueStudentId = cachedDeviceId || generateUniqueStudentId();
+          }
+          if (!cachedDeviceId) {
+            cachedDeviceId = user.uniqueStudentId;
+            AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, cachedDeviceId).catch(() => {});
+          }
+          if (!cachedAvatarId && user.avatarId) {
+            cachedAvatarId = user.avatarId;
+            AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, cachedAvatarId).catch(() => {});
+          }
+          if (!cachedGuestName && user.name && user.name !== 'Student') {
+            cachedGuestName = user.name;
+            AsyncStorage.setItem(GUEST_NAME_KEY, cachedGuestName).catch(() => {});
+          }
+
+          AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(user)).catch(() => {});
+
           updates.user = user;
-          updates.isAuthenticated = true;
-          updates.isGuest = false;
+          const isGuestProfile =
+            user.rollNo === 'GUEST' || (user.isOfflineSession && (!user.rollNo || user.rollNo === 'GUEST'));
+          if (isGuestProfile) {
+            updates.isGuest = true;
+            updates.isAuthenticated = false;
+          } else {
+            updates.isAuthenticated = true;
+            updates.isGuest = false;
+          }
         } catch (_) {
           // ignore corrupted user profile
+        }
+      } else {
+        const currentUser = get().user;
+        if (currentUser && !currentUser.uniqueStudentId) {
+          const studentId = cachedDeviceId || generateUniqueStudentId();
+          cachedDeviceId = studentId;
+          const patched = {
+            ...currentUser,
+            uniqueStudentId: studentId,
+          };
+          updates.user = patched;
+          AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(patched)).catch(() => {});
+          AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, studentId).catch(() => {});
+        } else if (!currentUser) {
+          if (!cachedDeviceId) {
+            cachedDeviceId = generateUniqueStudentId();
+            AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, cachedDeviceId).catch(() => {});
+          }
+          if (!cachedAvatarId) {
+            cachedAvatarId = 'tech-scholar';
+            AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, cachedAvatarId).catch(() => {});
+          }
+          const guestProfile: UserProfile = {
+            id: 'guest',
+            rollNo: 'GUEST',
+            name: cachedGuestName || 'Student',
+            email: '',
+            uniqueStudentId: cachedDeviceId,
+            avatarId: cachedAvatarId,
+            classSelection: updates.classSelection || get().classSelection,
+            isOfflineSession: true,
+          };
+          updates.user = guestProfile;
+          updates.isGuest = true;
+          updates.isAuthenticated = false;
+          AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(guestProfile)).catch(() => {});
         }
       }
 
@@ -209,6 +297,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       };
     }
 
+    const [savedDeviceId, savedAvatarId, savedGuestName] = await Promise.all([
+      AsyncStorage.getItem(DEVICE_UNIQUE_STUDENT_ID_KEY),
+      AsyncStorage.getItem(GUEST_AVATAR_ID_KEY),
+      AsyncStorage.getItem(GUEST_NAME_KEY),
+    ]);
+
+    const existing = get().user;
+    const persistentUniqueId =
+      savedDeviceId || existing?.uniqueStudentId || cachedDeviceId || generateUniqueStudentId();
+    const persistentAvatarId =
+      savedAvatarId || existing?.avatarId || cachedAvatarId || 'tech-scholar';
+    const persistentGuestName =
+      savedGuestName || (existing?.name && existing.name !== 'Student' ? existing.name : cachedGuestName);
+
+    cachedDeviceId = persistentUniqueId;
+    cachedAvatarId = persistentAvatarId;
+    if (persistentGuestName) cachedGuestName = persistentGuestName;
+
+    AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, persistentUniqueId).catch(() => {});
+    AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, persistentAvatarId).catch(() => {});
+
     if (isSupabaseConfigured) {
       const accountEmail = toLoginEmail(identifier);
 
@@ -231,8 +340,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const userProfile: UserProfile = {
           id: signedInUser.id,
           rollNo: identifier,
-          name: typeof metadataName === 'string' ? metadataName : 'Student',
+          name: typeof metadataName === 'string' && metadataName ? metadataName : (persistentGuestName || 'Student'),
           email: signedInUser.email || accountEmail,
+          avatarId: persistentAvatarId,
+          uniqueStudentId: persistentUniqueId,
           classSelection: get().classSelection,
           isOfflineSession: false,
         };
@@ -254,8 +365,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const localUser: UserProfile = {
       id: `usr_${Date.now()}`,
       rollNo: identifier,
-      name: identifier.startsWith('22') ? 'Aarav Sharma' : 'Student',
+      name: identifier.startsWith('22') ? 'Aarav Sharma' : (persistentGuestName || 'Student'),
       email: toLoginEmail(identifier),
+      avatarId: persistentAvatarId,
+      uniqueStudentId: persistentUniqueId,
       classSelection: get().classSelection,
       isOfflineSession: true,
     };
@@ -284,6 +397,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
       };
     }
+
+    const [savedDeviceId, savedAvatarId] = await Promise.all([
+      AsyncStorage.getItem(DEVICE_UNIQUE_STUDENT_ID_KEY),
+      AsyncStorage.getItem(GUEST_AVATAR_ID_KEY),
+    ]);
+
+    const existing = get().user;
+    const persistentUniqueId =
+      savedDeviceId || existing?.uniqueStudentId || cachedDeviceId || generateUniqueStudentId();
+    const persistentAvatarId =
+      savedAvatarId || existing?.avatarId || cachedAvatarId || 'tech-scholar';
+
+    cachedDeviceId = persistentUniqueId;
+    cachedAvatarId = persistentAvatarId;
+    cachedGuestName = trimmedName;
+
+    AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, persistentUniqueId).catch(() => {});
+    AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, persistentAvatarId).catch(() => {});
+    AsyncStorage.setItem(GUEST_NAME_KEY, trimmedName).catch(() => {});
 
     if (isSupabaseConfigured) {
       try {
@@ -319,6 +451,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           rollNo: trimmedRoll,
           name: trimmedName,
           email: trimmedEmail,
+          avatarId: persistentAvatarId,
+          uniqueStudentId: persistentUniqueId,
           classSelection: get().classSelection,
           isOfflineSession: false,
         };
@@ -342,6 +476,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       rollNo: trimmedRoll,
       name: trimmedName,
       email: trimmedEmail,
+      avatarId: persistentAvatarId,
+      uniqueStudentId: persistentUniqueId,
       classSelection: get().classSelection,
       isOfflineSession: true,
     };
@@ -386,11 +522,44 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loginAsGuest: () => {
+    const existing = get().user;
+    const persistentUniqueId =
+      existing?.uniqueStudentId || cachedDeviceId || generateUniqueStudentId();
+    const persistentAvatarId =
+      existing?.avatarId || cachedAvatarId || 'tech-scholar';
+    const persistentGuestName =
+      (existing?.name && existing.name !== 'Student') ? existing.name : (cachedGuestName || 'Student');
+
+    cachedDeviceId = persistentUniqueId;
+    cachedAvatarId = persistentAvatarId;
+    if (persistentGuestName && persistentGuestName !== 'Student') {
+      cachedGuestName = persistentGuestName;
+    }
+
+    AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, persistentUniqueId).catch(() => {});
+    AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, persistentAvatarId).catch(() => {});
+    if (persistentGuestName && persistentGuestName !== 'Student') {
+      AsyncStorage.setItem(GUEST_NAME_KEY, persistentGuestName).catch(() => {});
+    }
+
+    const guestUser: UserProfile = {
+      id: 'guest',
+      rollNo: 'GUEST',
+      name: persistentGuestName || 'Student',
+      email: '',
+      uniqueStudentId: persistentUniqueId,
+      avatarId: persistentAvatarId,
+      classSelection: get().classSelection,
+      isOfflineSession: true,
+    };
+
     set({
-      user: null,
+      user: guestUser,
       isGuest: true,
       isAuthenticated: false,
     });
+
+    AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(guestUser)).catch(() => {});
   },
 
   completeOnboarding: () => {
@@ -404,6 +573,47 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: state.user ? { ...state.user, classSelection: selection } : null,
     }));
     AsyncStorage.setItem(CLASS_SELECTION_STORAGE_KEY, JSON.stringify(selection)).catch(() => {});
+  },
+
+  updateProfile: async (updates: Partial<UserProfile>) => {
+    const currentUser = get().user;
+    const baseUser: UserProfile = currentUser ?? {
+      id: `usr_${Date.now()}`,
+      rollNo: 'GUEST',
+      name: updates.name || cachedGuestName || 'Student',
+      email: 'guest@gbu.ac.in',
+      classSelection: get().classSelection,
+      isOfflineSession: true,
+      uniqueStudentId: cachedDeviceId || generateUniqueStudentId(),
+    };
+
+    const finalUniqueId =
+      updates.uniqueStudentId ?? baseUser.uniqueStudentId ?? cachedDeviceId ?? generateUniqueStudentId();
+    const finalAvatarId =
+      updates.avatarId ?? baseUser.avatarId ?? cachedAvatarId ?? 'tech-scholar';
+    const finalName = updates.name ?? baseUser.name;
+
+    cachedDeviceId = finalUniqueId;
+    cachedAvatarId = finalAvatarId;
+    if (finalName && finalName !== 'Student') {
+      cachedGuestName = finalName;
+      AsyncStorage.setItem(GUEST_NAME_KEY, finalName).catch(() => {});
+    }
+
+    AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, finalUniqueId).catch(() => {});
+    if (finalAvatarId) {
+      AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, finalAvatarId).catch(() => {});
+    }
+
+    const updatedUser: UserProfile = {
+      ...baseUser,
+      ...updates,
+      uniqueStudentId: finalUniqueId,
+      avatarId: finalAvatarId,
+    };
+
+    set({ user: updatedUser });
+    await AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(updatedUser)).catch(() => {});
   },
 
   logout: () => {

@@ -54,7 +54,7 @@ interface TabButtonProps {
   colors: ColorSet;
 }
 
-const TabButton: React.FC<TabButtonProps> = ({
+const TabButton: React.FC<TabButtonProps> = React.memo(({
   tab,
   isActive,
   onPress,
@@ -86,6 +86,7 @@ const TabButton: React.FC<TabButtonProps> = ({
   return (
     <Pressable
       onPress={onPress}
+      hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
       style={styles.tabButton}
       accessibilityRole="tab"
       accessibilityState={{ selected: isActive }}
@@ -116,7 +117,7 @@ const TabButton: React.FC<TabButtonProps> = ({
       </Text>
     </Pressable>
   );
-};
+});
 
 export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
   activeTab,
@@ -128,6 +129,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
+
   const activeIndex = Math.max(0, TABS.findIndex((t) => t.key === activeTab));
   const translateX = useSharedValue(0);
 

@@ -2,9 +2,11 @@ import React from 'react';
 import { StyleSheet, View, Text, Image, ViewStyle, StyleProp } from 'react-native';
 import { User } from 'lucide-react-native';
 import { useAppTheme } from '../../lib/ThemeContext';
+import { AVATARS } from '../avatar/AvatarPack';
 
 export interface AvatarProps {
   url?: string | null;
+  avatarId?: string | null;
   name?: string;
   size?: number;
   isGuest?: boolean;
@@ -13,6 +15,7 @@ export interface AvatarProps {
 
 export const Avatar: React.FC<AvatarProps> = ({
   url,
+  avatarId,
   name,
   size = 40,
   isGuest = false,
@@ -30,6 +33,8 @@ export const Avatar: React.FC<AvatarProps> = ({
   };
 
   const squircleRadius = Math.round(size * 0.45);
+  const matchedAvatar = avatarId ? AVATARS.find((a) => a.id === avatarId) : null;
+  const AvatarComponent = matchedAvatar?.component;
 
   return (
     <View
@@ -50,6 +55,8 @@ export const Avatar: React.FC<AvatarProps> = ({
           source={{ uri: url }}
           style={[styles.image, { borderRadius: squircleRadius }]}
         />
+      ) : AvatarComponent ? (
+        <AvatarComponent size={size} />
       ) : isGuest || !name ? (
         <User size={size * 0.55} color={colors.textSecondary} />
       ) : (
