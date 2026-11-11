@@ -250,6 +250,78 @@ export function lookupProgramme(code: string): { name: string; school: string; d
 export const SAMAY_API_BASE = 'https://samay.mygbu.in/api.php';
 export const SAMAY_LEGACY_BASE = 'https://mygbu.in/schd/api.php';
 
+/**
+ * Collapses duplicate timetable slots for a section.
+ * When the API publishes the same (day, period, subject) twice
+ * (once with a room, once with RoomName: null / undefined), collapse them
+ * so only the roomed slot is kept.
+ */
+export function deduplicateSlots(slots: Slot[]): Slot[] {
+  const map = new Map<string, Slot>();
+
+  const hasValidRoom = (room?: string): boolean => {
+    if (!room) return false;
+    const trimmed = room.trim();
+    if (!trimmed) return false;
+    const lower = trimmed.toLowerCase();
+    return lower !== 'null' && lower !== 'undefined' && lower !== 'none' && lower !== 'n/a';
+  };
+
+  for (const slot of slots) {
+    const subjectKey = (slot.subjectCode || slot.subject || '').trim().toUpperCase();
+    const key = `${slot.day}|${slot.period}|${subjectKey}`;
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, slot);
+      continue;
+    }
+
+    const existingHasRoom = hasValidRoom(existing.room);
+    const incomingHasRoom = hasValidRoom(slot.room);
+
+    if (!existingHasRoom && incomingHasRoom) {
+      // Incoming has room; collapse and keep roomed slot, merging any missing metadata
+      map.set(key, {
+        ...existing,
+        ...slot,
+        faculty: slot.faculty || existing.faculty,
+        type: slot.type || existing.type,
+      });
+    } else if (existingHasRoom && !incomingHasRoom) {
+      // Existing has room; keep existing, merging any missing metadata from incoming
+      map.set(key, {
+        ...slot,
+        ...existing,
+        faculty: existing.faculty || slot.faculty,
+        type: existing.type || slot.type,
+      });
+    } else {
+      // Both have room or neither; prefer the one with faculty or change marker
+      const preferIncoming =
+        (!existing.faculty && Boolean(slot.faculty)) ||
+        (!existing.isChanged && Boolean(slot.isChanged));
+      if (preferIncoming) {
+        map.set(key, {
+          ...existing,
+          ...slot,
+          room: slot.room || existing.room,
+          faculty: slot.faculty || existing.faculty,
+        });
+      } else {
+        map.set(key, {
+          ...slot,
+          ...existing,
+          room: existing.room || slot.room,
+          faculty: existing.faculty || slot.faculty,
+        });
+      }
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 function rawToTimetable(
   classKey: string, items: RawGBUTimetableItem[], sessionId: string, source: 'live' | 'mock'
 ): Timetable {
@@ -265,6 +337,11 @@ function rawToTimetable(
     const tag = (item.ActivityTag || '').toLowerCase();
     const type = tag.includes('lab') || tag.includes('practical')
       ? 'lab' : tag.includes('tut') ? 'tutorial' : 'lecture';
+    const rawRoom = (item.RoomName || '').trim();
+    const room =
+      rawRoom && rawRoom.toLowerCase() !== 'null' && rawRoom.toLowerCase() !== 'undefined'
+        ? rawRoom
+        : undefined;
     slots.push({
       id: '',
       day: dayNum,
@@ -274,11 +351,12 @@ function rawToTimetable(
       subject: (item.subject_name || '').trim() || item.Subject_Code || 'Class',
       subjectCode: (item.Subject_Code || '').trim(),
       faculty: (item.TeacherName || '').trim() || undefined,
-      room: (item.RoomName || '').trim() || undefined,
+      room,
       type,
     });
   }
-  const withIds = buildStableSlotIds(slots);
+  const deduped = deduplicateSlots(slots);
+  const withIds = buildStableSlotIds(deduped);
   withIds.sort((a, b) => a.day - b.day || a.period - b.period || a.id.localeCompare(b.id));
   return { classKey: norm, fetchedAt: new Date().toISOString(), semesterSessionId: sessionId, slots: withIds, source };
 }

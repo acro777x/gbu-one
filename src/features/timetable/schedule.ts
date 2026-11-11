@@ -44,6 +44,38 @@ export function dayLabelForIndex(day: DayIndex): string {
   return DAY_LABELS[day - 1] ?? '';
 }
 
+export interface WeekDayItem {
+  id: DayIndex;
+  label: string;
+  dateNum: string;
+  date: Date;
+}
+
+/**
+ * Calculates the week days (Monday..Sunday) for the given baseDate.
+ * Recomputes dynamically as the clock advances so midnight crossing
+ * updates the week and dates accurately.
+ */
+export function getCurrentWeekDays(baseDate: Date = new Date()): WeekDayItem[] {
+  const today = baseDate;
+  const dayOfWeek = today.getDay(); // 0 = Sun
+  const monday = new Date(today);
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  monday.setDate(today.getDate() + diff);
+
+  const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return labels.map((label, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return {
+      id: (i + 1) as DayIndex,
+      label,
+      dateNum: String(d.getDate()),
+      date: d,
+    };
+  });
+}
+
 /**
  * Parses a "HH:MM" (optionally "h:mm AM/PM") clock string into minutes
  * since midnight. Returns null when the string is not a valid time.

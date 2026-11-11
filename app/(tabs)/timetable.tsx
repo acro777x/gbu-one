@@ -30,16 +30,18 @@ import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { GlassCard, Skeleton, EmptyState, Chip, SheetOverlay, PillButton } from '../../src/components/ui';
 import { AlarmStateRow } from '../../src/components/notifications/AlarmStateRow';
-import { formatRoomLocation, parseRoomLocation } from '../../src/features/timetable/roomMapping';
+import { formatRoomLocation } from '../../src/features/timetable/roomMapping';
 import {
   Timetable,
   Slot,
+  deduplicateSlots,
 } from '../../src/features/timetable/timetableProvider';
 import { getSectionTimetable } from '../../src/features/timetable/timetableStore';
 import {
   DayIndex,
   computeSlotStatuses,
   dayIndexForDate,
+  getCurrentWeekDays,
   nextSlotDate,
   slotDurationMinutes,
   slotStartToday,
@@ -66,27 +68,7 @@ import { useAttendanceStore } from '../../src/features/attendance/attendanceStor
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
-export function getCurrentWeekDays() {
-  const today = new Date();
-  const dayOfWeek = today.getDay(); // 0 = Sun
-  const monday = new Date(today);
-  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  monday.setDate(today.getDate() + diff);
-
-  const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  return labels.map((label, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return {
-      id: (i + 1) as DayIndex,
-      label,
-      dateNum: String(d.getDate()),
-      date: d,
-    };
-  });
-}
-
-const DAYS = getCurrentWeekDays();
+export { getCurrentWeekDays } from '../../src/features/timetable/schedule';
 
 /** The lead time a class alarm uses until the student picks another one. */
 const DEFAULT_LEAD_MINUTES = 30;
@@ -136,7 +118,12 @@ export default function TimetableScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [timetable, setTimetable] = useState<Timetable | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+
+  // Recomputes dynamically as the clock advances, so the week strip never freezes
+  // while the app stays open across midnight / a new week.
+  const DAYS = useMemo(() => getCurrentWeekDays(now), [now]);
 
   // Slot Detail Modal
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
@@ -162,11 +149,16 @@ export default function TimetableScreen() {
   const loadTimetable = async (forceRefresh = false) => {
     try {
       if (!forceRefresh) setLoading(true);
+      setFetchError(null);
       const data = await getSectionTimetable(currentSection, '39', forceRefresh);
-      setTimetable(data);
+      setTimetable({
+        ...data,
+        slots: deduplicateSlots(data.slots || []),
+      });
       setIsOffline(data.source === 'mock');
-    } catch {
+    } catch (err: unknown) {
       setIsOffline(true);
+      setFetchError(err instanceof Error ? err.message : 'Failed to load timetable');
     } finally {
       setLoading(false);
     }
@@ -184,7 +176,7 @@ export default function TimetableScreen() {
 
   const getDaySlots = (dayId: number): Slot[] => {
     if (!timetable) return [];
-    return timetable.slots.filter((s) => s.day === dayId);
+    return deduplicateSlots(timetable.slots.filter((s) => s.day === dayId));
   };
 
   const activeDaySlots = useMemo(() => getDaySlots(selectedDay), [timetable, selectedDay]);
@@ -192,12 +184,12 @@ export default function TimetableScreen() {
   const selectedDayDate = useMemo(() => {
     const match = DAYS.find((entry) => entry.id === selectedDay);
     return match ? match.date : new Date();
-  }, [selectedDay]);
+  }, [DAYS, selectedDay]);
 
   const selectedDayLabel = useMemo(() => {
     const match = DAYS.find((entry) => entry.id === selectedDay);
     return match ? match.label : '';
-  }, [selectedDay]);
+  }, [DAYS, selectedDay]);
 
   // The alarms that belong to the day on screen: an alarm set for one of its
   // classes, plus any alarm that fires on that calendar day.
@@ -212,7 +204,7 @@ export default function TimetableScreen() {
 
   const todayIndex = dayIndexForDate(now);
   const slotStatuses = useMemo(
-    () => computeSlotStatuses(timetable?.slots ?? [], now),
+    () => computeSlotStatuses(timetable?.slots ? deduplicateSlots(timetable.slots) : [], now),
     [timetable, now],
   );
 
@@ -434,7 +426,7 @@ export default function TimetableScreen() {
             {DAYS.map((d) => {
               const isSelected = selectedDay === d.id;
               const isToday = d.id === todayIndex;
-              const slotsCount = (timetable?.slots || []).filter((s) => s.day === d.id).length;
+              const slotsCount = getDaySlots(d.id).length;
 
               return (
                 <TouchableOpacity
@@ -578,8 +570,19 @@ export default function TimetableScreen() {
           </GlassCard>
         )}
 
+        {/* Explicit Timetable Error State */}
+        {!loading && fetchError && (!timetable || timetable.slots.length === 0) && (
+          <EmptyState
+            icon={<AlertTriangle size={40} color={colors.danger} />}
+            title="Failed to load timetable"
+            description="Could not connect to schedule servers and no cached copy is available. Check your connection and try again."
+            actionLabel="Retry"
+            onAction={() => loadTimetable(true)}
+          />
+        )}
+
         {/* Empty State */}
-        {!loading && activeDaySlots.length === 0 && viewMode !== 'week' && (
+        {!loading && (!fetchError || (timetable && timetable.slots.length > 0)) && activeDaySlots.length === 0 && viewMode !== 'week' && (
           <EmptyState
             title="No classes scheduled"
             description="Enjoy your day off! No lecture slots found for this day."
@@ -587,7 +590,7 @@ export default function TimetableScreen() {
         )}
 
         {/* COMPACT VIEW */}
-        {!loading && viewMode === 'compact' && activeDaySlots.length > 0 && (
+        {!loading && (!fetchError || (timetable && timetable.slots.length > 0)) && viewMode === 'compact' && activeDaySlots.length > 0 && (
           <View style={styles.timelineList}>
             {activeDaySlots.map((slot) => {
               const status = getSlotStatus(slot);
@@ -626,7 +629,7 @@ export default function TimetableScreen() {
         )}
 
         {/* WEEK AT A GLANCE VIEW */}
-        {!loading && viewMode === 'week' && (
+        {!loading && (!fetchError || (timetable && timetable.slots.length > 0)) && viewMode === 'week' && (
           <View style={styles.weekContainer}>
             {DAYS.map((d) => {
               const daySlots = getDaySlots(d.id);
@@ -680,7 +683,7 @@ export default function TimetableScreen() {
         )}
 
         {/* DAY VIEW (Timeline Rail) */}
-        {!loading && viewMode === 'day' && activeDaySlots.length > 0 && (
+        {!loading && (!fetchError || (timetable && timetable.slots.length > 0)) && viewMode === 'day' && activeDaySlots.length > 0 && (
           <View style={styles.timelineList}>
             {activeDaySlots.map((slot, index) => {
               const status = getSlotStatus(slot);
@@ -856,7 +859,8 @@ export default function TimetableScreen() {
                               variant="white"
                               size="sm"
                               onPress={() => {
-                                markAttended(slot.id);
+                                const subjectKey = (slot.subjectCode || slot.subject).trim();
+                                markAttended(subjectKey, slot.subject);
                                 showToast('Marked present');
                               }}
                               style={styles.expandedButton}
@@ -866,7 +870,8 @@ export default function TimetableScreen() {
                               variant="white"
                               size="sm"
                               onPress={() => {
-                                markMissed(slot.id);
+                                const subjectKey = (slot.subjectCode || slot.subject).trim();
+                                markMissed(subjectKey, slot.subject);
                                 showToast('Marked absent');
                               }}
                               style={styles.expandedButton}
@@ -985,7 +990,8 @@ export default function TimetableScreen() {
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.presentBtn, { backgroundColor: colors.successSoft, borderColor: colors.success }]}
                       onPress={() => {
-                        markAttended(selectedSlot.subjectCode || selectedSlot.subject);
+                        const subjectKey = (selectedSlot.subjectCode || selectedSlot.subject).trim();
+                        markAttended(subjectKey, selectedSlot.subject);
                         if (Platform.OS !== 'web') {
                           try {
                             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -1003,7 +1009,8 @@ export default function TimetableScreen() {
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.absentBtn, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}
                       onPress={() => {
-                        markMissed(selectedSlot.subjectCode || selectedSlot.subject);
+                        const subjectKey = (selectedSlot.subjectCode || selectedSlot.subject).trim();
+                        markMissed(subjectKey, selectedSlot.subject);
                         if (Platform.OS !== 'web') {
                           try {
                             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);

@@ -11,16 +11,14 @@ export function useTimetableAlert(enrolledClassKey?: string) {
   const [activeDiff, setActiveDiff] = useState<TimetableDiffItem | null>(null);
 
   const authClass = useAuthStore((s) => s.classSelection?.section);
-  const isGuest = useAuthStore((s) => s.isGuest);
   const effectiveClassKey = enrolledClassKey || authClass || 'BCS-II B';
 
   useEffect(() => {
     let isMounted = true;
 
     async function checkForChanges() {
-      // Do not run background alerts for unauthenticated guest sessions
-      if (isGuest) return;
-
+      // Timetable change alerts run for both enrolled students and guest users
+      // so guests are not locked out of change notifications for their selected class.
       try {
         // The store compares the fetched timetable with the cached snapshot
         // and records the differences; the same record drives the "Changed"
@@ -53,7 +51,7 @@ export function useTimetableAlert(enrolledClassKey?: string) {
     return () => {
       isMounted = false;
     };
-  }, [effectiveClassKey, isGuest]);
+  }, [effectiveClassKey]);
 
   const dismissAlert = () => {
     setModalVisible(false);

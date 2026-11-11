@@ -5,7 +5,9 @@ import {
   parseGBUClassCode,
   buildStableSlotIds,
   Slot,
+  deduplicateSlots,
 } from '../src/features/timetable/timetableProvider';
+import { getCurrentWeekDays } from '../src/features/timetable/schedule';
 
 describe('GBU Timetable Provider & Diff Engine', () => {
   it('maps standard period timings correctly for GBU', () => {
@@ -491,5 +493,166 @@ describe('GBU Timetable Provider & Diff Engine', () => {
     expect(mcs.department).toBe('CSE');
     expect(mcs.programmeCode).toBe('MCS');
     expect(mcs.year).toBe(1);
+  });
+
+  describe('Timetable Deduplication (deduplicateSlots)', () => {
+    it('collapses duplicated slots with same (day, period, subject), keeping the roomed slot', () => {
+      const roomlessSlot: Slot = {
+        id: 'slot-1',
+        day: 1,
+        period: 1,
+        start: '08:30',
+        end: '09:30',
+        subject: 'Operating System',
+        subjectCode: 'CSE209',
+        room: undefined,
+        faculty: 'Prashant Gaurav',
+      };
+
+      const roomedSlot: Slot = {
+        id: 'slot-2',
+        day: 1,
+        period: 1,
+        start: '08:30',
+        end: '09:30',
+        subject: 'Operating System',
+        subjectCode: 'CSE209',
+        room: 'IL101',
+        faculty: 'Prashant Gaurav',
+      };
+
+      // Roomless first, roomed second
+      const result1 = deduplicateSlots([roomlessSlot, roomedSlot]);
+      expect(result1).toHaveLength(1);
+      expect(result1[0].room).toBe('IL101');
+      expect(result1[0].subjectCode).toBe('CSE209');
+
+      // Roomed first, roomless second
+      const result2 = deduplicateSlots([roomedSlot, roomlessSlot]);
+      expect(result2).toHaveLength(1);
+      expect(result2[0].room).toBe('IL101');
+    });
+
+    it('treats string "null" or "undefined" as roomless and collapses to roomed slot', () => {
+      const nullStringSlot: Slot = {
+        id: 'slot-1',
+        day: 2,
+        period: 3,
+        start: '10:30',
+        end: '11:30',
+        subject: 'Data Structures',
+        subjectCode: 'CSE205',
+        room: 'null',
+        faculty: 'Dr. Smith',
+      };
+
+      const roomedSlot: Slot = {
+        id: 'slot-2',
+        day: 2,
+        period: 3,
+        start: '10:30',
+        end: '11:30',
+        subject: 'Data Structures',
+        subjectCode: 'CSE205',
+        room: 'IL102',
+        faculty: 'Dr. Smith',
+      };
+
+      const result = deduplicateSlots([nullStringSlot, roomedSlot]);
+      expect(result).toHaveLength(1);
+      expect(result[0].room).toBe('IL102');
+    });
+
+    it('merges faculty and metadata from roomless duplicate if roomed slot was missing it', () => {
+      const roomlessWithFaculty: Slot = {
+        id: 'slot-1',
+        day: 3,
+        period: 2,
+        start: '09:30',
+        end: '10:30',
+        subject: 'Computer Networks',
+        subjectCode: 'CSE211',
+        faculty: 'Dr. Vikas Rana',
+        type: 'lecture',
+      };
+
+      const roomedWithoutFaculty: Slot = {
+        id: 'slot-2',
+        day: 3,
+        period: 2,
+        start: '09:30',
+        end: '10:30',
+        subject: 'Computer Networks',
+        subjectCode: 'CSE211',
+        room: 'EC101',
+      };
+
+      const result = deduplicateSlots([roomedWithoutFaculty, roomlessWithFaculty]);
+      expect(result).toHaveLength(1);
+      expect(result[0].room).toBe('EC101');
+      expect(result[0].faculty).toBe('Dr. Vikas Rana');
+      expect(result[0].type).toBe('lecture');
+    });
+
+    it('does not collapse slots with different periods or different days', () => {
+      const p1: Slot = {
+        id: 'slot-1',
+        day: 1,
+        period: 1,
+        start: '08:30',
+        end: '09:30',
+        subject: 'Operating System',
+        subjectCode: 'CSE209',
+        room: 'IL101',
+      };
+
+      const p2: Slot = {
+        id: 'slot-2',
+        day: 1,
+        period: 2,
+        start: '09:30',
+        end: '10:30',
+        subject: 'Operating System',
+        subjectCode: 'CSE209',
+        room: undefined,
+      };
+
+      const result = deduplicateSlots([p1, p2]);
+      expect(result).toHaveLength(2);
+    });
+  });
+
+  describe('Week Strip Unfreezing (getCurrentWeekDays)', () => {
+    it('dynamically computes Monday through Sunday for a given baseDate', () => {
+      // Wednesday, October 21, 2026
+      const baseDate = new Date(2026, 9, 21, 10, 0);
+      const days = getCurrentWeekDays(baseDate);
+
+      expect(days).toHaveLength(7);
+      expect(days[0].label).toBe('Mon');
+      expect(days[0].id).toBe(1);
+      expect(days[0].date.getDate()).toBe(19);
+
+      expect(days[2].label).toBe('Wed');
+      expect(days[2].id).toBe(3);
+      expect(days[2].date.getDate()).toBe(21);
+
+      expect(days[6].label).toBe('Sun');
+      expect(days[6].id).toBe(7);
+      expect(days[6].date.getDate()).toBe(25);
+    });
+
+    it('updates accurately when midnight crossing advances to next week', () => {
+      // Sunday, Oct 25, 2026 at 23:59
+      const sundayBeforeMidnight = new Date(2026, 9, 25, 23, 59);
+      const week1 = getCurrentWeekDays(sundayBeforeMidnight);
+      expect(week1[0].date.getDate()).toBe(19);
+
+      // Monday, Oct 26, 2026 at 00:01 (midnight crossing)
+      const mondayAfterMidnight = new Date(2026, 9, 26, 0, 1);
+      const week2 = getCurrentWeekDays(mondayAfterMidnight);
+      expect(week2[0].date.getDate()).toBe(26);
+      expect(week2[6].date.getDate()).toBe(1); // Nov 1
+    });
   });
 });
