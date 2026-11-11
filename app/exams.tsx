@@ -53,6 +53,10 @@ import {
   checkSchoolResults,
   notifyBatchResultDeclared,
   BATCH_WATCH_STORAGE_KEY,
+  saveSchoolWatchPreference,
+  loadSchoolWatchPreference,
+  schedulePeriodicResultsCheck,
+  stopPeriodicResultsCheck,
 } from '../src/features/exams/resultAlerts';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { registerDocument } from '../src/components/pdf/pdfRegistry';
@@ -242,6 +246,35 @@ export default function ExamsScreen() {
   };
 
 
+  // Load persisted results watch preference for the student's school
+  useEffect(() => {
+    let active = true;
+    if (school) {
+      loadSchoolWatchPreference(school)
+        .then((saved) => {
+          if (active && saved) {
+            setResultsWatch(true);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
+  }, [school]);
+
+  // Schedule periodic check when watch is enabled, stop on toggle off or unmount
+  useEffect(() => {
+    if (!resultsWatch || !school) {
+      stopPeriodicResultsCheck();
+      return;
+    }
+    const cancel = schedulePeriodicResultsCheck(school);
+    return () => {
+      cancel();
+    };
+  }, [resultsWatch, school]);
+
   /**
    * Watches the published sheet for the student's school. The first look only
    * records a baseline; a later look alerts when the sheet's revision moves,
@@ -249,18 +282,24 @@ export default function ExamsScreen() {
    * sent to GBU One, and no portal password is involved.
    */
   const handleToggleResultsWatch = async (val: boolean) => {
-    setResultsWatch(val);
-    if (!val) {
-      setToastMessage('Result alerts turned off');
-      setToastVisible(true);
-      return;
-    }
     if (!school) {
       setResultsWatch(false);
       setToastMessage('Choose your school in class setup, then result alerts can watch it.');
       setToastVisible(true);
       return;
     }
+
+    setResultsWatch(val);
+    await saveSchoolWatchPreference(school, val);
+
+    if (!val) {
+      stopPeriodicResultsCheck();
+      setToastMessage('Result alerts turned off');
+      setToastVisible(true);
+      return;
+    }
+
+    schedulePeriodicResultsCheck(school);
     await runResultsCheck(true);
   };
 

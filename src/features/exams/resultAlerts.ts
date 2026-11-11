@@ -11,9 +11,11 @@
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { kvStorage } from '../../lib/storage';
 import { PUBLIC_RESULT_SHEETS } from './resultPortals';
 import {
   RESULTS_WATCH_STORAGE_KEY,
+  RESULTS_WATCH_PREFS_KEY,
   detectSheetChanges,
   nextWatchState,
   parseWatchState,
@@ -23,6 +25,8 @@ import {
   type SheetChange,
   type SheetFingerprint,
 } from './resultsWatch';
+
+export { RESULTS_WATCH_PREFS_KEY };
 
 /** The Android channel that carries result alerts (docs/NOTIFICATIONS.md). */
 export const RESULTS_CHANNEL_ID = 'results';
@@ -107,11 +111,14 @@ export async function checkSchoolResults(
   }
 
   const stored = parseWatchState(
-    await AsyncStorage.getItem(RESULTS_WATCH_STORAGE_KEY).catch(() => null),
+    (await kvStorage.getAsync(RESULTS_WATCH_STORAGE_KEY)) ||
+    (await AsyncStorage.getItem(RESULTS_WATCH_STORAGE_KEY).catch(() => null)),
   );
   const changes = detectSheetChanges(stored, fingerprints);
   const next: ResultsWatchState = nextWatchState(stored, fingerprints);
-  await AsyncStorage.setItem(RESULTS_WATCH_STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+  const serialized = JSON.stringify(next);
+  kvStorage.set(RESULTS_WATCH_STORAGE_KEY, serialized);
+  await AsyncStorage.setItem(RESULTS_WATCH_STORAGE_KEY, serialized).catch(() => {});
 
   let notified = false;
   if (options.notify !== false && changes.length > 0) {
@@ -119,6 +126,125 @@ export async function checkSchoolResults(
   }
 
   return { changes, checked: fingerprints.length, notified };
+}
+
+/**
+ * Persists school watch preference into MMKV/AsyncStorage so watch state
+ * survives app cold restart.
+ */
+export async function saveSchoolWatchPreference(
+  school: string | undefined | null,
+  enabled: boolean,
+): Promise<void> {
+  const normSchool = (school ?? '').trim().toUpperCase();
+  let prefs: { enabled: boolean; schools: Record<string, boolean>; lastChecked?: string } = {
+    enabled,
+    schools: {},
+  };
+  try {
+    const raw =
+      (await kvStorage.getAsync(RESULTS_WATCH_PREFS_KEY)) ||
+      (await AsyncStorage.getItem(RESULTS_WATCH_PREFS_KEY).catch(() => null));
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'object' && parsed !== null) {
+          prefs = {
+            ...parsed,
+            enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : enabled,
+            schools: { ...(parsed.schools || {}) },
+          };
+        }
+      } catch {
+        // non-JSON fallback
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  prefs.enabled = enabled;
+  if (normSchool) {
+    prefs.schools[normSchool] = enabled;
+  }
+  const serialized = JSON.stringify(prefs);
+  kvStorage.set(RESULTS_WATCH_PREFS_KEY, serialized);
+  await AsyncStorage.setItem(RESULTS_WATCH_PREFS_KEY, serialized).catch(() => {});
+}
+
+/**
+ * Reads persisted school watch preference from MMKV/AsyncStorage.
+ */
+export async function loadSchoolWatchPreference(
+  school?: string | null,
+): Promise<boolean> {
+  const normSchool = (school ?? '').trim().toUpperCase();
+  try {
+    const raw =
+      (await kvStorage.getAsync(RESULTS_WATCH_PREFS_KEY)) ||
+      (await AsyncStorage.getItem(RESULTS_WATCH_PREFS_KEY).catch(() => null));
+    if (!raw) return false;
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === 'boolean') return parsed;
+      if (typeof parsed === 'object' && parsed !== null) {
+        if (normSchool && parsed.schools && typeof parsed.schools === 'object') {
+          if (typeof parsed.schools[normSchool] === 'boolean') {
+            return parsed.schools[normSchool];
+          }
+          return false;
+        }
+        if (typeof parsed.enabled === 'boolean') {
+          return parsed.enabled;
+        }
+      }
+    } catch {
+      return raw === 'true';
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+let periodicTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Schedules a periodic check for school results.
+ * Returns a teardown function that cancels the schedule.
+ */
+export function schedulePeriodicResultsCheck(
+  school: string | undefined | null,
+  intervalMs = 15 * 60 * 1000,
+): () => void {
+  stopPeriodicResultsCheck();
+  const targetSchool = (school ?? '').trim().toUpperCase();
+  if (!targetSchool) return () => {};
+
+  periodicTimer = setInterval(() => {
+    void checkSchoolResults(targetSchool, { notify: true });
+  }, intervalMs);
+
+  return () => {
+    stopPeriodicResultsCheck();
+  };
+}
+
+/**
+ * Stops any currently running periodic results check.
+ */
+export function stopPeriodicResultsCheck(): void {
+  if (periodicTimer) {
+    clearInterval(periodicTimer);
+    periodicTimer = null;
+  }
+}
+
+/**
+ * Checks if a periodic results check is currently scheduled.
+ */
+export function isPeriodicResultsCheckScheduled(): boolean {
+  return periodicTimer !== null;
 }
 
 /** Raises one local notification per changed sheet, if the phone allows it. */

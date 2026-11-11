@@ -37,6 +37,12 @@ import {
 import {
   notifyBatchResultDeclared,
   BATCH_WATCH_STORAGE_KEY,
+  RESULTS_WATCH_PREFS_KEY,
+  saveSchoolWatchPreference,
+  loadSchoolWatchPreference,
+  schedulePeriodicResultsCheck,
+  isPeriodicResultsCheckScheduled,
+  stopPeriodicResultsCheck,
 } from '../src/features/exams/resultAlerts';
 import {
   SEED_DECLARED_RESULTS,
@@ -100,10 +106,31 @@ describe('change detection', () => {
     const state = nextWatchState({}, [sheet()]);
     const changes = detectSheetChanges(state, [
       sheet(),
-      sheet({ code: 'psom', school: 'SOM', url: 'https://x/psom.pdf' }),
+      sheet({ code: 'psoict', school: 'SOICT', url: 'https://x/psoict.pdf' }),
     ]);
     expect(changes).toHaveLength(1);
-    expect(changes[0]).toMatchObject({ code: 'psom', status: 'published' });
+    expect(changes[0]).toMatchObject({ code: 'psoict', school: 'SOICT', status: 'published' });
+  });
+
+  it('does not trigger a false published notification when user switches school from SOICT to SOM', () => {
+    const state = nextWatchState({}, [sheet()]); // SOICT baseline only
+    const changes = detectSheetChanges(state, [
+      sheet({ code: 'som', school: 'SOM', url: 'https://exams.gbu.ac.in/uploads/results/som.pdf' }),
+    ]);
+    expect(changes).toEqual([]);
+  });
+
+  it('detects published sheets for SOM once a SOM baseline is established', () => {
+    const state = nextWatchState(
+      nextWatchState({}, [sheet()]),
+      [sheet({ code: 'som', school: 'SOM', url: 'https://exams.gbu.ac.in/uploads/results/som.pdf' })],
+    );
+    const changes = detectSheetChanges(state, [
+      sheet({ code: 'som', school: 'SOM', url: 'https://exams.gbu.ac.in/uploads/results/som.pdf' }),
+      sheet({ code: 'psom', school: 'SOM', url: 'https://exams.gbu.ac.in/uploads/results/passout/psom.pdf' }),
+    ]);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ code: 'psom', school: 'SOM', status: 'published' });
   });
 
   it('ignores a sheet the portal does not answer for yet', () => {
@@ -477,6 +504,37 @@ describe('batch matching and student notifications', () => {
       expect(resultSheetForSchool('')).toBeUndefined();
       expect(resultSheetForSchool(null)).toBeUndefined();
       expect(resultSheetForSchool('UNKNOWN_SCHOOL')).toBeUndefined();
+    });
+  });
+
+  describe('school watch preferences and periodic check scheduling', () => {
+    it('provides persistent storage key for results watch preferences', () => {
+      expect(RESULTS_WATCH_PREFS_KEY).toBe('@gbu_one_results_watch_v1');
+    });
+
+    it('persists school watch preferences to RESULTS_WATCH_PREFS_KEY', async () => {
+      await saveSchoolWatchPreference('SOICT', true);
+      const isWatched = await loadSchoolWatchPreference('SOICT');
+      expect(isWatched).toBe(true);
+
+      const somWatched = await loadSchoolWatchPreference('SOM');
+      expect(somWatched).toBe(false);
+
+      await saveSchoolWatchPreference('SOICT', false);
+      const turnedOff = await loadSchoolWatchPreference('SOICT');
+      expect(turnedOff).toBe(false);
+    });
+
+    it('schedules and stops periodic results check', () => {
+      const cancel = schedulePeriodicResultsCheck('SOICT', 60000);
+      expect(isPeriodicResultsCheckScheduled()).toBe(true);
+      cancel();
+      expect(isPeriodicResultsCheckScheduled()).toBe(false);
+
+      schedulePeriodicResultsCheck('SOICT', 60000);
+      expect(isPeriodicResultsCheckScheduled()).toBe(true);
+      stopPeriodicResultsCheck();
+      expect(isPeriodicResultsCheckScheduled()).toBe(false);
     });
   });
 });

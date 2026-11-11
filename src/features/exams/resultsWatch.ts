@@ -16,8 +16,13 @@
  * docs/OPEN_QUESTIONS.md #22).
  */
 
+import { PUBLIC_RESULT_SHEETS } from './resultPortals';
+
 /** Where the last seen revision of each sheet is kept. */
 export const RESULTS_WATCH_STORAGE_KEY = '@gbu_one_results_watch';
+
+/** Storage key for school results watch preferences (cold restart persistence). */
+export const RESULTS_WATCH_PREFS_KEY = '@gbu_one_results_watch_v1';
 
 /** What one published sheet looks like from the outside. */
 export interface SheetFingerprint {
@@ -35,6 +40,7 @@ export interface SheetFingerprint {
 export interface SheetRevision {
   lastModified: string | null;
   bytes: number | null;
+  school?: string;
 }
 
 /** Every revision the phone has seen, keyed by sheet code. */
@@ -81,23 +87,47 @@ export function sameRevision(
 }
 
 /**
+ * Checks whether the stored watch state already contains a baseline for the given school.
+ * Scoped per school so switching schools never raises a false "results published" notification.
+ */
+export function hasBaselineForSchool(
+  state: ResultsWatchState,
+  school: string | undefined | null,
+): boolean {
+  const target = (school ?? '').trim().toUpperCase();
+  if (!target) return false;
+  for (const [code, rev] of Object.entries(state)) {
+    const revSchool = (
+      rev.school ||
+      PUBLIC_RESULT_SHEETS.find((s) => s.code.toLowerCase() === code.toLowerCase())?.school ||
+      ''
+    ).trim().toUpperCase();
+    if (revSchool === target) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * The sheets whose revision moved since the last look. The first sight of a
  * sheet is not news (the phone simply had no baseline), but a sheet that
- * appears inside an already-known set is.
+ * appears inside an already-known set for that school is.
  */
 export function detectSheetChanges(
   state: ResultsWatchState,
   current: SheetFingerprint[],
 ): SheetChange[] {
   const changes: SheetChange[] = [];
-  const hasBaseline = Object.keys(state).length > 0;
   for (const fingerprint of current) {
     const revision = revisionOf(fingerprint);
     if (!isKnownRevision(revision)) continue;
 
     const previous = state[fingerprint.code];
     if (!previous) {
-      if (hasBaseline) {
+      // Scope hasBaseline per school instead of checking the global state object.
+      // When a user switches school from SOICT to SOM, do NOT trigger a false notification.
+      if (hasBaselineForSchool(state, fingerprint.school)) {
         changes.push({
           code: fingerprint.code,
           school: fingerprint.school,
@@ -128,7 +158,12 @@ export function nextWatchState(
   const next: ResultsWatchState = { ...state };
   for (const fingerprint of current) {
     const revision = revisionOf(fingerprint);
-    if (isKnownRevision(revision)) next[fingerprint.code] = revision;
+    if (isKnownRevision(revision)) {
+      next[fingerprint.code] = {
+        ...revision,
+        school: fingerprint.school,
+      };
+    }
   }
   return next;
 }
@@ -163,6 +198,7 @@ export function parseWatchState(raw: string | null): ResultsWatchState {
     state[code] = {
       lastModified: typeof entry.lastModified === 'string' ? entry.lastModified : null,
       bytes: typeof entry.bytes === 'number' && Number.isFinite(entry.bytes) ? entry.bytes : null,
+      ...(typeof entry.school === 'string' ? { school: entry.school } : {}),
     };
   }
   return state;
