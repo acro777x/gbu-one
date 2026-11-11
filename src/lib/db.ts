@@ -174,22 +174,37 @@ export function writeCachedNotices(notices: NoticeItem[]): void {
   if (!d || notices.length === 0) return;
   try {
     const now = Date.now();
-    for (const n of notices) {
-      d.runSync(
-        `INSERT INTO notices_cache
-           (source_id, source, title, clean_title, posted_at, file_url, file_type,
-            category, audience, importance, deadline_at, payload, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(source_id) DO UPDATE SET
-           title=excluded.title, clean_title=excluded.clean_title,
-           posted_at=excluded.posted_at, file_url=excluded.file_url,
-           file_type=excluded.file_type, category=excluded.category,
-           audience=excluded.audience, importance=excluded.importance,
-           deadline_at=excluded.deadline_at, payload=excluded.payload,
-           updated_at=excluded.updated_at;`,
-        [n.sourceId, n.source, n.title, n.cleanTitle, n.postedAt, n.fileUrl,
-         n.fileType, n.category, JSON.stringify(n.audience ?? {}), n.importance,
-         n.deadlineAt ?? null, JSON.stringify(n), now]);
+    d.runSync('BEGIN IMMEDIATE TRANSACTION;');
+    try {
+      for (const n of notices) {
+        d.runSync(
+          `INSERT INTO notices_cache
+             (source_id, source, title, clean_title, posted_at, file_url, file_type,
+              category, audience, importance, deadline_at, payload, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(source_id) DO UPDATE SET
+             title=excluded.title, clean_title=excluded.clean_title,
+             posted_at=excluded.posted_at, file_url=excluded.file_url,
+             file_type=excluded.file_type, category=excluded.category,
+             audience=excluded.audience, importance=excluded.importance,
+             deadline_at=excluded.deadline_at, payload=excluded.payload,
+             updated_at=excluded.updated_at;`,
+          [n.sourceId, n.source, n.title, n.cleanTitle, n.postedAt, n.fileUrl,
+           n.fileType, n.category, JSON.stringify(n.audience ?? {}), n.importance,
+           n.deadlineAt ?? null, JSON.stringify(n), now]);
+      }
+      // Cache hygiene: keep the freshest 500 notices to prevent boundless storage growth
+      d.runSync(`DELETE FROM notices_cache WHERE source_id NOT IN (
+        SELECT source_id FROM notices_cache ORDER BY posted_at DESC LIMIT 500
+      );`);
+      d.runSync('COMMIT;');
+    } catch (innerErr) {
+      try {
+        d.runSync('ROLLBACK;');
+      } catch {
+        // ignore rollback error
+      }
+      throw innerErr;
     }
   } catch {
     // cache writes must never crash the UI
