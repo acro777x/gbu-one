@@ -192,7 +192,7 @@ export function buildPaperRow(
     year: Number(meta.year),
     exam_type: meta.examType,
     file_path: filePath,
-    uploader_id: uploaderId,
+    uploader_id: uploaderProfile?.uniqueStudentId || uploaderId,
     uploader_student_id: uploaderProfile?.uniqueStudentId || (uploaderId ?? ''),
     status: 'pending' as PyqStatus,
     downloads: 0,
