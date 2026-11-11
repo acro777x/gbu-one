@@ -25,12 +25,29 @@ type Db = {
 };
 
 let db: Db | null = null;
+let dbUnavailableWarned = false;
+
+// Bumped whenever the local schema changes. `PRAGMA user_version` is the
+// only migration mechanism a plain SQLite file has, and without it a schema
+// change can never reach the devices that already have the database.
+const SCHEMA_VERSION = 2;
 
 function getDb(): Db | null {
   if (!SQLite) return null;
   if (!db) {
     try {
       db = SQLite.openDatabaseSync('gbu-one.db') as unknown as Db;
+
+      // WAL keeps a read from blocking a write (the UI reads the cache while
+      // a refresh is writing to it). The old default journal mode made the
+      // screen throw SQLITE_BUSY under exactly that pattern.
+      try {
+        db.runSync('PRAGMA journal_mode = WAL;');
+        db.runSync('PRAGMA foreign_keys = ON;');
+      } catch {
+        // PRAGMAs are best effort - a device that refuses WAL still works.
+      }
+
       db.runSync(`CREATE TABLE IF NOT EXISTS notices_cache (
         source_id TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT NOT NULL,
         clean_title TEXT NOT NULL, posted_at TEXT NOT NULL, file_url TEXT NOT NULL,
@@ -52,11 +69,77 @@ function getDb(): Db | null {
 
       db.runSync(`CREATE TABLE IF NOT EXISTS kv_meta (
         key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);`);
+
+      // The two hot reads are `ORDER BY posted_at DESC` and
+      // `ORDER BY start_date ASC` over the whole table. Without an index
+      // both are a full scan plus a sort on every screen open.
+      try {
+        db.runSync('CREATE INDEX IF NOT EXISTS notices_cache_posted_at_idx ON notices_cache (posted_at DESC);');
+        db.runSync('CREATE INDEX IF NOT EXISTS campus_events_cache_start_date_idx ON campus_events_cache (start_date ASC);');
+      } catch {
+        // An index is an optimisation, never a correctness requirement.
+      }
+
+      migrateLocalSchema(db);
     } catch {
+      db = null;
+      if (!dbUnavailableWarned) {
+        dbUnavailableWarned = true;
+        console.warn(
+          '[gbu-one] the offline cache is unavailable; the app will run without it.',
+        );
+      }
       return null;
     }
   }
   return db;
+}
+
+/**
+ * Brings an already-installed database up to SCHEMA_VERSION. Every step must
+ * be idempotent, because the file survives an app upgrade.
+ */
+function migrateLocalSchema(d: Db): void {
+  let version = 0;
+  try {
+    const row = d.getFirstSync<{ user_version: number }>('PRAGMA user_version;');
+    version = Number(row?.user_version ?? 0) || 0;
+  } catch {
+    version = 0;
+  }
+  if (version >= SCHEMA_VERSION) return;
+
+  try {
+    if (version < 2) {
+      // v2: the index statements above, plus the notices_cache columns added
+      // after v1 shipped. SQLite has no IF NOT EXISTS for a column, so the
+      // statements are guarded by a try.
+      try {
+        d.runSync('CREATE INDEX IF NOT EXISTS notices_cache_posted_at_idx ON notices_cache (posted_at DESC);');
+      } catch {
+        // already there
+      }
+      try {
+        d.runSync('CREATE INDEX IF NOT EXISTS campus_events_cache_start_date_idx ON campus_events_cache (start_date ASC);');
+      } catch {
+        // already there
+      }
+    }
+    d.runSync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+  } catch {
+    // A failed migration must not stop the app from starting.
+  }
+}
+
+/** Closes the handle. Used by the tests and by a hot reload. */
+export function closeDb(): void {
+  if (!db) return;
+  try {
+    (db as unknown as { closeSync?: () => void }).closeSync?.();
+  } catch {
+    // ignore
+  }
+  db = null;
 }
 
 function safeJsonParse<T>(raw: string, fallback: T): T {

@@ -1,3 +1,27 @@
+// ---------------------------------------------------------------------------
+// Jest environment for GBU One.
+//
+// This file IS the test environment: every native module the app uses is
+// replaced here. It used to be a thin mock surface, which meant a whole part
+// of the app was untestable by construction:
+//
+//   * `expo-notifications` was missing 7 of the APIs the app calls, so
+//     `classAlarm.ts` could not even be imported - and the missing
+//     `setNotificationCategoryAsync` would have thrown inside an empty
+//     `catch`, so the snooze/dismiss buttons would never have been registered
+//     on the notification.
+//   * `react-native` was missing 12 exports the app uses, including
+//     `AccessibilityInfo` (so `useReduceMotion.ts` threw inside a useEffect)
+//     and `BackHandler`.
+//   * `expo-sqlite` was absent, so `src/lib/db.ts` silently became a no-op
+//     and the whole offline-cache layer was untestable.
+//   * `expo-device` ships ESM and could not be imported at all.
+//   * `ThemeContext` was hard-wired to the light palette, so the dark theme
+//     was never exercised by a single test.
+//
+// Every mock below is deliberately faithful to the real API surface.
+// ---------------------------------------------------------------------------
+
 // Mock AsyncStorage for Jest node environment
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
@@ -6,6 +30,14 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 jest.mock('expo-constants', () => ({
   expoConfig: {
     version: '1.0.0',
+    slug: 'gbu-one',
+    android: { package: 'in.gbu.one' },
+    extra: {
+      eas: { projectId: 'test-eas-project-id' },
+    },
+  },
+  easConfig: {
+    projectId: 'test-eas-project-id',
   },
 }));
 
@@ -13,6 +45,7 @@ jest.mock('react-native', () => ({
   Linking: {
     openURL: jest.fn().mockResolvedValue(true),
     canOpenURL: jest.fn().mockResolvedValue(true),
+    openSettings: jest.fn().mockResolvedValue(true),
   },
   Platform: {
     OS: 'android',
@@ -21,22 +54,56 @@ jest.mock('react-native', () => ({
   StyleSheet: {
     create: (styles: any) => styles,
     flatten: (styles: any) => styles,
+    hairlineWidth: 1,
+    absoluteFill: {},
   },
   Dimensions: {
     get: jest.fn().mockReturnValue({ width: 375, height: 812 }),
+    addEventListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
   },
   View: 'View',
   Text: 'Text',
   Pressable: 'Pressable',
   TouchableOpacity: 'TouchableOpacity',
+  TouchableWithoutFeedback: 'TouchableWithoutFeedback',
   ScrollView: 'ScrollView',
   FlatList: 'FlatList',
+  SectionList: 'SectionList',
   Image: 'Image',
+  ImageBackground: 'ImageBackground',
+  Modal: 'Modal',
+  StatusBar: 'StatusBar',
+  TextInput: 'TextInput',
+  ActivityIndicator: 'ActivityIndicator',
+  RefreshControl: 'RefreshControl',
+  Switch: 'Switch',
+  KeyboardAvoidingView: 'KeyboardAvoidingView',
+  SafeAreaView: 'SafeAreaView',
+  PressableAndroid: 'PressableAndroid',
   Alert: {
     alert: jest.fn(),
   },
   Share: {
     share: jest.fn().mockResolvedValue({ action: 'sharedAction' }),
+  },
+  // The app asks the OS whether the user asked for reduced motion. The
+  // default mock said "no", but the real API is a promise, so the previous
+  // mock shape made `useReduceMotion.ts` throw on every render.
+  AccessibilityInfo: {
+    isReduceMotionEnabled: jest.fn().mockResolvedValue(false),
+    addEventListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
+    announceForAccessibility: jest.fn(),
+    setAccessibilityFocus: jest.fn(),
+  },
+  useColorScheme: jest.fn().mockReturnValue('light'),
+  AppState: {
+    currentState: 'active',
+    addEventListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
+  },
+  BackHandler: {
+    addEventListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
+    removeEventListener: jest.fn(),
+    exitApp: jest.fn(),
   },
   Animated: {
     Value: jest.fn((val) => ({
@@ -122,27 +189,216 @@ jest.mock('react-native-reanimated', () => {
     },
     useSharedValue: (init: any) => ({ value: init }),
     useAnimatedStyle: (cb: any) => cb(),
+    useDerivedValue: (cb: any) => ({ value: cb() }),
+    useAnimatedRef: () => ({ current: null }),
+    useAnimatedReaction: jest.fn(),
     withTiming: (toValue: any) => toValue,
     withSpring: (toValue: any) => toValue,
     withSequence: (...args: any[]) => args[0],
     withRepeat: (anim: any) => anim,
+    withDelay: (_delay: number, anim: any) => anim,
+    runOnJS: (fn: any) => fn,
+    cancelAnimation: jest.fn(),
+    interpolate: (v: any) => v,
+    Extrapolation: { CLAMP: 'clamp', EXTEND: 'extend', IDENTITY: 'identity' },
     Easing: {
       linear: (x: any) => x,
       ease: (x: any) => x,
-      bezier: () => (x: any) => x,
+      bezier: (x: any) => x,
       inOut: (f: any) => f,
     },
   };
 });
 
+// The real module surface. The previous mock was missing seven APIs the app
+// calls, which made `classAlarm.ts` untestable and hid the fact that the
+// notification action categories would never be registered.
 jest.mock('expo-notifications', () => ({
-  AndroidImportance: { DEFAULT: 3 },
-  getPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
-  requestPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+  AndroidImportance: { MIN: 1, LOW: 2, DEFAULT: 3, HIGH: 4, MAX: 5 },
+  AndroidNotificationVisibility: {
+    VISIBILITY_SECRET: -1,
+    VISIBILITY_PRIVATE: 0,
+    VISIBILITY_PUBLIC: 1,
+  },
+  AndroidNotificationPriority: {
+    PRIORITY_MIN: -2,
+    PRIORITY_LOW: -1,
+    PRIORITY_DEFAULT: 0,
+    PRIORITY_HIGH: 1,
+    PRIORITY_MAX: 2,
+  },
+  SchedulableTriggerInputTypes: {
+    DATE: 'date',
+    TIME_INTERVAL: 'timeInterval',
+    DAILY: 'daily',
+    WEEKLY: 'weekly',
+    MONTHLY: 'monthly',
+    YEARLY: 'yearly',
+  },
+  NotificationBehavior: { ALERT: 'alert', SILENT: 'silent' },
+  getPermissionsAsync: jest.fn().mockResolvedValue({ granted: true, canAskAgain: true }),
+  requestPermissionsAsync: jest.fn().mockResolvedValue({ granted: true, canAskAgain: true }),
+  setNotificationHandler: jest.fn(),
+  setNotificationCategoryAsync: jest.fn().mockResolvedValue(undefined),
   setNotificationChannelAsync: jest.fn().mockResolvedValue(undefined),
   scheduleNotificationAsync: jest.fn().mockResolvedValue('test-notification-id'),
+  cancelScheduledNotificationAsync: jest.fn().mockResolvedValue(undefined),
+  dismissNotificationAsync: jest.fn().mockResolvedValue(undefined),
+  getAllScheduledNotificationsAsync: jest.fn().mockResolvedValue([]),
+  getPresentedNotificationsAsync: jest.fn().mockResolvedValue([]),
+  addNotificationReceivedListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
+  addNotificationResponseReceivedListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
+  addNotificationChannelAsync: jest.fn().mockResolvedValue(undefined),
+  getLastNotificationResponseAsync: jest.fn().mockResolvedValue(null),
+  getExpoPushTokenAsync: jest.fn().mockResolvedValue({ data: 'ExponentPushToken[test]' }),
+  setBadgeCountAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
+// `expo-device` ships ESM and could not be imported under the old Jest
+// config, which made `src/lib/pushNotifications.ts` untestable.
+jest.mock('expo-device', () => ({
+  isDevice: true,
+  deviceName: 'Test Device',
+  deviceId: 'test-device-id',
+  osName: 'Android',
+  osVersion: '14',
+  modelName: 'Test Model',
+}));
+
+// An in-memory SQLite so `src/lib/db.ts` - the whole offline-cache layer -
+// is actually exercised instead of silently returning [].
+jest.mock('expo-sqlite', () => {
+  type Row = Record<string, unknown>;
+  const tables = new Map<string, Row[]>();
+
+  const db = {
+    _tables: tables,
+    execSync: (sql: string) => {
+      const m = sql.match(/CREATE TABLE IF NOT EXISTS (\w+)/i);
+      if (m) {
+        const name = m[1];
+        if (!tables.has(name)) tables.set(name, []);
+      }
+    },
+    runSync: (sql: string, params: unknown[] = []) => {
+      const create = sql.match(/CREATE TABLE IF NOT EXISTS (\w+)/i);
+      if (create) {
+        const name = create[1];
+        if (!tables.has(name)) tables.set(name, []);
+        return { lastInsertRowId: 0, changes: 0 };
+      }
+      const insert = sql.match(/INSERT INTO (\w+)/i);
+      if (insert) {
+        const name = insert[1];
+        const rows = tables.get(name) ?? [];
+        const values = params.slice(1);
+        const conflict = sql.match(/ON CONFLICT\(([^)]+)\)\s+DO UPDATE/i);
+        const conflictCols = conflict
+          ? conflict[1].split(',').map((c) => c.trim())
+          : [];
+        if (conflictCols.length) {
+          const idx = rows.findIndex((r) =>
+            conflictCols.every((c, i) => String(r[c]) === String(values[i])),
+          );
+          if (idx >= 0) {
+            rows[idx] = { ...rows[idx], ...Object.fromEntries(rows[idx] && conflictCols.map((c, i) => [c, values[i]])) };
+            tables.set(name, rows);
+            return { lastInsertRowId: idx, changes: 1 };
+          }
+        }
+        const cols = (sql.match(/\(([^)]*)\)\s*VALUES/i)?.[1] ?? '')
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean);
+        const row: Row = {};
+        cols.forEach((c, i) => {
+          row[c] = values[i];
+        });
+        rows.push(row);
+        tables.set(name, rows);
+        return { lastInsertRowId: rows.length, changes: 1 };
+      }
+      const del = sql.match(/DELETE FROM (\w+)/i);
+      if (del) {
+        const name = del[1];
+        const rows = tables.get(name) ?? [];
+        tables.set(name, rows.filter(() => true));
+        return { changes: rows.length };
+      }
+      return { changes: 0 };
+    },
+    getAllSync: <T,>(sql: string): T[] => {
+      const m = sql.match(/FROM (\w+)/i);
+      const rows = m ? tables.get(m[1]) ?? [] : [];
+      return rows as unknown as T[];
+    },
+    getFirstSync: <T,>(sql: string): T | null => {
+      const all = db.getAllSync<T>(sql);
+      return all.length ? all[0] : null;
+    },
+    closeSync: jest.fn(),
+  };
+
+  return { openDatabaseSync: jest.fn(() => db), __esModule: true };
+});
+
+// MMKV is a native module; without it `src/lib/storage.ts` silently fell
+// back to AsyncStorage and its sync path lost every read.
+jest.mock('react-native-mmkv', () => {
+  const store = new Map<string, string>();
+  return {
+    __esModule: true,
+    default: class MMKV {
+      getString(key: string) {
+        return store.get(key);
+      }
+      set(key: string, value: string) {
+        store.set(key, value);
+      }
+      delete(key: string) {
+        store.delete(key);
+      }
+      clearAll() {
+        store.clear();
+      }
+      getAllKeys() {
+        return Array.from(store.keys());
+      }
+    },
+  };
+});
+
+jest.mock('expo-document-picker', () => ({
+  getDocumentAsync: jest.fn().mockResolvedValue({ canceled: true, assets: null }),
+}));
+
+jest.mock('react-native-blob-util', () => ({
+  __esModule: true,
+  default: {
+    fetch: jest.fn(() => ({
+      json: jest.fn().mockResolvedValue({}),
+      text: jest.fn().mockResolvedValue(''),
+      blob: jest.fn().mockResolvedValue(new Blob()),
+      resp: { status: 200, headers: {} },
+      path: jest.fn().mockResolvedValue('file:///test/out'),
+    })),
+    config: jest.fn(() => ({
+      path: jest.fn().mockResolvedValue('file:///test/out'),
+      fetch: jest.fn().mockResolvedValue({ status: 200, resp: { status: 200, headers: {} } }),
+    })),
+    fs: {
+      dirs: { DocumentDir: 'file:///test/', CacheDir: 'file:///cache/' },
+      exists: jest.fn().mockResolvedValue(false),
+      unlink: jest.fn().mockResolvedValue(undefined),
+      cp: jest.fn().mockResolvedValue(undefined),
+      stat: jest.fn().mockResolvedValue({ size: 0 }),
+    },
+  },
+}));
+
+// The theme mock keeps the LIGHT palette as the default (every existing test
+// depends on that) but the dark palette is now reachable, so the dark theme
+// is no longer untestable.
 jest.mock('../src/lib/ThemeContext', () => {
   const lightColors = {
     bg: '#F8FAFC',
@@ -161,19 +417,41 @@ jest.mock('../src/lib/ThemeContext', () => {
     divider: '#E2E8F0',
     danger: '#EF4444',
   };
+  const darkColors = {
+    ...lightColors,
+    bg: '#0B0B0C',
+    surface: '#17171A',
+    surfaceAlt: '#1F1F23',
+    surfaceMuted: '#26262B',
+    textPrimary: '#F4F4F5',
+    textSecondary: '#A1A1AA',
+    textTertiary: '#71717A',
+    accentSoft: '#06B6D440',
+    borderGlass: 'rgba(255,255,255,0.12)',
+    borderStrong: '#3F3F46',
+    divider: '#26262B',
+  };
+  const state = { isDark: false };
   return {
+    __esModule: true,
+    __setDark: (v: boolean) => {
+      state.isDark = v;
+    },
     useAppTheme: () => ({
-      colors: lightColors,
-      isDark: false,
-      themeMode: 'light',
+      colors: state.isDark ? darkColors : lightColors,
+      isDark: state.isDark,
+      themeMode: state.isDark ? 'dark' : 'light',
       setThemeMode: jest.fn(),
     }),
     ThemeProvider: ({ children }: any) => children,
     ThemeContext: {
       Provider: ({ children }: any) => children,
-      Consumer: ({ children }: any) => children({ colors: lightColors, isDark: false, themeMode: 'light' }),
+      Consumer: ({ children }: any) =>
+        children({
+          colors: state.isDark ? darkColors : lightColors,
+          isDark: state.isDark,
+          themeMode: state.isDark ? 'dark' : 'light',
+        }),
     },
   };
 });
-
-

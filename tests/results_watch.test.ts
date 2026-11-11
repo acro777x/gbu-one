@@ -32,6 +32,7 @@ import {
   COMMON_RESULT_SESSIONS,
   normaliseSemester,
   matchesStudentBatch,
+  resultSheetForSchool,
 } from '../src/features/exams/resultPortals';
 import {
   notifyBatchResultDeclared,
@@ -450,5 +451,32 @@ describe('batch matching and student notifications', () => {
       fileUrl: 'https://exams.gbu.ac.in/uploads/results/soict.pdf',
     });
     expect(success).toBe(true);
+  });
+
+  describe('resultSheetForSchool lookup', () => {
+    it('finds normal result sheet when special is false or omitted', () => {
+      const sheet = resultSheetForSchool('SOICT');
+      expect(sheet).toBeDefined();
+      expect(sheet?.school).toBe('SOICT');
+      expect(sheet?.code).toBe('soict');
+      expect(sheet?.special).toBeUndefined();
+
+      const normalExplicit = resultSheetForSchool('soe', false);
+      expect(normalExplicit).toBeDefined();
+      expect(normalExplicit?.code).toBe('soe');
+    });
+
+    it('finds special passout result sheet when special is true', () => {
+      const passoutSheet = resultSheetForSchool('SOICT', true);
+      expect(passoutSheet).toBeDefined();
+      expect(passoutSheet?.code).toBe('psoict');
+      expect(passoutSheet?.special).toBe(true);
+    });
+
+    it('returns undefined for invalid or unknown schools', () => {
+      expect(resultSheetForSchool('')).toBeUndefined();
+      expect(resultSheetForSchool(null)).toBeUndefined();
+      expect(resultSheetForSchool('UNKNOWN_SCHOOL')).toBeUndefined();
+    });
   });
 });

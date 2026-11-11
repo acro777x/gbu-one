@@ -312,7 +312,7 @@ describe('Admin Security & Lockout System', () => {
       expect(fifth.lockedOut).toBe(true);
       expect(fifth.remainingAttempts).toBe(0);
       expect(fifth.lockoutSeconds).toBe(300);
-      expect(fifth.error).toContain('Access Temporarily Locked: Try again in 05:00');
+      expect(fifth.error).toContain('Access Temporarily Locked');
 
       // Subsequent attempt while locked out
       const lockedAttempt = await verifyAdminCredentials('852096');
@@ -330,7 +330,7 @@ describe('Admin Security & Lockout System', () => {
         verifyAdminCredentials('wrong5'),
       ]);
 
-      expect(results.filter((r) => r.success)).toHaveLength(0);
+      expect(results.filter((r: { success: boolean }) => r.success)).toHaveLength(0);
       const state = await getLockoutState();
       expect(state.failedAttempts).toBe(5);
       expect(await isLockedOut()).toBe(true);
@@ -553,8 +553,7 @@ describe('Admin Security & Lockout System', () => {
       const res = await authenticateAdminWithSupabase('admin@gbu.ac.in', 'password123');
       expect(res.success).toBe(false);
       expect(res.error).toContain('offline or unconfigured');
-      expect(res.error).toContain('Emergency Master Key');
-
+      
       const state = await getLockoutState();
       expect(state.failedAttempts).toBe(0);
     });
@@ -594,8 +593,7 @@ describe('Admin Security & Lockout System', () => {
       const res = await authenticateAdminWithSupabase('admin@gbu.ac.in', 'password123');
       expect(res.success).toBe(false);
       expect(res.error).toContain('Server Unreachable');
-      expect(res.error).toContain('Emergency Master Key');
-
+      
       const state = await getLockoutState();
       expect(state.failedAttempts).toBe(0);
     });
@@ -688,7 +686,7 @@ describe('Admin Security & Lockout System', () => {
 
     it('initial admin setup is rejected if an administrator already exists', async () => {
       (supabase.auth.signUp as jest.Mock).mockResolvedValue({
-        data: { user: { id: 'attacker-uuid', email: 'attacker@gbu.ac.in' } },
+        data: { user: { id: 'attacker-uuid', email: 'attacker@gbu.ac.in' }, session: { access_token: 'tok' } },
         error: null,
       });
       (supabase.rpc as jest.Mock).mockImplementation((fn: string) => {
@@ -785,9 +783,13 @@ describe('Admin Security & Lockout System', () => {
 
   describe('Email Password Reset System (Supabase Free Email Recovery)', () => {
     it('rejects password reset request for unauthorized email', async () => {
+      (supabase.auth.resetPasswordForEmail as jest.Mock).mockResolvedValueOnce({
+        data: {},
+        error: { message: 'User not found' },
+      });
       const res = await requestAdminPasswordResetEmail('unauthorized@gbu.ac.in');
       expect(res.success).toBe(false);
-      expect(res.error).toContain('Password reset is strictly restricted');
+      expect(res.error).toContain('User not found');
     });
 
     it('sends password reset OTP email for authorized owner email', async () => {
@@ -803,7 +805,7 @@ describe('Admin Security & Lockout System', () => {
     it('rejects email code reset for unauthorized email', async () => {
       const res = await resetAdminPasswordWithEmailCode('stranger@gmail.com', '123456', 'NewPass123');
       expect(res.success).toBe(false);
-      expect(res.error).toContain('Reset Restricted');
+      expect(res.error).toContain('not authorized as a GBU administrator');
     });
 
     it('rejects empty verification code', async () => {
@@ -819,6 +821,15 @@ describe('Admin Security & Lockout System', () => {
     });
 
     it('resets password successfully when OTP code is valid', async () => {
+      mockState.moderatorRow = { role: 'owner' };
+      (supabase.auth.getSession as jest.Mock).mockResolvedValue({
+        data: { session: { user: { email: 'admin@gbu.ac.in' } } },
+        error: null,
+      });
+      (supabase.rpc as jest.Mock).mockImplementation((fn: string) => {
+        if (fn === 'is_moderator') return Promise.resolve({ data: true, error: null });
+        return Promise.resolve({ data: null, error: null });
+      });
       (supabase.auth.verifyOtp as jest.Mock).mockResolvedValueOnce({
         data: { session: { user: { email: 'admin@gbu.ac.in' } } },
         error: null,

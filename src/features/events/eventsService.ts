@@ -248,11 +248,7 @@ function getSupabaseApiKey(): string {
 }
 
 function getAdminStorageKey(): string {
-  return (
-    process.env.EXPO_PUBLIC_ADMIN_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    getSupabaseApiKey()
-  );
+  return getSupabaseApiKey();
 }
 
 export async function getLocalDeletedEventIds(): Promise<string[]> {

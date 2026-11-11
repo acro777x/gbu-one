@@ -33,7 +33,16 @@ export interface Timetable {
   fetchedAt: string;
   semesterSessionId: string;
   slots: Slot[];
-  source?: 'live' | 'mock';
+  /**
+   * Where the slots come from.
+   *
+   * - `live`  - the university published them.
+   * - `stale` - the last known good live snapshot, served because the
+   *   university could not be reached.
+   * - `mock`  - bundled sample data. It is never written to the cache and
+   *   never presented as the student's real schedule.
+   */
+  source?: 'live' | 'mock' | 'stale';
 }
 
 export interface TimetableDiffItem {
@@ -392,12 +401,68 @@ const MOCK_SUBJECT_POOL: Record<string, Array<{ code: string; name: string; facu
   ],
 };
 
+/**
+ * The parts of a published section code.
+ *
+ * This is the one place the app reads a section code. The university is not
+ * consistent about the separator (`BCS-II B` uses a space, `BCS-III-A` a
+ * dash, `MBA II` nothing), so the code is split on whatever separator it
+ * uses and the pieces are read off the result.
+ */
+export interface PublishedSectionParts {
+  /** The published programme prefix, e.g. `BCS` or `CSE-CS`. */
+  programmeCode: string;
+  /** The year as the university writes it, e.g. `II`. Empty when it has none. */
+  year: string;
+  /** The section letter, e.g. `B`. `General` when the batch has one section. */
+  sectionLetter: string;
+}
+
+/**
+ * Splits a published section code into programme, year and section letter.
+ *
+ * `BCS-II B`, `BCS-III-A`, `BCA-I A`, `MBA II` and `MT-AIR-II-A` all parse,
+ * and a code with no year (`Ph.D. Biotechnology`) keeps its whole text as the
+ * programme.
+ *
+ * This is the canonical parser of the app: `parseGBUClassCode` and the class
+ * catalogue both read the code through it, so the two can never disagree.
+ */
+export function parsePublishedSection(section: string): PublishedSectionParts {
+  const raw = (section || '').trim();
+  if (!raw) return { programmeCode: '', year: '', sectionLetter: 'General' };
+
+  const tokens = raw.split(/[\s-]+/).filter(Boolean);
+  const upper = tokens.map((token) => token.toUpperCase());
+
+  let yearIndex = -1;
+  for (let i = upper.length - 1; i >= 0; i -= 1) {
+    if (!/^[IVX]{1,5}$/.test(upper[i])) continue;
+    const trailing = upper.slice(i + 1);
+    if (trailing.length === 0 || (trailing.length === 1 && /^[A-Z]$/.test(trailing[0]))) {
+      yearIndex = i;
+    }
+    break;
+  }
+
+  if (yearIndex < 0) {
+    return { programmeCode: raw, year: '', sectionLetter: 'General' };
+  }
+
+  const letter = upper.length === yearIndex + 2 ? tokens[yearIndex + 1] : '';
+  return {
+    programmeCode: tokens.slice(0, yearIndex).join('-'),
+    year: upper[yearIndex],
+    sectionLetter: letter ? letter.toUpperCase() : 'General',
+  };
+}
+
 export function parseGBUClassCode(rawCode: string): ParsedClassCode {
   const code = (rawCode || '').trim();
   // Word-year aliases are accepted ("bcs-second-a", "cse-cs-second") and
   // normalised to roman numerals before parsing.
-  let upper = code.toUpperCase();
-  upper = upper
+  const upper = code
+    .toUpperCase()
     .replace(/\bFIRST\b/g, 'I')
     .replace(/\bSECOND\b/g, 'II')
     .replace(/\bTHIRD\b/g, 'III')
@@ -405,28 +470,17 @@ export function parseGBUClassCode(rawCode: string): ParsedClassCode {
     .replace(/\bFIFTH\b/g, 'V')
     .replace(/\bSIXTH\b/g, 'VI');
 
-  // Split "<PROGRAMME>-<YEAR>[ -/]<SECTION>]":
-  // "BCS-II B" | "BCS-I-A" | "MBA II" | "BCA-I A" | "BAI-II" | "PCW-II".
-  // Programme itself may contain a dash ("CSE-CS", "BEC-AI").
-  let programmeCode = 'BCS';
-  let yearPart = 'II';
-  let section = 'General';
+  // The published code is read through the one canonical parser, so the
+  // catalogue and this function can never disagree about a section.
+  const parts = parsePublishedSection(upper);
 
-  // Special-case: no dash at all ("MBA II", "Ph.D. Biotechnology").
-  const noDashYear = upper.match(/^([A-Z.]+)\s+([IVX]+)\s*([A-Z]*)\s*$/);
-  const dashMatch = upper.match(/^(.+?)-([IVX]+)(?:[\s-]+([A-Z]))?\s*$/);
-  const m = dashMatch ?? noDashYear;
-  if (m) {
-    programmeCode = m[1].replace(/\./g, '').trim();
-    yearPart = m[2];
-    if (m[3]) section = m[3];
-    // Degree-duration tokens are not part of the code ("bcs-3-second").
-    programmeCode = programmeCode.replace(/-\d+$/, '').replace(/\s+\d+$/, '');
-  } else if (upper) {
-    // Unparseable - keep the raw code as the programme, year unknown.
-    programmeCode = upper.split(/[\s-]+/)[0];
-    yearPart = '';
-  }
+  let programmeCode = parts.programmeCode.trim();
+  if (parts.year) programmeCode = programmeCode.replace(/\./g, '').trim();
+  // Degree-duration tokens are not part of the code ("bcs-3-second").
+  programmeCode = programmeCode.replace(/-\d+$/, '').replace(/\s+\d+$/, '');
+
+  const yearPart = parts.year;
+  const section = parts.sectionLetter;
 
   // Normalise common aliases seen in the API.
   const ALIASES: Record<string, string> = {

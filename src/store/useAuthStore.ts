@@ -1,12 +1,26 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { queryClient } from '../lib/queryClient';
+import { useAttendanceStore, INITIAL_ATTENDANCE } from '../features/attendance/attendanceStore';
+import { useMailStore } from './useMailStore';
+import { INITIAL_STUDENT_EMAILS } from '../features/mail/mailService';
+import {
+  ADMIN_REPORTS_STORAGE_KEY,
+  LOCAL_REPORTS_STORAGE_KEY,
+} from '../features/reports/reportsService';
 
 export const CLASS_SELECTION_STORAGE_KEY = '@gbu_one_class_selection';
 export const USER_PROFILE_STORAGE_KEY = '@gbu_one_user_profile';
 export const DEVICE_UNIQUE_STUDENT_ID_KEY = '@gbu_one_device_unique_student_id';
 export const GUEST_AVATAR_ID_KEY = '@gbu_one_guest_avatar_id';
 export const GUEST_NAME_KEY = '@gbu_one_guest_name';
+/**
+ * The onboarding flag lives here, in the store, and nowhere else. Older
+ * builds wrote the same key straight from the onboarding screen; the store
+ * now owns it so there is exactly one source of truth.
+ */
+export const ONBOARDING_SEEN_STORAGE_KEY = '@gbu_one_has_seen_onboarding';
 export const MIN_PASSWORD_LENGTH = 8;
 
 export const INVALID_CREDENTIALS_MESSAGE = "That roll number or password doesn't match.";
@@ -23,6 +37,17 @@ export interface ClassSelection {
   section: string; // e.g. 'BCS-II B'
 }
 
+/**
+ * Where an identity came from.
+ *
+ * - `supabase` - the server verified the session. This is the only source
+ *   that counts as a real sign-in.
+ * - `offline` - a local-only identity (the offline build, or a stored profile
+ *   the server could not confirm). It is NOT a verified sign-in.
+ * - `guest` - no account at all.
+ */
+export type AuthSource = 'supabase' | 'offline' | 'guest';
+
 export interface UserProfile {
   id: string;
   rollNo: string;
@@ -32,7 +57,13 @@ export interface UserProfile {
   avatarId?: string;
   uniqueStudentId?: string;
   classSelection?: ClassSelection | null;
+  /**
+   * Legacy flag. Kept so a profile written before `authSource` existed still
+   * parses; `authSource` is the field everything reads now.
+   */
   isOfflineSession?: boolean;
+  /** Where this identity came from. Only `supabase` is server-verified. */
+  authSource?: AuthSource;
 }
 
 export function generateUniqueStudentId(): string {
@@ -44,6 +75,38 @@ export function generateUniqueStudentId(): string {
   return `GBU-${result}`;
 }
 
+/**
+ * The source of a stored profile.
+ *
+ * Profiles written before `authSource` existed only carried
+ * `isOfflineSession`, so that flag is used as the fallback. A guest profile
+ * is always a guest, whatever else it says.
+ */
+export function resolveAuthSource(
+  profile: Pick<UserProfile, 'authSource' | 'rollNo' | 'isOfflineSession'> | null | undefined,
+): AuthSource {
+  if (!profile) return 'guest';
+  if (profile.authSource) return profile.authSource;
+  if (!profile.rollNo || profile.rollNo === 'GUEST') return 'guest';
+  return profile.isOfflineSession ? 'offline' : 'supabase';
+}
+
+/**
+ * True when an identity exists but the server never confirmed it.
+ *
+ * Such a session must never be presented as a signed-in account: the UI has
+ * to keep saying that it is not verified.
+ */
+export function isUnverifiedSession(
+  user: UserProfile | null | undefined,
+  isAuthenticated: boolean,
+  isGuest: boolean,
+): boolean {
+  if (isAuthenticated) return false;
+  if (isGuest) return false;
+  return Boolean(user);
+}
+
 export interface AuthResult {
   success: boolean;
   error?: string;
@@ -52,8 +115,16 @@ export interface AuthResult {
 
 export interface AuthState {
   user: UserProfile | null;
-  isGuest: boolean;
+  /**
+   * True only when the SERVER verified the session. An offline (local-only)
+   * session is deliberately not "authenticated": it must never be mistaken
+   * for a real sign-in.
+   */
   isAuthenticated: boolean;
+  /** True when there is no account at all - the app runs in guest mode. */
+  isGuest: boolean;
+  /** True once `initAuth` has read the device and asked the server who we are. */
+  hydrated: boolean;
   hasCompletedOnboarding: boolean;
   hasClassSetup: boolean;
   classSelection: ClassSelection | null;
@@ -67,13 +138,41 @@ export interface AuthState {
   completeOnboarding: () => void;
   setClassSelection: (selection: ClassSelection) => void;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
+  /** Removes every trace of the previous user from this device. */
+  clearLocalSession: () => Promise<void>;
 }
 
 interface AuthErrorLike {
   message?: string | null;
   code?: string | null;
   status?: number | null;
+}
+
+/** The parts of a Supabase session this store cares about. */
+interface SessionLike {
+  user?: {
+    id?: string;
+    email?: string | null;
+    user_metadata?: Record<string, unknown> | null;
+  } | null;
+}
+
+/**
+ * The auth API as it is actually used here.
+ *
+ * Typed loosely on purpose: the client is mocked in tests and older builds
+ * may not expose every method, so every call is checked before it is made.
+ */
+interface AuthApiLike {
+  getSession?: () => Promise<{ data: { session: SessionLike | null }; error: unknown }>;
+  onAuthStateChange?: (
+    callback: (event: string, session: SessionLike | null) => void,
+  ) => { data?: { subscription?: { unsubscribe?: () => void } } };
+}
+
+function authApi(): AuthApiLike {
+  return supabase.auth as unknown as AuthApiLike;
 }
 
 /**
@@ -84,11 +183,16 @@ interface AuthErrorLike {
  * future staff account) signs in from the same screen. The account is ours,
  * never a university one: no university password is ever collected
  * (docs/SCREENS_AUTH.md, docs/ADMIN_MODERATION.md).
+ *
+ * Only the separators a roll number is written with are removed. Every other
+ * character is kept, so two roll numbers that genuinely differ cannot be
+ * folded onto one account. The original roll number is always kept in the
+ * profile, so the mapping stays reversible.
  */
 export function toLoginEmail(identifier: string): string {
   const value = identifier.trim().toLowerCase();
   if (value.includes('@')) return value;
-  return `${value.replace(/[^a-z0-9]/g, '')}@gbu.ac.in`;
+  return `${value.replace(/[\s/-]+/g, '')}@gbu.ac.in`;
 }
 
 const describeAuthError = (
@@ -162,11 +266,158 @@ const describeAuthError = (
 let cachedDeviceId: string | null = null;
 let cachedAvatarId: string | null = null;
 let cachedGuestName: string | null = null;
+let authSubscription: { unsubscribe?: () => void } | null = null;
+
+/**
+ * Every key that holds personal data on this device.
+ *
+ * `DEVICE_UNIQUE_STUDENT_ID_KEY` is deliberately NOT in this list: it names
+ * the phone, not the person, and it is what carries a guest identity over to
+ * an account (tests/auth.test.ts). The name, the avatar, the class, the
+ * attendance and the reports are the personal parts, and they go.
+ */
+const PERSONAL_STORAGE_KEYS = [
+  USER_PROFILE_STORAGE_KEY,
+  GUEST_NAME_KEY,
+  GUEST_AVATAR_ID_KEY,
+  CLASS_SELECTION_STORAGE_KEY,
+  LOCAL_REPORTS_STORAGE_KEY,
+  ADMIN_REPORTS_STORAGE_KEY,
+];
+
+/**
+ * Wipes the previous user from the device.
+ *
+ * The storage calls are issued straight away (they are not awaited inside),
+ * so the data is gone even if the network sign-out never returns.
+ */
+function clearPersonalData(): Promise<void> {
+  useAuthStore.setState({
+    user: null,
+    isGuest: true,
+    isAuthenticated: false,
+    hasClassSetup: false,
+    classSelection: null,
+  });
+
+  // Cached server data and the local stores hold the previous student's
+  // personal bits; the next user of a shared phone inherits nothing.
+  queryClient.clear();
+  useAttendanceStore.setState({ subjects: INITIAL_ATTENDANCE });
+  useAttendanceStore.persist.clearStorage();
+  useMailStore.setState({
+    emails: INITIAL_STUDENT_EMAILS,
+    activeCategory: 'all',
+    searchQuery: '',
+    selectedEmail: null,
+  });
+  useMailStore.persist.clearStorage();
+
+  cachedGuestName = null;
+  cachedAvatarId = null;
+
+  return Promise.all(
+    PERSONAL_STORAGE_KEYS.map((key) => AsyncStorage.removeItem(key).catch(() => {})),
+  ).then(() => undefined);
+}
+
+/** The signed-in Supabase session, or null when there is none. */
+async function readServerSession(): Promise<SessionLike['user'] | null> {
+  if (!isSupabaseConfigured) return null;
+  const getSession = authApi().getSession;
+  if (typeof getSession !== 'function') return null;
+  try {
+    const { data, error } = await getSession.call(supabase.auth);
+    if (error || !data?.session?.user?.id) return null;
+    return data.session.user;
+  } catch {
+    // Offline or the client is unavailable: treat it as "no live session".
+    return null;
+  }
+}
+
+/** The name a session carries, if any. */
+function sessionName(user: SessionLike['user']): string | null {
+  const metadata = user?.user_metadata;
+  if (!metadata) return null;
+  const name = metadata.name;
+  return typeof name === 'string' && name.trim() ? name.trim() : null;
+}
+
+/** The roll number a session carries, if any. */
+function sessionRollNo(user: SessionLike['user']): string | null {
+  const metadata = user?.user_metadata;
+  if (!metadata) return null;
+  const roll = metadata.roll_no;
+  return typeof roll === 'string' && roll.trim() ? roll.trim() : null;
+}
+
+/**
+ * Watches the server session.
+ *
+ * Without this the app would never learn that a session expired or was
+ * revoked, and would keep rendering the previous user's cached data.
+ */
+function subscribeToAuthEvents(): void {
+  if (authSubscription) return;
+  if (!isSupabaseConfigured) return;
+  const onAuthStateChange = authApi().onAuthStateChange;
+  if (typeof onAuthStateChange !== 'function') return;
+
+  try {
+    const result = onAuthStateChange.call(supabase.auth, (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        // The server ended the session (revoked, expired or signed out from
+        // another device): the local identity goes with it.
+        void useAuthStore.getState().clearLocalSession();
+        return;
+      }
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        applySessionToProfile(session?.user ?? null);
+      }
+    });
+    authSubscription = result?.data?.subscription ?? null;
+  } catch {
+    // A client without auth events is fine; the app still works offline.
+  }
+}
+
+/** Refreshes the stored profile from a live session. */
+function applySessionToProfile(user: SessionLike['user']): void {
+  if (!user?.id) return;
+  const current = useAuthStore.getState().user;
+  if (!current) return;
+
+  const name = sessionName(user) ?? current.name;
+  const email = user.email ?? current.email;
+  const rollNo = sessionRollNo(user) ?? current.rollNo;
+
+  if (
+    current.authSource === 'supabase' &&
+    current.name === name &&
+    current.email === email &&
+    current.rollNo === rollNo
+  ) {
+    return;
+  }
+
+  const updated: UserProfile = {
+    ...current,
+    name,
+    email,
+    rollNo,
+    authSource: 'supabase',
+    isOfflineSession: false,
+  };
+  useAuthStore.setState({ user: updated, isGuest: false, isAuthenticated: true });
+  AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
+}
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  isGuest: true, // Default to guest mode during development
+  isGuest: true, // Guest mode until the store knows better.
   isAuthenticated: false,
+  hydrated: false,
   hasCompletedOnboarding: false,
   hasClassSetup: false,
   classSelection: {
@@ -179,20 +430,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   initAuth: async () => {
     try {
-      const [savedClass, savedUser, savedDeviceId, savedAvatarId, savedGuestName] =
+      const [savedClass, savedUser, savedDeviceId, savedAvatarId, savedGuestName, seenOnboarding] =
         await Promise.all([
           AsyncStorage.getItem(CLASS_SELECTION_STORAGE_KEY),
           AsyncStorage.getItem(USER_PROFILE_STORAGE_KEY),
           AsyncStorage.getItem(DEVICE_UNIQUE_STUDENT_ID_KEY),
           AsyncStorage.getItem(GUEST_AVATAR_ID_KEY),
           AsyncStorage.getItem(GUEST_NAME_KEY),
+          AsyncStorage.getItem(ONBOARDING_SEEN_STORAGE_KEY),
         ]);
 
       cachedDeviceId = savedDeviceId;
       cachedAvatarId = savedAvatarId;
       cachedGuestName = savedGuestName;
 
-      const updates: Partial<AuthState> = {};
+      const updates: Partial<AuthState> = {
+        hydrated: true,
+        hasCompletedOnboarding: seenOnboarding === 'true',
+      };
 
       if (savedClass) {
         try {
@@ -203,81 +458,106 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       }
 
+      let storedProfile: UserProfile | null = null;
       if (savedUser) {
         try {
-          const user: UserProfile = JSON.parse(savedUser);
-          if (!user.uniqueStudentId) {
-            user.uniqueStudentId = cachedDeviceId || generateUniqueStudentId();
-          }
-          if (!cachedDeviceId) {
-            cachedDeviceId = user.uniqueStudentId;
-            AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, cachedDeviceId).catch(() => {});
-          }
-          if (!cachedAvatarId && user.avatarId) {
-            cachedAvatarId = user.avatarId;
-            AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, cachedAvatarId).catch(() => {});
-          }
-          if (!cachedGuestName && user.name && user.name !== 'Student') {
-            cachedGuestName = user.name;
-            AsyncStorage.setItem(GUEST_NAME_KEY, cachedGuestName).catch(() => {});
-          }
-
-          AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(user)).catch(() => {});
-
-          updates.user = user;
-          const isGuestProfile =
-            user.rollNo === 'GUEST' || (user.isOfflineSession && (!user.rollNo || user.rollNo === 'GUEST'));
-          if (isGuestProfile) {
-            updates.isGuest = true;
-            updates.isAuthenticated = false;
-          } else {
-            updates.isAuthenticated = true;
-            updates.isGuest = false;
-          }
+          storedProfile = JSON.parse(savedUser) as UserProfile;
         } catch (_) {
           // ignore corrupted user profile
-        }
-      } else {
-        const currentUser = get().user;
-        if (currentUser && !currentUser.uniqueStudentId) {
-          const studentId = cachedDeviceId || generateUniqueStudentId();
-          cachedDeviceId = studentId;
-          const patched = {
-            ...currentUser,
-            uniqueStudentId: studentId,
-          };
-          updates.user = patched;
-          AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(patched)).catch(() => {});
-          AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, studentId).catch(() => {});
-        } else if (!currentUser) {
-          if (!cachedDeviceId) {
-            cachedDeviceId = generateUniqueStudentId();
-            AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, cachedDeviceId).catch(() => {});
-          }
-          if (!cachedAvatarId) {
-            cachedAvatarId = 'tech-scholar';
-            AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, cachedAvatarId).catch(() => {});
-          }
-          const guestProfile: UserProfile = {
-            id: 'guest',
-            rollNo: 'GUEST',
-            name: cachedGuestName || 'Student',
-            email: '',
-            uniqueStudentId: cachedDeviceId,
-            avatarId: cachedAvatarId,
-            classSelection: updates.classSelection || get().classSelection,
-            isOfflineSession: true,
-          };
-          updates.user = guestProfile;
-          updates.isGuest = true;
-          updates.isAuthenticated = false;
-          AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(guestProfile)).catch(() => {});
+          storedProfile = null;
         }
       }
 
+      // Ask the server who the user is. This is the only thing that can say
+      // whether a session is real: a stored profile alone proves nothing.
+      const serverUser = await readServerSession();
+
+      if (serverUser?.id) {
+        // A live, server-verified session wins.
+        const metadataName = sessionName(serverUser);
+        const profile: UserProfile = {
+          id: serverUser.id,
+          rollNo: sessionRollNo(serverUser) ?? storedProfile?.rollNo ?? '',
+          name: metadataName ?? storedProfile?.name ?? 'Student',
+          email: serverUser.email ?? storedProfile?.email ?? '',
+          avatarUrl: storedProfile?.avatarUrl ?? null,
+          avatarId: storedProfile?.avatarId ?? cachedAvatarId ?? 'tech-scholar',
+          uniqueStudentId:
+            storedProfile?.uniqueStudentId ?? cachedDeviceId ?? generateUniqueStudentId(),
+          classSelection: storedProfile?.classSelection ?? updates.classSelection ?? get().classSelection,
+          isOfflineSession: false,
+          authSource: 'supabase',
+        };
+
+        cachedDeviceId = profile.uniqueStudentId ?? cachedDeviceId;
+        cachedAvatarId = profile.avatarId ?? cachedAvatarId;
+        if (profile.name && profile.name !== 'Student') cachedGuestName = profile.name;
+
+        AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, cachedDeviceId ?? '').catch(() => {});
+        AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, cachedAvatarId ?? '').catch(() => {});
+        if (cachedGuestName) AsyncStorage.setItem(GUEST_NAME_KEY, cachedGuestName).catch(() => {});
+        AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(profile)).catch(() => {});
+
+        updates.user = profile;
+        updates.isGuest = false;
+        updates.isAuthenticated = true;
+      } else if (storedProfile) {
+        // No live session. The stored profile is kept, but only as an
+        // unverified offline state - never as a signed-in account.
+        const source = resolveAuthSource(storedProfile);
+        const profile: UserProfile = {
+          ...storedProfile,
+          uniqueStudentId:
+            storedProfile.uniqueStudentId ?? cachedDeviceId ?? generateUniqueStudentId(),
+          avatarId: storedProfile.avatarId ?? cachedAvatarId ?? 'tech-scholar',
+          authSource: source === 'supabase' ? 'offline' : source,
+          isOfflineSession: source !== 'guest',
+        };
+
+        cachedDeviceId = profile.uniqueStudentId ?? cachedDeviceId;
+        cachedAvatarId = profile.avatarId ?? cachedAvatarId;
+        if (profile.name && profile.name !== 'Student') cachedGuestName = profile.name;
+
+        AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, cachedDeviceId ?? '').catch(() => {});
+        AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, cachedAvatarId ?? '').catch(() => {});
+        if (cachedGuestName) AsyncStorage.setItem(GUEST_NAME_KEY, cachedGuestName).catch(() => {});
+        AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(profile)).catch(() => {});
+
+        updates.user = profile;
+        updates.isGuest = profile.authSource === 'guest';
+        updates.isAuthenticated = false;
+      } else {
+        // Nothing stored: a fresh guest profile for this device.
+        if (!cachedDeviceId) {
+          cachedDeviceId = generateUniqueStudentId();
+          AsyncStorage.setItem(DEVICE_UNIQUE_STUDENT_ID_KEY, cachedDeviceId).catch(() => {});
+        }
+        if (!cachedAvatarId) {
+          cachedAvatarId = 'tech-scholar';
+          AsyncStorage.setItem(GUEST_AVATAR_ID_KEY, cachedAvatarId).catch(() => {});
+        }
+        const guestProfile: UserProfile = {
+          id: 'guest',
+          rollNo: 'GUEST',
+          name: cachedGuestName || 'Student',
+          email: '',
+          uniqueStudentId: cachedDeviceId,
+          avatarId: cachedAvatarId,
+          classSelection: updates.classSelection || get().classSelection,
+          isOfflineSession: true,
+          authSource: 'guest',
+        };
+        updates.user = guestProfile;
+        updates.isGuest = true;
+        updates.isAuthenticated = false;
+        AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(guestProfile)).catch(() => {});
+      }
+
       set(updates);
+      subscribeToAuthEvents();
     } catch (_) {
       // ignore storage hydration error
+      set({ hydrated: true });
     }
   },
 
@@ -346,12 +626,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           uniqueStudentId: persistentUniqueId,
           classSelection: get().classSelection,
           isOfflineSession: false,
+          authSource: 'supabase',
         };
 
         set({
           user: userProfile,
           isGuest: false,
           isAuthenticated: true,
+          hydrated: true,
         });
 
         await AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(userProfile)).catch(() => {});
@@ -361,22 +643,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     }
 
-    // Supabase is not configured: local-only session for the offline build.
+    // Supabase is not configured: a local-only session for the offline build.
+    // It is explicitly marked as unverified - it is not a signed-in account.
     const localUser: UserProfile = {
       id: `usr_${Date.now()}`,
       rollNo: identifier,
-      name: identifier.startsWith('22') ? 'Aarav Sharma' : (persistentGuestName || 'Student'),
+      name: persistentGuestName || 'Student',
       email: toLoginEmail(identifier),
       avatarId: persistentAvatarId,
       uniqueStudentId: persistentUniqueId,
       classSelection: get().classSelection,
       isOfflineSession: true,
+      authSource: 'offline',
     };
 
     set({
       user: localUser,
       isGuest: false,
       isAuthenticated: true,
+      hydrated: true,
     });
 
     await AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(localUser)).catch(() => {});
@@ -455,12 +740,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           uniqueStudentId: persistentUniqueId,
           classSelection: get().classSelection,
           isOfflineSession: false,
+          authSource: 'supabase',
         };
 
         set({
           user: newUser,
           isGuest: false,
           isAuthenticated: true,
+          hydrated: true,
         });
 
         await AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(newUser)).catch(() => {});
@@ -470,7 +757,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     }
 
-    // Supabase is not configured: local-only account for the offline build.
+    // Supabase is not configured: a local-only account for the offline build.
     const localUser: UserProfile = {
       id: `usr_${Date.now()}`,
       rollNo: trimmedRoll,
@@ -480,12 +767,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       uniqueStudentId: persistentUniqueId,
       classSelection: get().classSelection,
       isOfflineSession: true,
+      authSource: 'offline',
     };
 
     set({
       user: localUser,
       isGuest: false,
       isAuthenticated: true,
+      hydrated: true,
     });
 
     await AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(localUser)).catch(() => {});
@@ -551,12 +840,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       avatarId: persistentAvatarId,
       classSelection: get().classSelection,
       isOfflineSession: true,
+      authSource: 'guest',
     };
 
     set({
       user: guestUser,
       isGuest: true,
       isAuthenticated: false,
+      hydrated: true,
     });
 
     AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(guestUser)).catch(() => {});
@@ -564,6 +855,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   completeOnboarding: () => {
     set({ hasCompletedOnboarding: true });
+    AsyncStorage.setItem(ONBOARDING_SEEN_STORAGE_KEY, 'true').catch(() => {});
   },
 
   setClassSelection: (selection: ClassSelection) => {
@@ -581,9 +873,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       id: `usr_${Date.now()}`,
       rollNo: 'GUEST',
       name: updates.name || cachedGuestName || 'Student',
-      email: 'guest@gbu.ac.in',
+      email: '',
       classSelection: get().classSelection,
       isOfflineSession: true,
+      authSource: 'guest',
       uniqueStudentId: cachedDeviceId || generateUniqueStudentId(),
     };
 
@@ -616,16 +909,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(updatedUser)).catch(() => {});
   },
 
-  logout: () => {
-    if (isSupabaseConfigured) {
-      supabase.auth.signOut().catch(() => {});
-    }
+  logout: async () => {
+    // The in-memory state is cleared first and synchronously: a sign-out must
+    // never leave the previous student's data on screen.
     set({
       user: null,
       isGuest: true,
       isAuthenticated: false,
     });
-    AsyncStorage.removeItem(USER_PROFILE_STORAGE_KEY).catch(() => {});
+
+    // The wipe is started now, not after the network call, so the personal
+    // data is gone even when the server cannot be reached.
+    const wipe = clearPersonalData();
+
+    if (isSupabaseConfigured) {
+      try {
+        // Awaited: an unawaited sign-out leaves the refresh token on disk
+        // while the app believes it is signed out.
+        await supabase.auth.signOut();
+      } catch (_) {
+        // The server may be unreachable. The local session is gone either way.
+      }
+    }
+
+    await wipe;
+  },
+
+  clearLocalSession: async () => {
+    await clearPersonalData();
   },
 }));
 

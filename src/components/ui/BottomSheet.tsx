@@ -7,6 +7,13 @@ export interface BottomSheetProps {
   title?: string;
   children: React.ReactNode;
   height?: number | string;
+  /**
+   * The ACTION the close control performs, in the student's words:
+   * "Close" for an ordinary sheet, "Dismiss alarm" for the class alarm.
+   */
+  closeLabel?: string;
+  /** Whether a tap on the backdrop closes the sheet. Default: true. */
+  dismissOnBackdropPress?: boolean;
 }
 
 /**
@@ -22,6 +29,8 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   title,
   children,
   height,
+  closeLabel,
+  dismissOnBackdropPress,
 }) => {
   const numericHeight = typeof height === 'number' ? height : undefined;
 
@@ -31,6 +40,8 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
       onClose={onClose}
       title={title}
       height={numericHeight}
+      closeLabel={closeLabel}
+      dismissOnBackdropPress={dismissOnBackdropPress}
     >
       {children}
     </SheetOverlay>

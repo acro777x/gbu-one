@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -19,6 +19,9 @@ import { useAuthStore, MIN_PASSWORD_LENGTH } from '../src/store/useAuthStore';
 import { useAppTheme } from '../src/lib/ThemeContext';
 import { theme } from '../src/lib/theme';
 
+/** A deliberately simple e-mail check, used before a reset mail is requested. */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function LoginScreen() {
   const { colors, isDark } = useAppTheme();
   const [rollNo, setRollNo] = useState('');
@@ -27,6 +30,12 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  /**
+   * A warning the student has to acknowledge. It is never navigated away
+   * automatically: a security-relevant notice must stay on screen until the
+   * student says they have read it.
+   */
+  const [pendingContinue, setPendingContinue] = useState(false);
 
   // Registration sheet state
   const [registerVisible, setRegisterVisible] = useState(false);
@@ -45,26 +54,11 @@ export default function LoginScreen() {
   const [resetLoading, setResetLoading] = useState(false);
 
   const { login, register, requestPasswordReset, loginAsGuest } = useAuthStore();
-  const continueTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (continueTimer.current) {
-        clearTimeout(continueTimer.current);
-      }
-    };
-  }, []);
-
-  const scheduleContinue = (delayMs: number) => {
-    if (continueTimer.current) {
-      clearTimeout(continueTimer.current);
-    }
-    continueTimer.current = setTimeout(() => router.replace('/(tabs)'), delayMs);
-  };
 
   const handleLogin = async () => {
     setErrorMessage(null);
     setNoticeMessage(null);
+    setPendingContinue(false);
     setLoading(true);
 
     const result = await login(rollNo, password);
@@ -76,10 +70,12 @@ export default function LoginScreen() {
     }
 
     if (result.offline) {
+      // The sign-in was not verified. Keep the student on this screen until
+      // they have read that and chosen to continue.
       setNoticeMessage(
         'Offline mode: the server is not configured, so this sign-in was not verified. Your profile is stored on this device only.'
       );
-      scheduleContinue(2600);
+      setPendingContinue(true);
       return;
     }
 
@@ -95,6 +91,10 @@ export default function LoginScreen() {
     setRegError(null);
     if (!regName.trim() || !regRoll.trim() || !regEmail.trim() || !regPassword) {
       setRegError('All fields are required.');
+      return;
+    }
+    if (!EMAIL_PATTERN.test(regEmail.trim())) {
+      setRegError('Enter a valid email address, for example student@gbu.ac.in.');
       return;
     }
     if (regPassword.length < MIN_PASSWORD_LENGTH) {
@@ -120,7 +120,7 @@ export default function LoginScreen() {
       setNoticeMessage(
         'Offline mode: the account was created on this device only and was not sent to the server.'
       );
-      scheduleContinue(2600);
+      setPendingContinue(true);
       return;
     }
     router.replace('/(tabs)');
@@ -131,6 +131,10 @@ export default function LoginScreen() {
     setResetDone(false);
     if (!resetEmail.trim()) {
       setResetError('Enter the email address on your account.');
+      return;
+    }
+    if (!EMAIL_PATTERN.test(resetEmail.trim())) {
+      setResetError('Enter a valid email address, for example student@gbu.ac.in.');
       return;
     }
     setResetLoading(true);
@@ -165,15 +169,39 @@ export default function LoginScreen() {
         {/* Input Card */}
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
           {errorMessage && (
-            <View style={[styles.errorBox, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}>
+            <View
+              style={[styles.errorBox, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+            >
               <Text style={[styles.errorText, { color: colors.danger }]}>{errorMessage}</Text>
             </View>
           )}
 
           {noticeMessage && (
-            <View style={[styles.noticeBox, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+            <View
+              style={[styles.noticeBox, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+            >
               <Text style={[styles.noticeText, { color: colors.accent }]}>{noticeMessage}</Text>
             </View>
+          )}
+
+          {/*
+            The student stays on this screen until they acknowledge the
+            notice. A warning about an unverified sign-in must not disappear
+            on a timer the student cannot see or cancel.
+          */}
+          {pendingContinue && (
+            <PillButton
+              label="Continue"
+              onPress={() => router.replace('/(tabs)')}
+              variant="primary"
+              size="md"
+              style={styles.continueBtn}
+              accessibilityLabel="Continue to the app"
+            />
           )}
 
           {/* Roll Number Field */}
@@ -201,7 +229,10 @@ export default function LoginScreen() {
                 placeholderTextColor={colors.textTertiary}
                 autoCapitalize="none"
                 autoCorrect={false}
-                keyboardType="email-address"
+                // A roll number contains slashes, so the keyboard must not be
+                // the e-mail one (it hides the slash key on Android).
+                keyboardType="default"
+                textContentType="username"
                 style={[styles.textInput, { color: colors.textPrimary }]}
                 accessibilityLabel="Roll number or email address"
                 accessibilityHint="Students enter their roll number. The owner and moderators enter the email address of their GBU One account."
@@ -237,12 +268,22 @@ export default function LoginScreen() {
                 placeholder={`Min ${MIN_PASSWORD_LENGTH} characters`}
                 placeholderTextColor={colors.textTertiary}
                 secureTextEntry={!showPassword}
+                // iOS must never silently capitalise the first letter of a
+                // password.
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
+                textContentType="password"
                 style={[styles.textInput, { color: colors.textPrimary }]}
+                accessibilityLabel="App password"
+                accessibilityHint="Your GBU One app password, not your university portal password."
               />
               <TouchableOpacity
                 onPress={() => setShowPassword(!showPassword)}
                 hitSlop={8}
                 style={styles.eyeBtn}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: showPassword }}
                 accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? (
@@ -262,6 +303,7 @@ export default function LoginScreen() {
               hitSlop={8}
               style={styles.forgotRow}
               accessibilityRole="button"
+              accessibilityLabel="Forgot password"
             >
               <Text style={[styles.forgotLink, { color: colors.accent }]}>Forgot password?</Text>
             </TouchableOpacity>
@@ -572,6 +614,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontFamily: 'Inter-Regular',
     fontSize: 12,
+  },
+  continueBtn: {
+    marginBottom: theme.spacing.md,
   },
   guestBtn: {},
   footer: {

@@ -26,16 +26,19 @@ describe('generated schema', () => {
   it('carries the row level security block the app depends on', () => {
     for (const needle of [
       'create or replace function public.is_moderator()',
+      'create or replace function public.is_owner()',
+      'create or replace function public.claim_initial_admin()',
       'create policy "moderators read own"',
       'create policy "pyq papers approved read"',
       'create policy "pyq papers insert pending"',
       'create policy "pyq papers moderator update"',
       'create policy "device tokens own"',
+      'create policy "device tokens guest insert"',
+      'create policy "reports own read"',
       'create policy "pyq moderator move"',
       'campus-events',
       'create policy "campus events storage read"',
       'create policy "campus events storage insert"',
-      'create policy "campus events write"',
     ]) {
       expect(generated).toContain(needle);
     }
@@ -58,5 +61,102 @@ describe('generated schema', () => {
     expect(definitions).toHaveLength(1);
     expect(generated).toMatch(/security definer[\s\S]{0,80}select exists \(\s*select 1 from public\.moderators/);
     expect(generated).toContain('grant execute on function public.is_moderator()');
+  });
+
+  // ---------------------------------------------------------------------
+  // Policy SEMANTICS, not just policy names.
+  //
+  // A name-only assertion let a one-word change through: swapping
+  // `using (status = 'approved')` for `using (true)` on the approved-read
+  // policy would expose every PENDING paper to an anonymous reader and the
+  // old test still passed. These assertions read the policy bodies.
+  // ---------------------------------------------------------------------
+  function policyBody(name: string): string {
+    // Policy names in this schema are plain words, so a literal match is safe.
+    const marker = 'create policy "' + name + '"';
+    const start = generated.indexOf(marker);
+    expect(start).toBeGreaterThan(-1);
+    if (start < 0) return '';
+    const end = generated.indexOf(';', start);
+    return generated.slice(start, end + 1);
+  }
+
+  it('never lets an anonymous client write university data', () => {
+    const policies = generated.match(/create policy[\s\S]*?;/g) ?? [];
+    for (const policy of policies) {
+      const name = (policy.match(/create policy "([^"]+)"/) ?? [])[1] ?? '';
+      const grantsAnon = /\bto anon\b/.test(policy);
+      const isWrite =
+        /\bfor (insert|update|delete|all)\b/.test(policy) ||
+        /\bwith check\b/.test(policy);
+      if (!grantsAnon || !isWrite) continue;
+
+      // The only anonymous writes that are allowed by design:
+      //  - a student queues a paper in the PRIVATE pyq-pending bucket
+      //  - a student queues a paper row (the WITH CHECK binds it to the
+      //    uploader, so nobody can claim another student's identity)
+      //  - a guest registers its own push token
+      const allowed = [
+        'pyq pending upload',
+        'pyq papers insert pending',
+        'device tokens guest insert',
+      ];
+      expect({ name, allowed: allowed.includes(name) }).toEqual({ name, allowed: true });
+    }
+  });
+
+  it('does not leave an unrestricted write policy on campus events or exam date slots', () => {
+    // These two used to be `for all to anon, authenticated using (true)
+    // with check (true)`, so anybody could delete every campus event or
+    // rewrite the exam date sheet every student trusts.
+    for (const name of ['campus events write', 'exam date slots write']) {
+      expect(generated).not.toContain(`create policy "${name}"`);
+    }
+    expect(policyBody('campus events moderator write')).toContain('public.is_moderator()');
+    expect(policyBody('exam date slots moderator write')).toContain('public.is_moderator()');
+  });
+
+  it('keeps the approved-only read on pending papers', () => {
+    const body = policyBody('pyq papers approved read');
+    expect(body).toContain("using (status = 'approved')");
+    expect(body).not.toContain('using (true)');
+  });
+
+  it('binds a queued paper to the uploader who filed it', () => {
+    const body = policyBody('pyq papers insert pending');
+    expect(body).toContain("status = 'pending'");
+    expect(body).toContain('uploader_id is null or uploader_id = auth.uid()');
+  });
+
+  it('lets a student read only their own reports', () => {
+    const body = policyBody('reports own read');
+    expect(body).toContain('reporter_id = auth.uid()');
+    expect(body).not.toContain('using (true)');
+  });
+
+  it('leaves the private pending bucket private when the script is re-pasted', () => {
+    // `on conflict (id) do update set public = true` used to turn the
+    // PRIVATE pyq-pending bucket public the moment the owner re-pasted.
+    expect(generated).toContain("('pyq-pending', 'pyq-pending', false,");
+    expect(generated).not.toMatch(/on conflict \(id\) do update set public = true/);
+    expect(generated).toContain('public = excluded.public');
+  });
+
+  it('enables row level security on every table it creates', () => {
+    const tables = [
+      ...generated.matchAll(/create table if not exists public\.(\w+)/g),
+    ].map((m) => m[1]);
+    expect(tables.length).toBeGreaterThan(15);
+    for (const table of tables) {
+      expect(generated).toContain(`alter table public.${table} enable row level security;`);
+    }
+  });
+
+  it('makes the realtime broadcast channels moderator-only', () => {
+    expect(generated).toContain('realtime.topic()');
+    expect(generated).toContain("'gbu_notices'");
+    expect(generated).toContain("'gbu_version_updates'");
+    const realtimeBlock = generated.slice(generated.indexOf('realtime'));
+    expect(realtimeBlock).toContain('public.is_moderator()');
   });
 });

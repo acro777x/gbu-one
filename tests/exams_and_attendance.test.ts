@@ -13,7 +13,10 @@ import {
 import {
   MOCK_CALENDAR_EVENTS,
   filterCalendarEvents,
+  type CalendarEvent,
 } from '../src/features/calendar/calendarService';
+import { mergeCalendarEvents } from '../src/features/calendar/useCalendarQuery';
+import { OFFICIAL_ACADEMIC_EVENTS } from '../src/features/calendar/officialAcademicCalendar';
 import {
   calculateAttendanceStatus,
   useAttendanceStore,
@@ -102,6 +105,25 @@ describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
       const all = filterCalendarEvents(MOCK_CALENDAR_EVENTS, 'All');
       expect(all).toHaveLength(MOCK_CALENDAR_EVENTS.length);
     });
+
+    it('merges official academic events with incoming worker events without discarding holidays', () => {
+      const workerEvents: CalendarEvent[] = [
+        {
+          id: 'worker_special_1',
+          title: 'Special Convocation 2026',
+          dateFrom: '2026-11-20',
+          dateTo: '2026-11-20',
+          category: 'academic',
+        },
+      ];
+      const merged = mergeCalendarEvents(OFFICIAL_ACADEMIC_EVENTS, workerEvents);
+
+      expect(merged.length).toBe(OFFICIAL_ACADEMIC_EVENTS.length + 1);
+      const titles = merged.map((e) => e.title);
+      expect(titles).toContain('Special Convocation 2026');
+      expect(titles).toContain('Diwali (Deepawali)');
+      expect(titles).toContain('Mid semester examination');
+    });
   });
 
   describe('Attendance Tracker & 75% Formula', () => {
@@ -150,30 +172,47 @@ describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
       expect(overflow.isShortage).toBe(false);
     });
 
+    it('initialises attendance as empty on cold start so students are not served a fabricated record', () => {
+      useAttendanceStore.getState().resetAll();
+      expect(useAttendanceStore.getState().subjects).toEqual([]);
+    });
+
     it('updates attendance store state when marking classes', () => {
       const store = useAttendanceStore.getState();
-      const initialSubject = store.subjects[0];
-      const initialAttended = initialSubject.attended;
-      const initialTotal = initialSubject.total;
+      store.resetAll();
 
-      store.markAttended(initialSubject.subjectCode);
-      const afterAttend = useAttendanceStore
+      // Marking an attended class adds the subject dynamically
+      store.markAttended('CSE205', 'Data Structures & Algorithms');
+      let subject = useAttendanceStore
         .getState()
-        .subjects.find((s) => s.subjectCode === initialSubject.subjectCode);
+        .subjects.find((s) => s.subjectCode === 'CSE205');
 
-      expect(afterAttend?.attended).toBe(initialAttended + 1);
-      expect(afterAttend?.total).toBe(initialTotal + 1);
+      expect(subject?.attended).toBe(1);
+      expect(subject?.total).toBe(1);
 
-      store.markMissed(initialSubject.subjectCode);
-      const afterMiss = useAttendanceStore
+      // Marking again increments both
+      store.markAttended('CSE205');
+      subject = useAttendanceStore
         .getState()
-        .subjects.find((s) => s.subjectCode === initialSubject.subjectCode);
+        .subjects.find((s) => s.subjectCode === 'CSE205');
+      expect(subject?.attended).toBe(2);
+      expect(subject?.total).toBe(2);
 
-      expect(afterMiss?.attended).toBe(initialAttended + 1);
-      expect(afterMiss?.total).toBe(initialTotal + 2);
+      // Marking missed increments only total
+      store.markMissed('CSE205');
+      subject = useAttendanceStore
+        .getState()
+        .subjects.find((s) => s.subjectCode === 'CSE205');
+      expect(subject?.attended).toBe(2);
+      expect(subject?.total).toBe(3);
     });
 
     it('calculates aggregate attendance battery percentage and safety margins', () => {
+      const store = useAttendanceStore.getState();
+      store.resetAll();
+      store.setAttendance('CSE205', 24, 28, 'Data Structures & Algorithms');
+      store.setAttendance('CSE209', 22, 30, 'Operating Systems');
+
       const subjects = useAttendanceStore.getState().subjects;
       const totalAttended = subjects.reduce((acc, s) => acc + s.attended, 0);
       const totalClasses = subjects.reduce((acc, s) => acc + s.total, 0);

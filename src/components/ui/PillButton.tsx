@@ -25,6 +25,7 @@ export interface PillButtonProps {
   style?: ViewStyle;
   textStyle?: TextStyle;
   icon?: React.ReactNode;
+  accessibilityLabel?: string;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -39,6 +40,7 @@ export const PillButton: React.FC<PillButtonProps> = ({
   style,
   textStyle,
   icon,
+  accessibilityLabel,
 }) => {
   const { colors } = useAppTheme();
   const scale = useSharedValue(1);
@@ -114,7 +116,7 @@ export const PillButton: React.FC<PillButtonProps> = ({
         animStyle,
       ]}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
     >
       {loading ? (
         <ActivityIndicator size="small" color={labelColor()} />

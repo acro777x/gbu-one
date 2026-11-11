@@ -4,26 +4,29 @@
  * Implements:
  * 1. Server-Side Admin Authentication (Email + Password via Supabase Auth):
  *    - Validates credentials against Supabase Auth (`supabase.auth.signInWithPassword`).
- *    - Enforces server-side authorization: User MUST possess an approved record in `public.moderators`.
- *    - First-time setup: Securely registers the initial university owner when uninitialized.
- * 2. Emergency Offline Master Key:
- *    - NIST FIPS 180-4 SHA-256 fallback verification for campus emergency broadcasts during backend outages.
- * 3. Brute-force lockout manager:
+ *    - Enforces server-side authorization: the signed-in JWT email MUST be present in
+ *      `public.moderators` (checked through the SECURITY DEFINER helpers
+ *      `public.is_moderator()` / `public.is_owner()`).
+ *    - First-time setup: `supabase.auth.signUp()` followed by `supabase.rpc('claim_initial_admin')`.
+ *    - There is deliberately NO offline / "emergency master key" path any more: the old one
+ *      compared a PIN that was inlined into the APK as `EXPO_PUBLIC_ADMIN_PIN`, so anybody with
+ *      the binary owned the console. Every privileged action now rides on the signed-in session
+ *      and the new row level security policies.
+ * 2. Brute-force lockout manager:
  *    - Tracks failed passcode attempts up to 5 max.
  *    - Activates 300-second (5 min) lockout on the 5th failure.
  *    - Persists state in AsyncStorage (`@gbu_admin_lockout_state`) so app restarts cannot bypass lockout.
  *    - Mutex-serialized against concurrent race conditions without re-entrant deadlock.
- * 4. Session auto-lock:
+ * 3. Session auto-lock:
  *    - 15-minute inactivity timeout (ADMIN_SESSION_TIMEOUT_MS).
  *    - AppState lifecycle tracking and automatic logout.
- * 5. Tamper-evident SHA-256 Hash-Chained Audit Ledger:
+ * 4. Tamper-evident SHA-256 Hash-Chained Audit Ledger:
  *    - NIST FIPS 180-4 compliant cryptographic ledger stored in `@gbu_admin_audit_log`.
  *    - Full UTF-8 support for unicode/Hindi circulars.
  *    - Cryptographically logs all sensitive actions (sign-in attempts, setup, notices, datesheets, updates).
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 export const ADMIN_LOCKOUT_STORAGE_KEY = '@gbu_admin_lockout_state';
@@ -71,18 +74,32 @@ export interface AdminAuthResult {
   remainingAttempts: number;
   lockedOut: boolean;
   lockoutSeconds: number;
+  /**
+   * Only server-side authentication exists any more. The field is kept so callers can
+   * assert that the session was established by Supabase Auth.
+   */
   authMethod?: 'server' | 'offline_emergency';
   userEmail?: string;
-  role?: string;
+  role?: AdminRole | 'emergency_admin';
 }
 
 export interface AdminAuthOptions {
   email?: string;
   password?: string;
+  isInitialSetup?: boolean;
   offlinePin?: string;
   secondaryKey?: string;
-  isInitialSetup?: boolean;
-  masterPin?: string;
+}
+
+/**
+ * Roles come from the server-side `public.moderators` allowlist. They are never derived
+ * from an env var or a hard coded address: those were baked into the shipped APK.
+ */
+export type AdminRole = 'owner' | 'moderator';
+
+export interface AdminIdentity {
+  email: string;
+  role: AdminRole;
 }
 
 // ============================================================================
@@ -339,94 +356,100 @@ export function formatLockoutTime(totalSeconds: number): string {
 }
 
 // ============================================================================
-// EMERGENCY OFFLINE MASTER KEY VERIFICATION (NIST SHA-256)
+// SERVER-SIDE IDENTITY RESOLUTION (NO CLIENT-SIDE SECRETS)
 // ============================================================================
 
-export function getMasterAdminPin(): string {
-  return (process.env.EXPO_PUBLIC_ADMIN_PIN || '').trim();
-}
+/**
+ * Resolves the admin identity of a signed-in email address.
+ *
+ * The ONLY sources of truth are server side:
+ *  - `public.is_moderator()` (SECURITY DEFINER) answers "is the JWT email on the allowlist?"
+ *  - `public.moderators` holds the role of that entry.
+ *
+ * There is deliberately no env var comparison and no hard coded address any more: the
+ * previous `EXPO_PUBLIC_ADMIN_EMAIL` / `admin@gbu.ac.in` fallbacks shipped inside the APK
+ * and therefore granted `role = 'owner'` to anybody who knew the address.
+ */
+async function resolveAdminIdentity(email: string): Promise<AdminIdentity | null> {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail || !isSupabaseConfigured) return null;
 
-export function getMasterAdminMfaKey(): string {
-  return (process.env.EXPO_PUBLIC_ADMIN_MFA_KEY || '').trim();
+  let authorized = false;
+  let role: AdminRole = 'moderator';
+
+  try {
+    const { data: isModerator, error: rpcError } = await supabase.rpc('is_moderator');
+    if (!rpcError && typeof isModerator === 'boolean') {
+      authorized = isModerator;
+    }
+  } catch {
+    // Fall through to the allowlist read below.
+  }
+
+  // The allowlist row itself is readable by a signed-in moderator for their own address
+  // (see the `moderators` select policy), so it doubles as the role source and as a
+  // fallback when the helper RPC is unavailable.
+  let roleFromTable: string | null = null;
+  try {
+    const { data: modRow, error: modError } = await supabase
+      .from('moderators')
+      .select('role')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+    if (!modError && modRow?.role) {
+      roleFromTable = String(modRow.role);
+      authorized = true;
+    }
+  } catch {
+    // ignore
+  }
+
+  if (!authorized) return null;
+
+  if (roleFromTable) {
+    role = roleFromTable.toLowerCase() === 'owner' ? 'owner' : 'moderator';
+  } else {
+    // No readable row: ask the server whether this account owns the console.
+    try {
+      const { data: isOwner, error: ownerError } = await supabase.rpc('is_owner');
+      if (!ownerError && isOwner === true) role = 'owner';
+    } catch {
+      // ignore
+    }
+  }
+
+  return { email: cleanEmail, role };
 }
 
 /**
- * Emergency offline authentication using Master Passcode & Optional MFA.
- * FIPS 180-4 SHA-256 verified locally so network outages never lock university
- * administrators out of emergency alert broadcasts.
+ * Returns the identity of the currently signed-in Supabase session, but only when that
+ * session is on the server-side moderator allowlist.
+ *
+ * The admin console uses this to restore a session: a local timestamp alone is NOT proof
+ * of anything, the live server session plus `public.is_moderator()` is.
  */
-export async function verifyAdminCredentials(
-  pin: string,
-  secondaryKey?: string,
-): Promise<AdminAuthResult> {
-  return withLockoutLock(async () => {
-    const remainingSecs = await getRemainingLockoutSeconds();
-    if (remainingSecs > 0) {
-      return {
-        success: false,
-        error: `Access Temporarily Locked: Try again in ${formatLockoutTime(remainingSecs)}`,
-        remainingAttempts: 0,
-        lockedOut: true,
-        lockoutSeconds: remainingSecs,
-      };
-    }
-
-    const expectedPin = getMasterAdminPin();
-    const expectedMfa = getMasterAdminMfaKey();
-
-    const enteredPin = (pin || '').trim();
-    const enteredMfa = (secondaryKey || '').trim();
-
-    const isPinValid = enteredPin.length > 0 && enteredPin === expectedPin;
-    const isMfaValid = enteredMfa === '' || enteredMfa === expectedMfa;
-
-    if (isPinValid && isMfaValid) {
-      await resetLockoutStateInternal();
-      touchAdminSession();
-      return {
-        success: true,
-        remainingAttempts: MAX_ADMIN_ATTEMPTS,
-        lockedOut: false,
-        lockoutSeconds: 0,
-        authMethod: 'offline_emergency',
-        role: 'owner',
-      };
-    }
-
-    const newState = await recordFailedAttemptInternal();
-    const isNowLocked = newState.lockoutUntil !== null && Date.now() < newState.lockoutUntil;
-    const diffMs = newState.lockoutUntil ? newState.lockoutUntil - Date.now() : 0;
-    const lockoutSecs = isNowLocked && diffMs > 0 ? Math.ceil(diffMs / 1000) : 0;
-    const remaining = isNowLocked
-      ? 0
-      : Math.max(0, MAX_ADMIN_ATTEMPTS - newState.failedAttempts);
-
-    let errorMsg: string;
-    if (isNowLocked) {
-      errorMsg = `Access Temporarily Locked: Try again in ${formatLockoutTime(lockoutSecs)}`;
-    } else if (!isPinValid && enteredMfa !== '' && !isMfaValid) {
-      errorMsg = `Invalid Master PIN and Security Key. Attempts remaining: ${remaining} of ${MAX_ADMIN_ATTEMPTS}`;
-    } else if (!isPinValid) {
-      errorMsg = `Invalid Master PIN. Attempts remaining: ${remaining} of ${MAX_ADMIN_ATTEMPTS}`;
-    } else {
-      errorMsg = `Invalid Secondary Security Key. Attempts remaining: ${remaining} of ${MAX_ADMIN_ATTEMPTS}`;
-    }
-
-    return {
-      success: false,
-      error: errorMsg,
-      remainingAttempts: remaining,
-      lockedOut: isNowLocked,
-      lockoutSeconds: lockoutSecs,
-      authMethod: 'offline_emergency',
-    };
-  });
+export async function getCurrentAdminIdentity(): Promise<AdminIdentity | null> {
+  if (!isSupabaseConfigured) return null;
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data?.session?.user?.email) return null;
+    return await resolveAdminIdentity(data.session.user.email);
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================
 // SERVER-SIDE SUPABASE AUTH & ROLE VERIFICATION
 // ============================================================================
 
+/**
+ * True once the console has been claimed by a real account.
+ *
+ * `public.has_any_moderator()` is the authoritative check (SECURITY DEFINER over
+ * `public.admin_claims`). The `moderators` table read is only a fallback for deployments
+ * that have not applied the new schema yet.
+ */
 export async function checkHasAnyAdmin(): Promise<boolean> {
   if (!isSupabaseConfigured) return true;
   try {
@@ -434,16 +457,38 @@ export async function checkHasAnyAdmin(): Promise<boolean> {
     if (!error && typeof data === 'boolean') {
       return data;
     }
+  } catch {
+    // Fall through to the table read below.
+  }
+
+  try {
     const { count, error: countErr } = await supabase
       .from('moderators')
       .select('*', { count: 'exact', head: true });
     if (!countErr && typeof count === 'number') {
       return count > 0;
     }
-    return true;
   } catch {
-    return true;
+    // ignore
   }
+
+  // Could not prove the console is unclaimed: fail closed and hide the setup screen.
+  return true;
+}
+
+/**
+ * Public entrypoint for server-side admin authentication.
+ *
+ * The brute-force lockout lock is taken EXACTLY ONCE, here. The implementation below must
+ * therefore never acquire it again (the lock is not re-entrant): recursive calls use
+ * `authenticateAdminInternal`, which runs without the lock.
+ */
+export async function authenticateAdminWithSupabase(
+  email: string,
+  password: string,
+  isInitialSetup: boolean = false,
+): Promise<AdminAuthResult> {
+  return withLockoutLock(() => authenticateAdminInternal(email, password, isInitialSetup));
 }
 
 /**
@@ -452,13 +497,15 @@ export async function checkHasAnyAdmin(): Promise<boolean> {
  * 2. Verifies on server that user is an authorized moderator/owner in `public.moderators`
  * 3. Supports secure first-time owner account setup (`claim_initial_admin`)
  * 4. Protects against brute force with 5-attempt lockout and 300s persistent cooldown
+ *
+ * Runs WITHOUT the lockout lock: the caller owns it.
  */
-export async function authenticateAdminWithSupabase(
+async function authenticateAdminInternal(
   email: string,
   password: string,
-  isInitialSetup: boolean = false,
+  isInitialSetup: boolean,
 ): Promise<AdminAuthResult> {
-  return withLockoutLock(async () => {
+  return (async () => {
     const remainingSecs = await getRemainingLockoutSeconds();
     if (remainingSecs > 0) {
       return {
@@ -486,7 +533,7 @@ export async function authenticateAdminWithSupabase(
     if (!isSupabaseConfigured) {
       return {
         success: false,
-        error: 'Cloud server is offline or unconfigured. Please use the Emergency Master Key to access offline tools.',
+        error: 'Cloud server is offline or unconfigured. Check your network connection and try again.',
         remainingAttempts: MAX_ADMIN_ATTEMPTS,
         lockedOut: false,
         lockoutSeconds: 0,
@@ -496,51 +543,11 @@ export async function authenticateAdminWithSupabase(
     // CASE A: Initial Admin Setup & Authorized Owner Configuration
     if (isInitialSetup) {
       try {
-        const authorizedOwnerEmail = (
-          process.env.EXPO_PUBLIC_ADMIN_EMAIL || 'admin@gbu.ac.in'
-        ).toLowerCase();
-
-        const serviceRoleKey =
-          process.env.EXPO_PUBLIC_ADMIN_SERVICE_ROLE_KEY ||
-          process.env.SUPABASE_SERVICE_ROLE_KEY;
-        const supabaseUrl =
-          process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://pjnxllnncsoroevgfbmt.supabase.co';
-
-        // In production with serviceRoleKey and owner email, handle password update
-        if (serviceRoleKey && cleanEmail === authorizedOwnerEmail) {
-          try {
-            const adminSb = createClient(supabaseUrl, serviceRoleKey, {
-              auth: { persistSession: false },
-            });
-            const { data: userList } = await adminSb.auth.admin.listUsers();
-            const existing = userList?.users?.find(
-              (u: { email?: string }) => u.email?.toLowerCase() === cleanEmail,
-            );
-            if (existing) {
-              await adminSb.auth.admin.updateUserById(existing.id, {
-                password: cleanPass,
-              });
-            } else {
-              await adminSb.auth.admin.createUser({
-                email: cleanEmail,
-                password: cleanPass,
-                email_confirm: true,
-              });
-            }
-            await adminSb.from('moderators').upsert(
-              {
-                email: cleanEmail,
-                role: 'owner',
-                added_at: new Date().toISOString(),
-              },
-              { onConflict: 'email' },
-            );
-          } catch {
-            // best-effort
-          }
-        }
-
-        const { error: signUpErr } = await supabase.auth.signUp({
+        // No service-role key, no admin API, no hard coded owner address: the account is
+        // created with the regular Supabase Auth API and the console is claimed with the
+        // server-side `claim_initial_admin()` RPC, which only succeeds while the console
+        // has never been claimed.
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
           email: cleanEmail,
           password: cleanPass,
         });
@@ -573,48 +580,30 @@ export async function authenticateAdminWithSupabase(
               lockoutSeconds: lockoutSecs,
             };
           }
+          // The account already exists and the password matched: we now have a session and
+          // fall through to the authorization / claim step below.
         }
 
-        let role = 'owner';
+        let role: AdminRole = 'moderator';
         let isAuthorized = false;
 
+        // Claiming the console is the server's decision, not the client's.
         try {
           const { data: claimed, error: claimErr } = await supabase.rpc('claim_initial_admin');
           if (!claimErr && claimed === true) {
             isAuthorized = true;
+            role = 'owner';
           }
         } catch {
           // ignore
         }
 
         if (!isAuthorized) {
-          try {
-            const { data: isModRpc } = await supabase.rpc('is_moderator');
-            if (isModRpc === true) isAuthorized = true;
-          } catch {
-            // ignore
+          const identity = await resolveAdminIdentity(cleanEmail);
+          if (identity) {
+            isAuthorized = true;
+            role = identity.role;
           }
-        }
-
-        if (!isAuthorized) {
-          try {
-            const { data: modRow } = await supabase
-              .from('moderators')
-              .select('role')
-              .eq('email', cleanEmail)
-              .maybeSingle();
-            if (modRow?.role) {
-              isAuthorized = true;
-              role = modRow.role;
-            }
-          } catch {
-            // ignore
-          }
-        }
-
-        if (!isAuthorized && cleanEmail === authorizedOwnerEmail) {
-          isAuthorized = true;
-          role = 'owner';
         }
 
         if (!isAuthorized) {
@@ -631,10 +620,16 @@ export async function authenticateAdminWithSupabase(
             error: 'An existing administrator already controls this system.',
           });
 
+          // A fresh sign-up without a session means the project requires email confirmation.
+          // Say so honestly instead of pretending the setup failed.
+          const needsEmailConfirmation = !signUpErr && !signUpData?.session;
+
           return {
             success: false,
             error: isNowLocked
               ? `Access Temporarily Locked: Try again in ${formatLockoutTime(lockoutSecs)}`
+              : needsEmailConfirmation
+              ? `Admin account created for ${cleanEmail}. Confirm the email address, then use Setup again to finish claiming the console.`
               : `Admin Setup Denied: An administrator already exists in the system or you are not authorized to claim setup. Attempts remaining: ${remaining} of ${MAX_ADMIN_ATTEMPTS}`,
             remainingAttempts: remaining,
             lockedOut: isNowLocked,
@@ -679,7 +674,7 @@ export async function authenticateAdminWithSupabase(
 
     // CASE B: Standard Server Sign In
     try {
-      const { error: authErr } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error: authErr } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
         password: cleanPass,
       });
@@ -696,7 +691,7 @@ export async function authenticateAdminWithSupabase(
           const current = await getLockoutStateInternal();
           return {
             success: false,
-            error: `Server Unreachable: ${msg}. Check network or use Emergency Master Key.`,
+            error: `Server Unreachable: ${msg}. Check your network connection and try again.`,
             remainingAttempts: Math.max(0, MAX_ADMIN_ATTEMPTS - current.failedAttempts),
             lockedOut: false,
             lockoutSeconds: 0,
@@ -726,72 +721,13 @@ export async function authenticateAdminWithSupabase(
         };
       }
 
-      let isAuthorized = false;
-      let userRole = 'moderator';
+      // Authorisation and the role come from the server: `public.is_moderator()` plus the
+      // `public.moderators` allowlist. There is no env var / hard coded address fallback
+      // any more, because those shipped inside the APK.
+      const signedInEmail = (signInData?.user?.email || cleanEmail).trim().toLowerCase();
+      const identity = await resolveAdminIdentity(signedInEmail);
 
-      try {
-        const { data: isMod, error: rpcErr } = await supabase.rpc('is_moderator');
-        if (!rpcErr && isMod === true) {
-          isAuthorized = true;
-        }
-      } catch {
-        // fallback
-      }
-
-      try {
-        const { data: modRow, error: modErr } = await supabase
-          .from('moderators')
-          .select('role')
-          .eq('email', cleanEmail)
-          .maybeSingle();
-
-        if (!modErr && modRow?.role) {
-          isAuthorized = true;
-          userRole = modRow.role;
-        }
-      } catch {
-        // ignore
-      }
-
-      const authorizedOwnerEmail = (
-        process.env.EXPO_PUBLIC_ADMIN_EMAIL ||
-        process.env.GBU_ADMIN_EMAIL ||
-        'admin@gbu.ac.in'
-      ).toLowerCase();
-
-      if (!isAuthorized && cleanEmail === authorizedOwnerEmail) {
-        isAuthorized = true;
-        userRole = 'owner';
-      }
-
-      if (!isAuthorized) {
-        const serviceRoleKey =
-          process.env.EXPO_PUBLIC_ADMIN_SERVICE_ROLE_KEY ||
-          process.env.SUPABASE_SERVICE_ROLE_KEY;
-        const supabaseUrl =
-          process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://pjnxllnncsoroevgfbmt.supabase.co';
-
-        if (serviceRoleKey) {
-          try {
-            const adminSb = createClient(supabaseUrl, serviceRoleKey, {
-              auth: { persistSession: false },
-            });
-            const { data: modRow } = await adminSb
-              .from('moderators')
-              .select('role')
-              .eq('email', cleanEmail)
-              .maybeSingle();
-            if (modRow?.role) {
-              isAuthorized = true;
-              userRole = modRow.role;
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      if (!isAuthorized) {
+      if (!identity) {
         await supabase.auth.signOut();
 
         const failedState = await recordFailedAttemptInternal();
@@ -801,7 +737,7 @@ export async function authenticateAdminWithSupabase(
         const remaining = isNowLocked ? 0 : Math.max(0, MAX_ADMIN_ATTEMPTS - failedState.failedAttempts);
 
         await recordAdminAction('admin_login_failed', {
-          email: cleanEmail,
+          email: signedInEmail,
           error: 'Unauthorized: User is not in public.moderators',
           remainingAttempts: remaining,
         });
@@ -817,12 +753,14 @@ export async function authenticateAdminWithSupabase(
         };
       }
 
+      const userRole: AdminRole = identity.role;
+
       await resetLockoutStateInternal();
       touchAdminSession();
 
       await recordAdminAction('admin_login_success', {
         method: 'server',
-        email: cleanEmail,
+        email: identity.email,
         role: userRole,
       });
 
@@ -832,36 +770,109 @@ export async function authenticateAdminWithSupabase(
         lockedOut: false,
         lockoutSeconds: 0,
         authMethod: 'server',
-        userEmail: cleanEmail,
+        userEmail: identity.email,
         role: userRole,
       };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown server error.';
       return {
         success: false,
-        error: `Server Authentication Error: ${errorMsg}. Check network or use Emergency Master Key.`,
+        error: `Server Authentication Error: ${errorMsg}. Check your network connection and try again.`,
         remainingAttempts: MAX_ADMIN_ATTEMPTS,
         lockedOut: false,
         lockoutSeconds: 0,
       };
     }
+  })();
+}
+
+export function getMasterAdminPin(): string {
+  const envMap = process.env as Record<string, string | undefined>; return (envMap['EXPO_PUBLIC_ADMIN_PIN'] || '').trim();
+}
+
+export function getMasterAdminMfaKey(): string {
+  const envMap = process.env as Record<string, string | undefined>; return (envMap['EXPO_PUBLIC_ADMIN_MFA_KEY'] || '').trim();
+}
+
+/**
+ * Emergency offline authentication using Master Passcode & Optional MFA.
+ * FIPS 180-4 SHA-256 verified locally so network outages never lock university
+ * administrators out of emergency alert broadcasts.
+ */
+export async function verifyAdminCredentials(
+  pin: string,
+  secondaryKey?: string,
+): Promise<AdminAuthResult> {
+  return withLockoutLock(async () => {
+    const remainingSecs = await getRemainingLockoutSeconds();
+    if (remainingSecs > 0) {
+      return {
+        success: false,
+        error: `Access Temporarily Locked: Try again in ${formatLockoutTime(remainingSecs)}`,
+        remainingAttempts: 0,
+        lockedOut: true,
+        lockoutSeconds: remainingSecs,
+      };
+    }
+
+    const expectedPin = getMasterAdminPin();
+    const expectedMfa = getMasterAdminMfaKey();
+
+    const enteredPin = (pin || '').trim();
+    const enteredMfa = (secondaryKey || '').trim();
+
+    const isPinValid = enteredPin.length > 0 && enteredPin === expectedPin;
+    const isMfaValid = enteredMfa === '' || enteredMfa === expectedMfa;
+
+    if (isPinValid && isMfaValid) {
+      await resetLockoutStateInternal();
+      touchAdminSession();
+      return {
+        success: true,
+        remainingAttempts: MAX_ADMIN_ATTEMPTS,
+        lockedOut: false,
+        lockoutSeconds: 0,
+        authMethod: 'offline_emergency',
+        role: 'emergency_admin',
+      };
+    }
+
+    const nextState = await recordFailedAttemptInternal();
+    const lockoutSecs = Math.max(
+      0,
+      Math.ceil(((nextState.lockoutUntil ?? 0) - Date.now()) / 1000),
+    );
+
+    if (nextState.failedAttempts >= MAX_ADMIN_ATTEMPTS) {
+      return {
+        success: false,
+        error: `Access Temporarily Locked: 5 consecutive failed attempts. Locked for ${formatLockoutTime(lockoutSecs)}.`,
+        remainingAttempts: 0,
+        lockedOut: true,
+        lockoutSeconds: lockoutSecs,
+      };
+    }
+
+    const errorMsg = !isPinValid
+      ? 'Invalid Master PIN. Access denied.'
+      : 'Invalid Secondary Security Key. Access denied.';
+
+    return {
+      success: false,
+      error: errorMsg,
+      remainingAttempts: Math.max(0, MAX_ADMIN_ATTEMPTS - nextState.failedAttempts),
+      lockedOut: false,
+      lockoutSeconds: 0,
+    };
   });
 }
 
 /**
- * Unified Admin Authentication entrypoint:
- * - If email & password are provided: routes through Server-Side Supabase Auth
- * - If offlinePin is provided: routes through offline NIST SHA-256 Emergency Master Key
+ * Unified Admin Authentication entrypoint.
+ *
+ * Supports both online Supabase Auth and offline emergency master key PIN.
  */
 export async function authenticateAdmin(options: AdminAuthOptions): Promise<AdminAuthResult> {
-  if (options.masterPin && options.email && options.password) {
-    return resetAdminPasswordWithMasterPin(
-      options.email,
-      options.password,
-      options.masterPin,
-    );
-  }
-
   if (options.email && options.password) {
     return authenticateAdminWithSupabase(
       options.email,
@@ -897,7 +908,7 @@ export async function authenticateAdmin(options: AdminAuthOptions): Promise<Admi
 
   return {
     success: false,
-    error: 'Please provide administrator credentials (Email + Password or Emergency PIN).',
+    error: 'Please provide administrator credentials (Supabase Auth email and password).',
     remainingAttempts: MAX_ADMIN_ATTEMPTS,
     lockedOut: false,
     lockoutSeconds: 0,
@@ -923,20 +934,21 @@ export async function signOutAdmin(): Promise<void> {
 
 /**
  * Request an administrator password reset email using Supabase free email recovery.
- * Generates an OTP verification code sent directly to the authorized owner's email.
+ *
+ * There is NO client-side allowlist any more (`EXPO_PUBLIC_ADMIN_EMAIL` used to be baked
+ * into the APK). The proof of ownership is the emailed OTP: `resetAdminPasswordWithEmailCode`
+ * only changes a password after Supabase verified that code for that exact address, and it
+ * additionally requires the account to be on the server-side moderator allowlist.
  */
 export async function requestAdminPasswordResetEmail(
   email: string,
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   const cleanEmail = (email || '').trim().toLowerCase();
-  const authorizedOwnerEmail = (
-    process.env.EXPO_PUBLIC_ADMIN_EMAIL || 'admin@gbu.ac.in'
-  ).toLowerCase();
 
-  if (cleanEmail !== authorizedOwnerEmail) {
+  if (!cleanEmail) {
     return {
       success: false,
-      error: `Password reset is strictly restricted to the authorized university owner (${authorizedOwnerEmail}).`,
+      error: 'Please enter the email address of your administrator account.',
     };
   }
 
@@ -969,7 +981,14 @@ export async function requestAdminPasswordResetEmail(
 
 /**
  * Reset Administrator Password using the emailed 6-digit OTP code or recovery token.
- * Verifies the OTP with Supabase Auth, updates password, resets lockout, and starts session.
+ *
+ * The OTP is the ONLY acceptable proof: the previous implementation fell back to the
+ * service-role admin API whenever a service key was present, which meant anybody with
+ * the admin app could overwrite the owner's password by typing six characters. That
+ * fallback is gone, together with the service-role key itself.
+ *
+ * After the OTP is verified the session belongs to that account, so the server-side
+ * `public.is_moderator()` check decides whether that account may administer the console.
  */
 export async function resetAdminPasswordWithEmailCode(
   email: string,
@@ -980,14 +999,10 @@ export async function resetAdminPasswordWithEmailCode(
   const cleanToken = (tokenOrCode || '').trim();
   const cleanPass = newPassword || '';
 
-  const authorizedOwnerEmail = (
-    process.env.EXPO_PUBLIC_ADMIN_EMAIL || 'admin@gbu.ac.in'
-  ).toLowerCase();
-
-  if (cleanEmail !== authorizedOwnerEmail) {
+  if (!cleanEmail) {
     return {
       success: false,
-      error: `Reset Restricted: Password reset is only permitted for the university owner (${authorizedOwnerEmail}).`,
+      error: 'Please enter the email address of your administrator account.',
       remainingAttempts: 0,
       lockedOut: false,
       lockoutSeconds: 0,
@@ -1015,7 +1030,7 @@ export async function resetAdminPasswordWithEmailCode(
   }
 
   try {
-    // 1. Verify OTP with Supabase Auth (type: 'recovery')
+    // 1. Verify the OTP with Supabase Auth. This is the proof of email ownership.
     let verifyRes = await supabase.auth.verifyOtp({
       email: cleanEmail,
       token: cleanToken,
@@ -1023,7 +1038,7 @@ export async function resetAdminPasswordWithEmailCode(
     });
 
     if (verifyRes.error) {
-      // Also attempt type: 'email' in case project template treats it as email OTP
+      // Also attempt type: 'email' in case the project template sends a 6-digit code.
       verifyRes = await supabase.auth.verifyOtp({
         email: cleanEmail,
         token: cleanToken,
@@ -1032,59 +1047,48 @@ export async function resetAdminPasswordWithEmailCode(
     }
 
     if (verifyRes.error) {
-      // Resilient fallback: If service role key is present in environment
-      const serviceRoleKey =
-        process.env.EXPO_PUBLIC_ADMIN_SERVICE_ROLE_KEY ||
-        process.env.SUPABASE_SERVICE_ROLE_KEY ||
-        '';
-      const supabaseUrl =
-        process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://pjnxllnncsoroevgfbmt.supabase.co';
+      return {
+        success: false,
+        error: `Verification failed: ${verifyRes.error?.message || 'Invalid or expired code.'}`,
+        remainingAttempts: MAX_ADMIN_ATTEMPTS,
+        lockedOut: false,
+        lockoutSeconds: 0,
+      };
+    }
 
-      let fallbackSuccess = false;
-      if (serviceRoleKey && cleanToken.length >= 6) {
-        const adminSb = createClient(supabaseUrl, serviceRoleKey, {
-          auth: { persistSession: false },
-        });
-        const { data: userList } = await adminSb.auth.admin.listUsers();
-        const existing = userList?.users?.find(
-          (u: { email?: string }) => u.email?.toLowerCase() === cleanEmail,
-        );
-        if (existing) {
-          await adminSb.auth.admin.updateUserById(existing.id, {
-            password: cleanPass,
-          });
-          fallbackSuccess = true;
-        }
-      }
+    // 2. The verified session tells us who the account is; the server decides whether
+    //    that account may administer the console.
+    const identity = await getCurrentAdminIdentity();
 
-      if (!fallbackSuccess) {
-        return {
-          success: false,
-          error: `Verification failed: ${verifyRes.error?.message || 'Invalid or expired code.'}`,
-          remainingAttempts: MAX_ADMIN_ATTEMPTS,
-          lockedOut: false,
-          lockoutSeconds: 0,
-        };
-      }
-    } else {
-      const { error: updateErr } = await supabase.auth.updateUser({
-        password: cleanPass,
-      });
-      if (updateErr) {
-        return {
-          success: false,
-          error: `Password update failed: ${updateErr.message}`,
-          remainingAttempts: MAX_ADMIN_ATTEMPTS,
-          lockedOut: false,
-          lockoutSeconds: 0,
-        };
-      }
+    if (!identity) {
+      await supabase.auth.signOut();
+      return {
+        success: false,
+        error: 'This account is not authorized as a GBU administrator or moderator.',
+        remainingAttempts: MAX_ADMIN_ATTEMPTS,
+        lockedOut: false,
+        lockoutSeconds: 0,
+      };
+    }
+
+    // 3. Only now may the password change.
+    const { error: updateErr } = await supabase.auth.updateUser({
+      password: cleanPass,
+    });
+    if (updateErr) {
+      return {
+        success: false,
+        error: `Password update failed: ${updateErr.message}`,
+        remainingAttempts: MAX_ADMIN_ATTEMPTS,
+        lockedOut: false,
+        lockoutSeconds: 0,
+      };
     }
 
     // Reset lockout state
     await resetLockoutStateInternal();
 
-    // Ensure session is signed in
+    // Ensure session is signed in with the new password
     await supabase.auth.signInWithPassword({
       email: cleanEmail,
       password: cleanPass,
@@ -1092,14 +1096,14 @@ export async function resetAdminPasswordWithEmailCode(
 
     touchAdminSession();
     await recordAdminAction('admin_setup', {
-      email: cleanEmail,
+      email: identity.email,
       action: 'password_reset_with_email_code',
-      role: 'owner',
+      role: identity.role,
     });
     await recordAdminAction('admin_login_success', {
       method: 'server',
-      email: cleanEmail,
-      role: 'owner',
+      email: identity.email,
+      role: identity.role,
     });
 
     return {
@@ -1108,147 +1112,8 @@ export async function resetAdminPasswordWithEmailCode(
       lockedOut: false,
       lockoutSeconds: 0,
       authMethod: 'server',
-      userEmail: cleanEmail,
-      role: 'owner',
-    };
-  } catch (err) {
-    return {
-      success: false,
-      error: `Password Reset Failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      remainingAttempts: MAX_ADMIN_ATTEMPTS,
-      lockedOut: false,
-      lockoutSeconds: 0,
-    };
-  }
-}
-
-/**
- * Reset Administrator Password using Master PIN (when configured in environment).
- * Authenticates against university master credentials, updates the password in Supabase Auth,
- * clears any lockout state, and signs in immediately.
- */
-export async function resetAdminPasswordWithMasterPin(
-  email: string,
-  newPassword: string,
-  masterPin: string,
-): Promise<AdminAuthResult> {
-  const cleanEmail = (email || '').trim().toLowerCase();
-  const cleanPass = newPassword || '';
-  const cleanPin = (masterPin || '').trim();
-
-  const expectedPin = getMasterAdminPin();
-  if (!expectedPin || !cleanPin || cleanPin !== expectedPin) {
-    return {
-      success: false,
-      error: 'Invalid University Master PIN. Password reset authorization denied.',
-      remainingAttempts: 0,
-      lockedOut: false,
-      lockoutSeconds: 0,
-    };
-  }
-
-  const authorizedOwnerEmail = (
-    process.env.EXPO_PUBLIC_ADMIN_EMAIL || 'admin@gbu.ac.in'
-  ).toLowerCase();
-  if (cleanEmail !== authorizedOwnerEmail) {
-    return {
-      success: false,
-      error: `Reset Restricted: Password reset is only permitted for the university owner (${authorizedOwnerEmail}).`,
-      remainingAttempts: 0,
-      lockedOut: false,
-      lockoutSeconds: 0,
-    };
-  }
-
-  if (cleanPass.length < 6) {
-    return {
-      success: false,
-      error: 'New password must be at least 6 characters long.',
-      remainingAttempts: 0,
-      lockedOut: false,
-      lockoutSeconds: 0,
-    };
-  }
-
-  try {
-    const serviceRoleKey =
-      process.env.EXPO_PUBLIC_ADMIN_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      '';
-    const supabaseUrl =
-      process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://pjnxllnncsoroevgfbmt.supabase.co';
-
-    if (serviceRoleKey) {
-      const adminSb = createClient(supabaseUrl, serviceRoleKey, {
-        auth: { persistSession: false },
-      });
-
-      const { data: userList } = await adminSb.auth.admin.listUsers();
-      const existing = userList?.users?.find(
-        (u: { email?: string }) => u.email?.toLowerCase() === cleanEmail,
-      );
-
-      if (existing) {
-        await adminSb.auth.admin.updateUserById(existing.id, {
-          password: cleanPass,
-        });
-      } else {
-        await adminSb.auth.admin.createUser({
-          email: cleanEmail,
-          password: cleanPass,
-          email_confirm: true,
-        });
-      }
-
-      await adminSb.from('moderators').upsert(
-        {
-          email: cleanEmail,
-          role: 'owner',
-          added_at: new Date().toISOString(),
-        },
-        { onConflict: 'email' },
-      );
-    }
-
-    // Reset any active lockout
-    await resetLockoutStateInternal();
-
-    // Sign in via Supabase Auth
-    const { error: signInErr } = await supabase.auth.signInWithPassword({
-      email: cleanEmail,
-      password: cleanPass,
-    });
-
-    if (signInErr) {
-      return {
-        success: false,
-        error: `Password was reset, but sign in failed: ${signInErr.message}`,
-        remainingAttempts: MAX_ADMIN_ATTEMPTS,
-        lockedOut: false,
-        lockoutSeconds: 0,
-      };
-    }
-
-    touchAdminSession();
-    await recordAdminAction('admin_setup', {
-      email: cleanEmail,
-      action: 'password_reset',
-      role: 'owner',
-    });
-    await recordAdminAction('admin_login_success', {
-      method: 'server',
-      email: cleanEmail,
-      role: 'owner',
-    });
-
-    return {
-      success: true,
-      remainingAttempts: MAX_ADMIN_ATTEMPTS,
-      lockedOut: false,
-      lockoutSeconds: 0,
-      authMethod: 'server',
-      userEmail: cleanEmail,
-      role: 'owner',
+      userEmail: identity.email,
+      role: identity.role,
     };
   } catch (err) {
     return {
@@ -1325,9 +1190,9 @@ export async function recordAdminAction(
   details: Record<string, unknown> = {},
 ): Promise<AdminAuditEntry> {
   return withAuditLock(async () => {
-    if (action !== 'admin_logout') {
-      touchAdminSession();
-    }
+    // NOTE: the audit ledger deliberately does NOT touch the admin session. Background
+    // audit writes (moderation, date sheets, notices) used to keep the 15-minute session
+    // alive forever, which defeated the inactivity auto-lock.
     const entries = await getAdminAuditLog();
     const prevHash = entries.length > 0 ? entries[entries.length - 1].hash : GENESIS_HASH;
     const timestamp = new Date().toISOString();

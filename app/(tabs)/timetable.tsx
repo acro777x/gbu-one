@@ -696,7 +696,7 @@ export default function TimetableScreen() {
                     <Text style={[styles.endTime, { color: colors.textSecondary }]}>{slot.end}</Text>
 
                     <View style={[styles.railPeriodPill, { backgroundColor: colors.surfaceAlt }]}>
-                      <Text style={[styles.railPeriodText, { color: colors.textSecondary }]}>P{index + 1}</Text>
+                      <Text style={[styles.railPeriodText, { color: colors.textSecondary }]}>P{slot.period}</Text>
                     </View>
 
                     {/* Vertical Connector Line */}

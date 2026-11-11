@@ -101,10 +101,51 @@ function storageBaseUrl(): string {
   return url.replace(/\/$/, '');
 }
 
+export function ensureValidUuid(id: string | null | undefined): string | null {
+  if (!id) return null;
+  const trimmed = id.trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+  let hash = 0;
+  for (let i = 0; i < trimmed.length; i++) {
+    hash = (hash * 31 + trimmed.charCodeAt(i)) >>> 0;
+  }
+  const hex = hash.toString(16).padStart(8, '0');
+  const fullHex = (hex + hex + hex + hex).slice(0, 32);
+  return `${fullHex.slice(0, 8)}-${fullHex.slice(8, 12)}-4${fullHex.slice(13, 16)}-8${fullHex.slice(17, 20)}-${fullHex.slice(20, 32)}`;
+}
+
+export function getStorageClient() {
+  const serviceKey =
+    undefined;
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://pjnxllnncsoroevgfbmt.supabase.co';
+  if (serviceKey) {
+    return createClient(url, serviceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
+  const anonKey =
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    '';
+  if (url && anonKey) {
+    return createClient(url, anonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
+  return supabase;
+}
+
 function getAdminClient() {
   const serviceKey =
-    process.env.EXPO_PUBLIC_ADMIN_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY;
+    undefined;
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://pjnxllnncsoroevgfbmt.supabase.co';
   if (serviceKey) {
     return createClient(url, serviceKey, {
@@ -366,7 +407,9 @@ export async function uploadFileToSupabaseStorage(
         try {
           const parsed = JSON.parse(respText);
           if (parsed.message || parsed.error) errMsg = parsed.message || parsed.error;
-        } catch {}
+        } catch {
+          // Ignore JSON parse errors and retain default errMsg
+        }
         return { ok: false, reason: errMsg };
       }
     } catch {
@@ -401,7 +444,9 @@ export async function uploadFileToSupabaseStorage(
       try {
         const parsed = JSON.parse(respText);
         if (parsed.message || parsed.error) errMsg = parsed.message || parsed.error;
-      } catch {}
+      } catch {
+        // Ignore JSON parse errors and retain default errMsg
+      }
       return { ok: false, reason: errMsg };
     } catch {
       // Continue to standard client
@@ -473,6 +518,9 @@ export async function uploadPendingPaper(
   }
 
   const row = buildPaperRow(meta, paperId, path, uploaderId, uploaderProfile);
+  if (file.size) {
+    row.file_size_bytes = file.size;
+  }
   if (uploaderProfile?.name) {
     row.uploader_name = uploaderProfile.name;
   }

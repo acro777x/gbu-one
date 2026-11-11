@@ -37,7 +37,38 @@ import { useEventsQuery } from '../src/features/events/useEventsQuery';
 import { useAppTheme } from '../src/lib/ThemeContext';
 import { theme } from '../src/lib/theme';
 
-const DATE_OPTIONS: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric' };
+const DATE_OPTIONS: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' };
+
+/** Returns current date in Indian Standard Time (IST, UTC+5:30) as YYYY-MM-DD */
+export function getTodayIST(): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch {
+    const istDate = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    return istDate.toISOString().slice(0, 10);
+  }
+}
+
+/** Formats an ISO string or Date to YYYY-MM-DD in IST */
+export function toDateStringIST(dateOrIso: string): string {
+  try {
+    const d = new Date(dateOrIso);
+    if (isNaN(d.getTime())) return dateOrIso.slice(0, 10);
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  } catch {
+    return dateOrIso.slice(0, 10);
+  }
+}
 
 function formatDate(iso: string): string {
   try {
@@ -121,7 +152,8 @@ export default function EventsScreen() {
     return sortEventsByDate(filteredByFilter);
   }, [allEvents, category, searchQuery, freeOnly]);
 
-  const upcoming = upcomingEvents(filtered);
+  const today = getTodayIST();
+  const upcoming = upcomingEvents(filtered, today);
 
   const handleOpenEvent = (event: CampusEvent) => {
     if (Platform.OS !== 'web') {
@@ -155,9 +187,9 @@ export default function EventsScreen() {
 
   const renderEventCard = (event: CampusEvent) => {
     const style = CATEGORY_STYLE[event.category] || CATEGORY_STYLE.other;
-    const today = new Date().toISOString().slice(0, 10);
-    const startsTodayOrFuture = event.startDate >= today;
-    const isOngoing = startsTodayOrFuture && event.endDate >= today;
+    const eventStartDate = toDateStringIST(event.startDate);
+    const eventEndDate = toDateStringIST(event.endDate);
+    const isOngoing = eventStartDate <= today && eventEndDate >= today;
     const fallbackImage = CATEGORY_DEFAULT_IMAGES[event.category] || CATEGORY_DEFAULT_IMAGES.other;
     const bannerUrl = event.imageUrl || (event.photos && event.photos.length > 0 ? event.photos[0] : fallbackImage);
 

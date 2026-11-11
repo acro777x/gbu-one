@@ -28,8 +28,112 @@ SKIP_DIRS = {
 }
 SKIP_FILES = {'.DS_Store'}
 
+# ---------------------------------------------------------------------------
+# Secret hygiene.
+#
+# Expo inlines every `EXPO_PUBLIC_*` variable into the JavaScript bundle at
+# build time. Anything listed here therefore ships to every student. The
+# bundle used to contain the project's Supabase SECRET key, because the
+# sanitiser only removed variables whose NAME matched, and the anon key was
+# named `EXPO_PUBLIC_SUPABASE_ANON_KEY` while holding a secret value.
+#
+# Two independent rules now apply:
+#   1. name based  - a variable whose name looks like a credential is dropped
+#   2. value based - a variable whose VALUE is a Supabase secret key is dropped
+# The second rule is the important one: it does not care what the variable is
+# called.
+# ---------------------------------------------------------------------------
+SECRET_NAME_RE = re.compile(
+    r'(SECRET|PASSWORD|PASSWD|PIN|MFA|PRIVATE|CREDENTIAL|TOKEN|KEY|ADMIN)',
+    re.IGNORECASE,
+)
+SUPABASE_SECRET_PREFIXES = ('sb_secret_',)
+SUPABASE_PUBLISHABLE_PREFIXES = ('sb_publishable_',)
+LEGACY_SERVICE_ROLE_RE = re.compile(r'^eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}')
 
-def sync(is_admin: bool = False) -> None:
+
+def classify_env_line(line: str):
+    """Return (action, reason) for one .env line.
+
+    action is 'keep', 'drop' or 'secret-anon'.
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith('#'):
+        return 'keep', 'comment'
+
+    name, _, value = stripped.partition('=')
+    name = name.strip()
+    value = value.split(' #')[0].strip().strip('"').strip("'")
+
+    if SECRET_NAME_RE.search(name):
+        return 'drop', 'name looks like a credential'
+
+    for prefix in SUPABASE_SECRET_PREFIXES:
+        if value.startswith(prefix):
+            if name == 'EXPO_PUBLIC_SUPABASE_ANON_KEY':
+                return 'secret-anon', 'the anon key holds a Supabase SECRET key'
+            return 'drop', 'value is a Supabase secret key'
+
+    if LEGACY_SERVICE_ROLE_RE.match(value) and 'SERVICE_ROLE' in name.upper():
+        return 'drop', 'value is a legacy service-role JWT'
+
+    return 'keep', ''
+
+
+def sanitise_env_for_client(src_env: str, release: bool, allow_secret_anon: bool):
+    """Return the .env text that is safe to inline into a client bundle."""
+    kept = []
+    dropped = []
+    secret_anon = False
+
+    for line in src_env.splitlines(keepends=True):
+        action, reason = classify_env_line(line)
+        if action == 'keep':
+            kept.append(line)
+        elif action == 'drop':
+            dropped.append((line.split('=', 1)[0].strip(), reason))
+        else:
+            secret_anon = True
+            dropped.append((line.split('=', 1)[0].strip(), reason))
+
+    if secret_anon:
+        if release and not allow_secret_anon:
+            raise SystemExit(
+                'REFUSING TO BUILD: EXPO_PUBLIC_SUPABASE_ANON_KEY holds a Supabase\n'
+                '  SECRET key (sb_secret_...). Expo inlines it into the bundle, so\n'
+                '  every student who installs the app would hold a key that\n'
+                '  bypasses every row level security policy in the project.\n'
+                '\n'
+                '  Fix it in the Supabase dashboard:\n'
+                '    1. Project Settings -> API Keys -> create a PUBLISHABLE key\n'
+                '    2. put that key in .env as EXPO_PUBLIC_SUPABASE_ANON_KEY\n'
+                '    3. keep the secret key for the worker only\n'
+                '         (SUPABASE_SERVICE_ROLE_KEY, used by worker/ and CI)\n'
+                '  Then build again.'
+            )
+        print(
+            '  WARNING: the anon key is still a SECRET key. The bundle will\n'
+            '  contain a database credential. Rotate it before publishing.'
+        )
+        # Replace the value so the bundle cannot carry the real secret.
+        kept = [
+            l for l in kept
+            if not l.strip().startswith('EXPO_PUBLIC_SUPABASE_ANON_KEY=')
+        ]
+        kept.append('EXPO_PUBLIC_SUPABASE_ANON_KEY=REPLACE_ME_BEFORE_PUBLISHING\n')
+
+    if dropped:
+        print(f'  dropped {len(dropped)} secret-bearing variable(s):')
+        for name, reason in dropped:
+            print(f'    - {name}: {reason}')
+
+    text = ''.join(kept)
+    if 'EXPO_PUBLIC_APP_VARIANT=' not in text:
+        text += 'EXPO_PUBLIC_APP_VARIANT=public\n'
+    return text
+
+
+def sync(is_admin: bool = False, release: bool = False, allow_secret_anon: bool = False) -> None:
     print(f'syncing {SOURCE} -> {BUILD}')
     for name in os.listdir(SOURCE):
         if name in SKIP_DIRS or name in SKIP_FILES:
@@ -44,20 +148,33 @@ def sync(is_admin: bool = False) -> None:
     # .env carries the local configuration (git-ignored).
     env_file = os.path.join(SOURCE, '.env')
     if os.path.exists(env_file):
+        with open(env_file, 'r', encoding='utf-8') as f:
+            src_env = f.read()
+
         if is_admin:
-            shutil.copy2(env_file, os.path.join(BUILD, '.env'))
+            # The admin build authenticates with its OWN Supabase account and
+            # relies on the row level security policies, so it needs the
+            # service-role key no more than the student build does. The secret
+            # is therefore stripped from BOTH builds.
+            clean_env = sanitise_env_for_client(src_env, release, allow_secret_anon)
         else:
-            # SANITIZE: For student public APK, strip all admin passwords and master keys
-            with open(env_file, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            clean_lines = [
-                line for line in lines
-                if not any(k in line for k in ['ADMIN_PASSWORD', 'ADMIN_PIN', 'GBU_ADMIN', 'EXPO_PUBLIC_ADMIN', 'SUPABASE_SERVICE_ROLE_KEY'])
-            ]
-            clean_lines.append('\nEXPO_PUBLIC_APP_VARIANT=public\n')
-            with open(os.path.join(BUILD, '.env'), 'w', encoding='utf-8') as f:
-                f.writelines(clean_lines)
-            print('Sanitized .env for student public APK build.')
+            # SANITIZE: for the student public APK, strip every credential.
+            clean_env = sanitise_env_for_client(src_env, release, allow_secret_anon)
+
+        with open(os.path.join(BUILD, '.env'), 'w', encoding='utf-8') as f:
+            f.write(clean_env)
+        print('Sanitized .env for the client build.')
+
+        # Post-condition: the build copy must not contain a Supabase secret.
+        with open(os.path.join(BUILD, '.env'), 'r', encoding='utf-8') as f:
+            built_env = f.read()
+        for prefix in SUPABASE_SECRET_PREFIXES:
+            if prefix in built_env:
+                raise SystemExit(
+                    f'REFUSING TO BUILD: the build copy still contains "{prefix}".'
+                )
+        if SECRET_NAME_RE.search(built_env) and 'EXPO_PUBLIC_SUPABASE_URL' not in built_env:
+            raise SystemExit('REFUSING TO BUILD: the build copy still holds a credential.')
 
     if not is_admin:
         # STRICT PUBLIC APK PURGE: Exclude all admin routes, moderation tools, and credentials
@@ -188,8 +305,11 @@ def run(command: list[str], cwd: str, retries: int = 1) -> None:
 def main() -> None:
     release = '--release' in sys.argv
     is_admin = '--admin' in sys.argv
+    allow_secret_anon = '--allow-secret-anon-key' in sys.argv
+    if allow_secret_anon and not release:
+        print('  (--allow-secret-anon-key is accepted for local QA builds only.)')
     os.makedirs(BUILD, exist_ok=True)
-    sync(is_admin=is_admin)
+    sync(is_admin=is_admin, release=release, allow_secret_anon=allow_secret_anon)
     install_dependencies()
 
     # Always prebuild: the signing plugin writes the GBU_ANDROID_* values into

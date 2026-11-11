@@ -46,6 +46,7 @@ import { usePyqQuery } from '../../src/features/pyq/usePyqQuery';
 import {
   reportPaper,
   uploadPendingPaper,
+  ensureValidUuid,
   type PyqUploadResult,
 } from '../../src/features/pyq/pyqRepository';
 import { PYQ_ALLOWED_MIME_TYPES, resolveCanonicalMime } from '../../src/features/pyq/pyqStorage';

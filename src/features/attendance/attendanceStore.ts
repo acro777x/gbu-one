@@ -80,38 +80,20 @@ export function calculateAttendanceStatus(
   }
 }
 
-export const INITIAL_ATTENDANCE: SubjectAttendance[] = [
-  {
-    subjectCode: 'CSE205',
-    subjectName: 'Data Structures & Algorithms',
-    attended: 24,
-    total: 28,
-  },
-  {
-    subjectCode: 'CSE209',
-    subjectName: 'Operating Systems',
-    attended: 22,
-    total: 30,
-  },
-  {
-    subjectCode: 'BAS201',
-    subjectName: 'Discrete Mathematics',
-    attended: 26,
-    total: 30,
-  },
-  {
-    subjectCode: 'CSE211',
-    subjectName: 'Database Management Systems',
-    attended: 14,
-    total: 16,
-  },
-];
+// Cold start: initial attendance is empty. Real attendance will be tracked
+// from actual classes attended on device, never fabricated for the student.
+export const INITIAL_ATTENDANCE: SubjectAttendance[] = [];
 
 interface AttendanceState {
   subjects: SubjectAttendance[];
-  markAttended: (subjectCode: string) => void;
-  markMissed: (subjectCode: string) => void;
-  setAttendance: (subjectCode: string, attended: number, total: number) => void;
+  markAttended: (subjectCode: string, subjectName?: string) => void;
+  markMissed: (subjectCode: string, subjectName?: string) => void;
+  setAttendance: (
+    subjectCode: string,
+    attended: number,
+    total: number,
+    subjectName?: string,
+  ) => void;
   resetAll: () => void;
 }
 
@@ -120,32 +102,87 @@ export const useAttendanceStore = create<AttendanceState>()(
     (set) => ({
       subjects: INITIAL_ATTENDANCE,
 
-  markAttended: (subjectCode) =>
-    set((state) => ({
-      subjects: state.subjects.map((s) =>
-        s.subjectCode === subjectCode
-          ? { ...s, attended: s.attended + 1, total: s.total + 1 }
-          : s,
-      ),
-    })),
+      markAttended: (subjectCode, subjectName) =>
+        set((state) => {
+          const existing = state.subjects.find((s) => s.subjectCode === subjectCode);
+          if (existing) {
+            return {
+              subjects: state.subjects.map((s) =>
+                s.subjectCode === subjectCode
+                  ? { ...s, attended: s.attended + 1, total: s.total + 1 }
+                  : s,
+              ),
+            };
+          }
+          return {
+            subjects: [
+              ...state.subjects,
+              {
+                subjectCode,
+                subjectName: subjectName || subjectCode,
+                attended: 1,
+                total: 1,
+              },
+            ],
+          };
+        }),
 
-  markMissed: (subjectCode) =>
-    set((state) => ({
-      subjects: state.subjects.map((s) =>
-        s.subjectCode === subjectCode ? { ...s, total: s.total + 1 } : s,
-      ),
-    })),
+      markMissed: (subjectCode, subjectName) =>
+        set((state) => {
+          const existing = state.subjects.find((s) => s.subjectCode === subjectCode);
+          if (existing) {
+            return {
+              subjects: state.subjects.map((s) =>
+                s.subjectCode === subjectCode ? { ...s, total: s.total + 1 } : s,
+              ),
+            };
+          }
+          return {
+            subjects: [
+              ...state.subjects,
+              {
+                subjectCode,
+                subjectName: subjectName || subjectCode,
+                attended: 0,
+                total: 1,
+              },
+            ],
+          };
+        }),
 
-  setAttendance: (subjectCode, attended, total) =>
-    set((state) => ({
-      subjects: state.subjects.map((s) =>
-        s.subjectCode === subjectCode
-          ? { ...s, attended: Math.min(attended, total), total }
-          : s,
-      ),
-    })),
+      setAttendance: (subjectCode, attended, total, subjectName) =>
+        set((state) => {
+          const safeTotal = Math.max(0, total);
+          const safeAttended = Math.min(Math.max(0, attended), safeTotal);
+          const existing = state.subjects.find((s) => s.subjectCode === subjectCode);
+          if (existing) {
+            return {
+              subjects: state.subjects.map((s) =>
+                s.subjectCode === subjectCode
+                  ? {
+                      ...s,
+                      attended: safeAttended,
+                      total: safeTotal,
+                      ...(subjectName ? { subjectName } : {}),
+                    }
+                  : s,
+              ),
+            };
+          }
+          return {
+            subjects: [
+              ...state.subjects,
+              {
+                subjectCode,
+                subjectName: subjectName || subjectCode,
+                attended: safeAttended,
+                total: safeTotal,
+              },
+            ],
+          };
+        }),
 
-  resetAll: () => set({ subjects: INITIAL_ATTENDANCE }),
+      resetAll: () => set({ subjects: INITIAL_ATTENDANCE }),
     }),
     {
       name: '@gbu_one_attendance',

@@ -39,9 +39,9 @@ import {
 } from 'lucide-react-native';
 import {
   submitStudentReport,
-  getLocalReports,
   fetchStudentReports,
   REPORT_CATEGORIES,
+  belongsToStudent,
   type StudentReport,
   type ReportCategory,
 } from '../../src/features/reports/reportsService';
@@ -61,8 +61,15 @@ import { setTimetablePushEnabled } from '../../src/lib/pushNotifications';
 export default function ProfileScreen() {
   const { colors, isDark, themeMode, setThemeMode } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { user, isGuest, classSelection, updateProfile, logout } = useAuthStore();
+  const { user, isGuest, isAuthenticated, classSelection, updateProfile, logout } = useAuthStore();
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+
+  /**
+   * An identity that exists but was never confirmed by the server (the
+   * offline build, or a stored profile the server could not verify). It must
+   * never be presented as a signed-in account.
+   */
+  const isUnverified = Boolean(user) && !isAuthenticated && !isGuest;
 
   // Student Issue Reporting & Admin Answers State
   const [isReportSheetOpen, setIsReportSheetOpen] = useState(false);
@@ -71,24 +78,22 @@ export default function ProfileScreen() {
   const [reportSubmitLoading, setReportSubmitLoading] = useState(false);
   const [myReports, setMyReports] = useState<StudentReport[]>([]);
   const [reportSuccessMsg, setReportSuccessMsg] = useState('');
+  const [reportErrorMsg, setReportErrorMsg] = useState('');
 
   const loadMyReports = useCallback(async () => {
     try {
-      const allReports = await fetchStudentReports(
-        user?.uniqueStudentId || user?.rollNo,
-        user?.email,
-      );
-      const studentId = user?.uniqueStudentId || user?.rollNo || 'GBU-SCHOLAR';
-      const mine = allReports.filter(
-        (r) =>
-          r.reporterStudentId === studentId ||
-          (user?.email && r.reporterEmail === user.email) ||
-          r.type === 'general' ||
-          r.category === 'PYQ Paper',
+      const studentId = user?.uniqueStudentId || user?.rollNo || '';
+      const studentEmail = user?.email || '';
+      const allReports = await fetchStudentReports(studentId, studentEmail);
+      // Strict ownership: a report belongs to this student only when the
+      // student id or the e-mail address matches. The report type or category
+      // never makes somebody else's report mine.
+      const mine = allReports.filter((report) =>
+        belongsToStudent(report, studentId, studentEmail),
       );
       setMyReports(mine);
     } catch {
-      // ignore
+      setMyReports([]);
     }
   }, [user?.uniqueStudentId, user?.rollNo, user?.email]);
 
@@ -99,6 +104,7 @@ export default function ProfileScreen() {
   const handleSendReport = async () => {
     if (!reportDetails.trim()) return;
     setReportSubmitLoading(true);
+    setReportErrorMsg('');
     try {
       const studentId = user?.uniqueStudentId || user?.rollNo || generateUniqueStudentId();
       const studentName = user?.name || 'GBU Student';
@@ -115,8 +121,14 @@ export default function ProfileScreen() {
       setReportSuccessMsg('Report submitted! University admin will review and respond here.');
       await loadMyReports();
       setTimeout(() => setReportSuccessMsg(''), 4500);
-    } catch {
-      // ignore
+    } catch (error) {
+      // Never swallow a failed report: the student has to know it was not
+      // accepted, otherwise they wait for a reply that was never filed.
+      setReportErrorMsg(
+        error instanceof Error && error.message
+          ? `The report could not be sent: ${error.message}`
+          : 'The report could not be sent. Please try again.',
+      );
     } finally {
       setReportSubmitLoading(false);
     }
@@ -158,16 +170,6 @@ export default function ProfileScreen() {
       mounted = false;
     };
   }, []);
-
-  // Ensure an offline unique student ID is assigned if student has not been through onboarding
-  useEffect(() => {
-    if (!user?.uniqueStudentId) {
-      void updateProfile({
-        uniqueStudentId: generateUniqueStudentId(),
-        avatarId: user?.avatarId || 'tech-scholar',
-      });
-    }
-  }, [user?.uniqueStudentId, user?.avatarId, updateProfile]);
 
   const toggleNotices = (val: boolean) => {
     setNotifyNotices(val);
@@ -220,8 +222,11 @@ export default function ProfileScreen() {
   const totalClasses = subjects.reduce((acc, s) => acc + s.total, 0);
   const overallStatus = calculateAttendanceStatus(totalAttended, totalClasses, 75);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    // Awaited: the sign-out ends the server session and wipes this device
+    // before the screen changes, so the next user of a shared phone inherits
+    // nothing.
+    await logout();
     router.replace('/login');
   };
 
@@ -272,10 +277,10 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <Text style={[styles.userName, { color: colors.textPrimary }]}>
-            {isGuest && !user?.name ? 'Guest Student' : (user?.name || 'Guest Student')}
+            {isGuest ? 'Guest' : (user?.name || 'Student')}
           </Text>
           <Text style={[styles.userRoll, { color: colors.textSecondary }]}>
-            {isGuest ? 'Guest Mode' : user?.rollNo}
+            {isGuest ? 'Guest Mode' : (user?.rollNo || 'Signed in')}
           </Text>
 
           {/* Unique Student ID Badge */}
@@ -284,22 +289,44 @@ export default function ProfileScreen() {
               styles.uniqueIdBadge,
               { backgroundColor: colors.accentSoft, borderColor: colors.accent },
             ]}
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel={
+              isGuest
+                ? 'Guest account. No student ID has been issued.'
+                : `Unique student ID ${user?.uniqueStudentId || 'not available'}`
+            }
           >
             <ShieldCheck size={13} color={colors.accent} />
             <Text style={[styles.uniqueIdText, { color: colors.accent }]}>
-              {user?.uniqueStudentId || 'GBU-XXXXXX'}
+              {isGuest ? 'Guest' : (user?.uniqueStudentId || 'Not available')}
             </Text>
           </View>
 
           {/* Chips */}
           <View style={styles.chipRow}>
-            <View style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
+            <View
+              style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel={`School: ${classSelection?.school || 'not selected'}`}
+            >
               <Text style={[styles.badgeChipText, { color: colors.textSecondary }]}>{classSelection?.school || 'SOICT'}</Text>
             </View>
-            <View style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
+            <View
+              style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel={`Programme: ${classSelection?.programmeCode || 'not selected'}, semester ${classSelection?.semester || 'not selected'}`}
+            >
               <Text style={[styles.badgeChipText, { color: colors.textSecondary }]}>{classSelection?.programmeCode || 'BCS'} Sem {classSelection?.semester || 'II'}</Text>
             </View>
-            <View style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}>
+            <View
+              style={[styles.badgeChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.surfaceMuted }]}
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel={`Section: ${classSelection?.section || 'not selected'}`}
+            >
               <Text style={[styles.badgeChipText, { color: colors.textSecondary }]}>{classSelection?.section || 'Sec B'}</Text>
             </View>
           </View>
@@ -316,7 +343,11 @@ export default function ProfileScreen() {
                 : 'Always Dark Theme'}
           </Text>
 
-          <View style={[styles.themeSegmentContainer, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}>
+          <View
+            style={[styles.themeSegmentContainer, { backgroundColor: colors.surfaceAlt, borderColor: colors.borderGlass }]}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Theme"
+          >
             {/* System Segment */}
             <TouchableOpacity
               style={[
@@ -325,6 +356,9 @@ export default function ProfileScreen() {
               ]}
               onPress={() => handleThemeChange('system')}
               activeOpacity={0.8}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: themeMode === 'system', checked: themeMode === 'system' }}
+              accessibilityLabel="Follow the system theme"
             >
               <Smartphone size={16} color={themeMode === 'system' ? colors.accent : colors.textSecondary} />
               <Text
@@ -345,6 +379,9 @@ export default function ProfileScreen() {
               ]}
               onPress={() => handleThemeChange('light')}
               activeOpacity={0.8}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: themeMode === 'light', checked: themeMode === 'light' }}
+              accessibilityLabel="Always use the light theme"
             >
               <Sun size={16} color={themeMode === 'light' ? colors.accent : colors.textSecondary} />
               <Text
@@ -365,6 +402,9 @@ export default function ProfileScreen() {
               ]}
               onPress={() => handleThemeChange('dark')}
               activeOpacity={0.8}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: themeMode === 'dark', checked: themeMode === 'dark' }}
+              accessibilityLabel="Always use the dark theme"
             >
               <Moon size={16} color={themeMode === 'dark' ? colors.accent : colors.textSecondary} />
               <Text
@@ -378,6 +418,44 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </GlassCard>
+
+        {/* The session was never confirmed by the server: say so, always. */}
+        {isUnverified && (
+          <GlassCard style={styles.noticeCard} accentBorder>
+            <View style={styles.noticeHead}>
+              <AlertTriangle size={18} color={colors.danger} />
+              <Text style={[styles.noticeTitle, { color: colors.textPrimary }]}>
+                Session not verified
+              </Text>
+            </View>
+            <Text style={[styles.noticeBody, { color: colors.textSecondary }]}>
+              The GBU One server could not confirm this sign-in, so the app is running offline only
+              and nothing is synced. Sign in again to restore your account.
+            </Text>
+            <PillButton
+              label="Sign in again"
+              onPress={() => router.push('/login')}
+              variant="primary"
+              size="sm"
+              style={{ marginTop: 12 }}
+            />
+          </GlassCard>
+        )}
+
+        {/* Guest mode banner (docs/SCREENS_AUTH.md): never an error, just a
+            friendly note that some features need an account. */}
+        {isGuest && (
+          <View
+            style={[styles.guestBanner, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel="Guest mode. Some features are limited until you create an account."
+          >
+            <Text style={[styles.guestBannerText, { color: colors.accent }]}>
+              Guest mode - some features are limited.
+            </Text>
+          </View>
+        )}
 
         {/* Guest CTA Card if applicable */}
         {isGuest && (
@@ -405,12 +483,16 @@ export default function ProfileScreen() {
 
           <View style={styles.attendanceRow}>
             <View style={styles.attendancePercentCol}>
-              <CountUp value={overallStatus.percentage} decimals={1} suffix="%" style={{ ...styles.attendanceNum, color: colors.textPrimary }} />
+              <CountUp value={totalClasses === 0 ? 0 : overallStatus.percentage} decimals={1} suffix="%" style={{ ...styles.attendanceNum, color: totalClasses === 0 ? colors.textSecondary : colors.textPrimary }} />
               <Text style={[styles.attendanceRatio, { color: colors.textSecondary }]}>
-                {totalAttended} / {totalClasses} classes attended
+                {totalClasses === 0
+                  ? 'No classes logged yet'
+                  : `${totalAttended} / ${totalClasses} classes attended`}
               </Text>
-              <Text style={[styles.attendanceProjection, overallStatus.isShortage ? { color: colors.danger } : { color: colors.success }]}>
-                {overallStatus.isShortage
+              <Text style={[styles.attendanceProjection, totalClasses === 0 ? { color: colors.textSecondary } : overallStatus.isShortage ? { color: colors.danger } : { color: colors.success }]}>
+                {totalClasses === 0
+                  ? 'Log attendance from your daily schedule in Timetable.'
+                  : overallStatus.isShortage
                   ? `Shortage: Attend next ${overallStatus.classesNeededFor75} classes to hit 75%`
                   : `Safe: Can miss ${overallStatus.canBunkMargin} classes and stay >= 75%`}
               </Text>
@@ -419,35 +501,43 @@ export default function ProfileScreen() {
 
           {/* Subject-wise Quick Adjusters */}
           <View style={[styles.subjectList, { borderTopColor: colors.divider }]}>
-            {subjects.map((sub) => {
-              const subStatus = calculateAttendanceStatus(sub.attended, sub.total, 75);
-              return (
-                <View key={sub.subjectCode} style={styles.subjectRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.subjectName, { color: colors.textPrimary }]}>{sub.subjectCode} - {sub.subjectName}</Text>
-                    <Text style={[styles.subjectSub, { color: colors.textSecondary }]}>
-                      {sub.attended}/{sub.total} ({subStatus.percentage.toFixed(0)}%)
-                    </Text>
+            {subjects.length === 0 ? (
+              <View style={{ paddingVertical: 14, alignItems: 'center' }}>
+                <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>
+                  No subjects tracked yet. Mark attendance from your classes in Timetable.
+                </Text>
+              </View>
+            ) : (
+              subjects.map((sub) => {
+                const subStatus = calculateAttendanceStatus(sub.attended, sub.total, 75);
+                return (
+                  <View key={sub.subjectCode} style={styles.subjectRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.subjectName, { color: colors.textPrimary }]}>{sub.subjectCode} - {sub.subjectName}</Text>
+                      <Text style={[styles.subjectSub, { color: colors.textSecondary }]}>
+                        {sub.attended}/{sub.total} ({subStatus.percentage.toFixed(0)}%)
+                      </Text>
+                    </View>
+                    <View style={styles.subjectBtns}>
+                      <TouchableOpacity
+                        style={[styles.subBtn, { backgroundColor: colors.successSoft }]}
+                        onPress={() => markAttended(sub.subjectCode)}
+                        hitSlop={6}
+                      >
+                        <Plus size={14} color={colors.success} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.subBtn, { backgroundColor: colors.dangerSoft }]}
+                        onPress={() => markMissed(sub.subjectCode)}
+                        hitSlop={6}
+                      >
+                        <Minus size={14} color={colors.danger} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <View style={styles.subjectBtns}>
-                    <TouchableOpacity
-                      style={[styles.subBtn, { backgroundColor: colors.successSoft }]}
-                      onPress={() => markAttended(sub.subjectCode)}
-                      hitSlop={6}
-                    >
-                      <Plus size={14} color={colors.success} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.subBtn, { backgroundColor: colors.dangerSoft }]}
-                      onPress={() => markMissed(sub.subjectCode)}
-                      hitSlop={6}
-                    >
-                      <Minus size={14} color={colors.danger} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
+                );
+              })
+            )}
           </View>
         </GlassCard>
 
@@ -633,17 +723,19 @@ export default function ProfileScreen() {
               <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Report Issue & Support</Text>
             </View>
             <TouchableOpacity
-              onPress={() => setIsReportSheetOpen(true)}
-              style={{
-                backgroundColor: colors.accent,
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 20,
+              onPress={() => {
+                setReportErrorMsg('');
+                setIsReportSheetOpen(true);
               }}
+              style={[
+                styles.newReportBtn,
+                { backgroundColor: colors.accent, borderColor: colors.accent },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="New report"
+              accessibilityHint="Opens the form to report an issue to the university admin."
             >
-              <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: '#FFFFFF' }}>
-                + New Report
-              </Text>
+              <Text style={styles.newReportBtnText}>+ New Report</Text>
             </TouchableOpacity>
           </View>
 
@@ -656,6 +748,19 @@ export default function ProfileScreen() {
               <CheckCircle2 size={16} color={colors.success} />
               <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: colors.success, flex: 1 }}>
                 {reportSuccessMsg}
+              </Text>
+            </View>
+          )}
+
+          {Boolean(reportErrorMsg) && (
+            <View
+              style={{ backgroundColor: colors.dangerSoft, padding: 10, borderRadius: 8, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+            >
+              <AlertTriangle size={16} color={colors.danger} />
+              <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: colors.danger, flex: 1 }}>
+                {reportErrorMsg}
               </Text>
             </View>
           )}
@@ -866,6 +971,10 @@ export default function ProfileScreen() {
                     borderWidth: 1,
                     borderColor: active ? colors.accent : colors.borderGlass,
                   }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active, checked: active }}
+                  accessibilityLabel={cat.category}
+                  accessibilityHint={cat.description}
                 >
                   <Text
                     style={{
@@ -891,6 +1000,7 @@ export default function ProfileScreen() {
             placeholderTextColor={colors.textTertiary}
             multiline
             numberOfLines={4}
+            accessibilityLabel="Describe the problem or discrepancy"
             style={{
               height: 100,
               borderWidth: 1,
@@ -908,12 +1018,24 @@ export default function ProfileScreen() {
 
           <View style={{ backgroundColor: colors.surfaceAlt, padding: 10, borderRadius: 10, marginBottom: 16 }}>
             <Text style={{ fontFamily: 'Inter-Regular', fontSize: 11, color: colors.textTertiary }}>
-              Submitting as: {user?.name || 'GBU Student'} (ID: {user?.uniqueStudentId || user?.rollNo || 'GBU-SCHOLAR'})
+              Submitting as: {user?.name || 'GBU Student'} (ID: {user?.uniqueStudentId || user?.rollNo || 'Not available'})
             </Text>
             <Text style={{ fontFamily: 'Inter-Regular', fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
               Your report will sync directly to the GBU One Admin Console.
             </Text>
           </View>
+
+          {Boolean(reportErrorMsg) && (
+            <View
+              style={{ backgroundColor: colors.dangerSoft, padding: 10, borderRadius: 8, marginBottom: 12 }}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+            >
+              <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: colors.danger }}>
+                {reportErrorMsg}
+              </Text>
+            </View>
+          )}
 
           <PillButton
             label={reportSubmitLoading ? 'Submitting...' : 'Submit Report'}
@@ -1015,6 +1137,49 @@ const styles = StyleSheet.create({
   },
   guestCtaCard: {
     marginBottom: theme.spacing.lg,
+  },
+  noticeCard: {
+    marginBottom: theme.spacing.lg,
+  },
+  noticeHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  noticeTitle: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 14,
+  },
+  noticeBody: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  guestBanner: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: theme.spacing.md,
+  },
+  guestBannerText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  newReportBtn: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 22,
+    borderWidth: 1,
+  },
+  newReportBtnText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+    color: '#FFFFFF',
   },
   guestCtaTitle: {
     fontFamily: 'Poppins-Bold',

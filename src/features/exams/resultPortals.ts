@@ -69,7 +69,7 @@ export function resultSheetForSchool(
   const wanted = (school ?? '').trim().toUpperCase();
   if (!wanted) return undefined;
   return PUBLIC_RESULT_SHEETS.find(
-    (sheet) => sheet.school === wanted && sheet.special === special,
+    (sheet) => sheet.school === wanted && Boolean(sheet.special) === Boolean(special),
   );
 }
 

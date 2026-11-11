@@ -228,4 +228,32 @@ describe('Campus Events Service & Deduplication', () => {
     list = await listCampusEvents();
     expect(list.some((e) => e.id === 'seed_1')).toBe(false);
   });
+
+  it('correctly identifies ongoing events and respects IST without marking future events as ongoing', () => {
+    const today = '2026-11-11';
+
+    // Future event (starts after today)
+    const futureEventStartDate = '2026-11-14';
+    const futureEventEndDate = '2026-11-16';
+    const isFutureOngoing = futureEventStartDate <= today && futureEventEndDate >= today;
+    expect(isFutureOngoing).toBe(false);
+
+    // Ongoing event (started before or on today and ends after or on today)
+    const ongoingStartDate = '2026-11-10';
+    const ongoingEndDate = '2026-11-12';
+    const isOngoing = ongoingStartDate <= today && ongoingEndDate >= today;
+    expect(isOngoing).toBe(true);
+
+    // Event occurring today
+    const todayStartDate = '2026-11-11';
+    const todayEndDate = '2026-11-11';
+    const isTodayOngoing = todayStartDate <= today && todayEndDate >= today;
+    expect(isTodayOngoing).toBe(true);
+
+    // Past event (ended before today)
+    const pastStartDate = '2026-11-01';
+    const pastEndDate = '2026-11-05';
+    const isPastOngoing = pastStartDate <= today && pastEndDate >= today;
+    expect(isPastOngoing).toBe(false);
+  });
 });

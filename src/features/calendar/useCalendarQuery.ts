@@ -58,14 +58,38 @@ export async function listCalendarEvents(limit = 300): Promise<CalendarEvent[]> 
   }
 }
 
+/**
+ * Merges official academic events with incoming worker events.
+ * Keyed by normalised title and dateFrom so official holidays and milestones
+ * are preserved when new or updated events arrive from the worker.
+ */
+export function mergeCalendarEvents(
+  officialEvents: CalendarEvent[],
+  workerEvents: CalendarEvent[],
+): CalendarEvent[] {
+  if (!workerEvents || workerEvents.length === 0) {
+    return officialEvents;
+  }
+  const merged = new Map<string, CalendarEvent>();
+  for (const event of officialEvents) {
+    const key = `${event.title.trim().toLowerCase()}::${event.dateFrom}`;
+    merged.set(key, event);
+  }
+  for (const event of workerEvents) {
+    const key = `${event.title.trim().toLowerCase()}::${event.dateFrom}`;
+    merged.set(key, event);
+  }
+  return Array.from(merged.values()).sort((a, b) => a.dateFrom.localeCompare(b.dateFrom));
+}
+
 export function useCalendarQuery() {
   return useQuery<CalendarEvent[]>({
     queryKey: CALENDAR_QUERY_KEY,
     queryFn: async () => {
       const events = await listCalendarEvents();
-      // The official calendar ships with the app, so the screen is right even
-      // before the worker has pushed the parsed rows to the backend.
-      return events.length > 0 ? events : OFFICIAL_ACADEMIC_EVENTS;
+      // The official calendar & holidays ship with the app; merge with incoming worker events
+      // so holidays and official milestones are preserved even if 1 row is written.
+      return mergeCalendarEvents(OFFICIAL_ACADEMIC_EVENTS, events);
     },
     initialData: OFFICIAL_ACADEMIC_EVENTS,
     // The seed must not count as fresh, or the query never fetches.

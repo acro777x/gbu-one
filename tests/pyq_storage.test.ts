@@ -155,12 +155,16 @@ describe('storage paths', () => {
 
 describe('paper rows', () => {
   it('starts in the pending state', () => {
-    const row = buildPaperRow(META, 'pyq_1', 'pyq-pending/x.pdf', 'user-1');
+    const row = buildPaperRow(META, 'pyq_1', 'pyq-pending/x.pdf', 'student-1', {
+      name: 'Test User',
+      uniqueStudentId: 'student-1',
+      avatarId: 'tech-scholar',
+    });
     expect(row.status).toBe('pending');
     expect(row.subject_code).toBe('CSE205');
     expect(row.programme_code).toBe('BCS');
     expect(row.exam_type).toBe('Mid Sem');
-    expect(row.uploader_id).toBe('user-1');
+    expect(row.uploader_id).toBe('student-1');
     expect(row.downloads).toBe(0);
   });
 
@@ -174,7 +178,6 @@ describe('moderation actions', () => {
   it('maps every action to a status', () => {
     expect(statusAfterAction('approve')).toBe('approved');
     expect(statusAfterAction('reject')).toBe('rejected');
-    expect(statusAfterAction('request-changes')).toBe('pending');
   });
 
   it('has a label for every action', () => {

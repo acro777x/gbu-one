@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -20,6 +20,7 @@ import { X } from 'lucide-react-native';
 import { motion } from '../../lib/motion';
 import { theme } from '../../lib/theme';
 import { useAppTheme } from '../../lib/ThemeContext';
+import { useReduceMotion } from '../../lib/useReduceMotion';
 import { useSheetStore } from '../../store/useSheetStore';
 
 export interface SheetOverlayProps {
@@ -31,6 +32,15 @@ export interface SheetOverlayProps {
   variant?: 'sheet' | 'center';
   /** The sheet's own height in points. */
   height?: number;
+  /**
+   * The ACTION the close control performs, in the student's words:
+   * "Close" for an ordinary sheet, "Dismiss alarm" for the class alarm.
+   * It is what a screen reader announces, so it must describe the action
+   * rather than the shape of the control.
+   */
+  closeLabel?: string;
+  /** Whether a tap on the backdrop closes the sheet. Default: true. */
+  dismissOnBackdropPress?: boolean;
 }
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -56,26 +66,66 @@ export const SheetOverlay: React.FC<SheetOverlayProps> = ({
   children,
   variant = 'sheet',
   height,
+  closeLabel = 'Close',
+  dismissOnBackdropPress = true,
 }) => {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const setSheetOpen = useSheetStore((state) => state.setOpen);
+  const reduceMotion = useReduceMotion();
+  const registerSheet = useSheetStore((state) => state.register);
 
   const progress = useSharedValue(0);
 
-  useEffect(() => {
-    if (visible) {
-      setSheetOpen(true);
-      progress.value = withSpring(1, motion.spring.soft);
-    } else {
-      setSheetOpen(false);
-      progress.value = withTiming(0, { duration: 180 });
-    }
-  }, [visible, progress, setSheetOpen]);
+  /**
+   * The sheet stays mounted until its exit animation has finished. Returning
+   * `null` on the very render in which `visible` flips to `false` used to
+   * kill the exit animation: a programmatically closed sheet vanished
+   * instantly while a user-closed one animated.
+   */
+  const [mounted, setMounted] = useState(visible);
+  const mountedRef = useRef(mounted);
+  mountedRef.current = mounted;
+
+  const hide = useCallback(() => {
+    mountedRef.current = false;
+    setMounted(false);
+  }, []);
 
   useEffect(() => {
-    return () => setSheetOpen(false);
-  }, [setSheetOpen]);
+    if (visible) {
+      if (!mountedRef.current) {
+        mountedRef.current = true;
+        setMounted(true);
+      }
+      progress.value = reduceMotion ? 1 : withSpring(1, motion.spring.soft);
+      return;
+    }
+
+    if (!mountedRef.current) return;
+
+    if (reduceMotion) {
+      progress.value = 0;
+      hide();
+      return;
+    }
+
+    progress.value = withTiming(0, { duration: 180 }, (finished) => {
+      if (finished) {
+        runOnJS(hide)();
+      }
+    });
+  }, [visible, reduceMotion, progress, hide]);
+
+  /**
+   * The tab bar steps aside while a sheet is on screen. The store counts the
+   * open sheets, so closing one of several sheets does not re-show the tab
+   * bar while another one is still up.
+   */
+  useEffect(() => {
+    if (!mounted) return;
+    const release = registerSheet();
+    return release;
+  }, [mounted, registerSheet]);
 
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
@@ -90,12 +140,17 @@ export const SheetOverlay: React.FC<SheetOverlayProps> = ({
   }));
 
   const handleClose = useCallback(() => {
+    if (reduceMotion) {
+      // No motion: the sheet is torn down by the `visible` flip below.
+      onClose();
+      return;
+    }
     progress.value = withTiming(0, { duration: 160 }, (finished) => {
       if (finished) {
         runOnJS(onClose)();
       }
     });
-  }, [onClose, progress]);
+  }, [onClose, progress, reduceMotion]);
 
   // The Android back button closes the sheet instead of leaving the screen.
   useEffect(() => {
@@ -107,7 +162,19 @@ export const SheetOverlay: React.FC<SheetOverlayProps> = ({
     return () => subscription.remove();
   }, [visible, handleClose]);
 
-  if (!visible) return null;
+  if (!mounted) return null;
+
+  const closeButton = (
+    <Pressable
+      onPress={handleClose}
+      hitSlop={12}
+      style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.7 : 1 }]}
+      accessibilityRole="button"
+      accessibilityLabel={closeLabel}
+    >
+      <X size={18} color={colors.textSecondary} />
+    </Pressable>
+  );
 
   return (
     <View
@@ -120,9 +187,24 @@ export const SheetOverlay: React.FC<SheetOverlayProps> = ({
           right: -insets.right,
         },
       ]}
+      // While the exit animation is running the sheet must not eat touches.
+      pointerEvents={visible ? 'auto' : 'none'}
     >
       <Animated.View style={[styles.backdrop, { backgroundColor: 'rgba(9, 12, 20, 0.62)' }, backdropStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} accessibilityLabel="Close" />
+        {/*
+          The backdrop is a full-screen press target. It is hidden from the
+          accessibility tree: a screen reader must not land on a screen-sized
+          "Close" element, and the sheet's own close control carries the
+          action instead.
+        */}
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={dismissOnBackdropPress ? handleClose : undefined}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          accessible={false}
+          focusable={false}
+        />
       </Animated.View>
 
       <Animated.View
@@ -139,34 +221,30 @@ export const SheetOverlay: React.FC<SheetOverlayProps> = ({
           },
           sheetStyle,
         ]}
+        /*
+          On iOS `accessibilityViewIsModal` makes VoiceOver ignore the views
+          behind the sheet, so the screen underneath is not read out with it.
+          (On Android the equivalent is to hide the content behind the sheet,
+          which lives in a screen this component does not own.)
+        */
+        accessibilityViewIsModal
+        importantForAccessibility="yes"
       >
         {variant === 'sheet' && <View style={[styles.handle, { backgroundColor: colors.borderStrong }]} />}
 
         {title ? (
           <View style={[styles.header, { borderBottomColor: colors.divider }]}>
-            <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
-            <Pressable
-              onPress={handleClose}
-              hitSlop={12}
-              style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.7 : 1 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Close sheet"
+            <Text
+              style={[styles.title, { color: colors.textPrimary }]}
+              accessibilityRole="header"
+              numberOfLines={2}
             >
-              <X size={18} color={colors.textSecondary} />
-            </Pressable>
+              {title}
+            </Text>
+            {closeButton}
           </View>
         ) : (
-          <View style={styles.topBar}>
-            <Pressable
-              onPress={handleClose}
-              hitSlop={12}
-              style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.7 : 1 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Close sheet"
-            >
-              <X size={18} color={colors.textSecondary} />
-            </Pressable>
-          </View>
+          <View style={styles.topBar}>{closeButton}</View>
         )}
 
         {/* The content scrolls, so a long form is never cut off. */}
@@ -244,6 +322,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: theme.spacing.md,
     paddingBottom: theme.spacing.md,
     borderBottomWidth: 1,
     marginBottom: theme.spacing.md,
@@ -254,9 +333,10 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xs,
   },
   closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    // The project floor for a touch target is 44pt (AGENTS.md).
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },

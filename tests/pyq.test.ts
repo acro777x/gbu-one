@@ -3,7 +3,8 @@
  * Per docs/ROADMAP.md Phase 4 & docs/ARCHITECTURE.md
  */
 
-import { MOCK_PAPERS, filterPapers } from '../src/features/pyq/pyqService';
+import { MOCK_PAPERS, filterPapers, normalizeSemester } from '../src/features/pyq/pyqService';
+import { PROGRAMMES_BY_SCHOOL } from '../src/features/pyq/pyqProgrammes';
 
 describe('PYQ Browser & Management Logic', () => {
   it('contains approved mock papers with valid school, programme, and semester', () => {
@@ -130,7 +131,6 @@ describe('PYQ Browser & Management Logic', () => {
     expect(availableSubjects.slice(0, 60)).toHaveLength(60);
   });
   it('normalizes semester correctly including Sem IX and Sem X', () => {
-    const { normalizeSemester } = require('../src/features/pyq/pyqService');
     expect(normalizeSemester('Sem 1')).toBe('Sem I');
     expect(normalizeSemester('Sem 8')).toBe('Sem VIII');
     expect(normalizeSemester('Sem 9')).toBe('Sem IX');
@@ -165,7 +165,6 @@ describe('PYQ Browser & Management Logic', () => {
   });
 
   it('provides comprehensive programmes across all Gautam Buddha University schools', () => {
-    const { PROGRAMMES_BY_SCHOOL } = require('../src/features/pyq/pyqProgrammes');
     const schools = ['SOICT', 'SOE', 'SOBT', 'SOM', 'SOLJG', 'SOHSS', 'SOVSAS', 'SOUS'];
     for (const school of schools) {
       expect(PROGRAMMES_BY_SCHOOL[school]).toBeDefined();

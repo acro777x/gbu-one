@@ -50,8 +50,6 @@ const SUPABASE_REST_NOTICES_URL =
 
 function getServiceKey(): string {
   return (
-    process.env.EXPO_PUBLIC_ADMIN_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
     ''
   );

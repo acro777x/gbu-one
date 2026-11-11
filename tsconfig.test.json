@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The root tsconfig sets isolatedModules so Metro's Babel pipeline can
+    // transpile without type information. ts-jest inherited that setting and
+    // therefore SKIPPED type checking entirely, which meant `npm test` could
+    // report 39/39 green while `npm run typecheck` failed with three errors.
+    // A green test run carried no information about type correctness.
+    //
+    // The test config turns it back on, so a type error fails the test run
+    // as well as the typecheck.
+    "isolatedModules": false,
+    "noEmit": true,
+    "types": ["jest", "node"],
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ]
+}

@@ -97,8 +97,32 @@ export const lightColors = {
 
 export type ColorSet = typeof lightColors;
 
-// Default export uses lightColors per product specification
+/**
+ * The default (light) palette.
+ *
+ * @deprecated This is a STATIC palette: it is always the light one, no
+ * matter which theme the student picked. Any `StyleSheet.create` that reads
+ * `theme.colors` is therefore permanently light and breaks in dark mode.
+ *
+ * The canonical way to read the colours is `useAppTheme().colors` (it
+ * follows the OS / in-app theme), or `getColors(isDark)` below when a
+ * palette is needed outside of React.
+ */
 export const colors = lightColors;
+
+/**
+ * The palette for a given appearance. Use this when a palette is needed
+ * outside of React (a `StyleSheet.create` at module scope, for example).
+ */
+export function getColors(isDark: boolean): ColorSet {
+  return isDark ? (darkColors as unknown as ColorSet) : lightColors;
+}
+
+/** Both palettes, keyed by appearance. */
+export const palettes = {
+  light: lightColors,
+  dark: darkColors as unknown as ColorSet,
+} as const;
 
 export const radius = {
   xs: 6,

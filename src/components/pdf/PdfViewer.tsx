@@ -212,7 +212,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
       setIsDocDoc(isDoc);
 
       if (isImg) {
-        if (size < 100) {
+        if (size < 40) {
           await removeCachedFile(target);
           setPhase({
             status: 'error',

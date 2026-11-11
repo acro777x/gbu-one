@@ -98,6 +98,8 @@ import {
   checkForAppUpdate,
   publishAppVersion,
   clearAppVersionOverride,
+  compareSemver,
+  isValidSemver,
   FALLBACK_VERSION_MANIFEST,
   type AppVersionManifest,
 } from '../../src/features/updates/versionChecker';
@@ -117,11 +119,11 @@ import {
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 import { isAdminApp } from '../../src/lib/appVariant';
+import Constants from 'expo-constants';
 import { supabase, isSupabaseConfigured } from '../../src/lib/supabase';
 import { queryClient, EVENTS_QUERY_KEY, NOTICE_QUERY_KEY } from '../../src/lib/queryClient';
 import {
   authenticateAdmin,
-  verifyAdminCredentials,
   getLockoutState,
   getRemainingLockoutSeconds,
   isLockedOut,
@@ -132,11 +134,10 @@ import {
   recordAdminAction,
   signOutAdmin,
   checkHasAnyAdmin,
+  getCurrentAdminIdentity,
   MAX_ADMIN_ATTEMPTS,
   requestAdminPasswordResetEmail,
   resetAdminPasswordWithEmailCode,
-  resetAdminPasswordWithMasterPin,
-  resetLockoutState,
   ADMIN_SESSION_STORAGE_KEY,
   ADMIN_SESSION_TIMEOUT_MS,
   type AdminAuthResult,
@@ -145,6 +146,18 @@ import {
 type AdminTab = 'events' | 'broadcast' | 'datesheet' | 'pyq' | 'reports' | 'version';
 
 export const VERSION_BROADCAST_HISTORY_KEY = '@gbu_one_version_broadcast_history';
+
+/**
+ * The version of the running build (from `app.json`).
+ *
+ * The published "latest version" has to match the build the students can actually
+ * download. `eas.json` uses `appVersionSource: "local"`, so the version never changes on
+ * its own: publishing a higher number than the shipped APK would leave every student in
+ * an endless compulsory-update loop (the installed app keeps reporting the old version).
+ * The console therefore publishes the running build version and only lets the admin lower
+ * the "minimum supported" threshold.
+ */
+const BUILD_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 
 export default function AdminScreen() {
   const { colors, isDark } = useAppTheme();
@@ -162,14 +175,15 @@ export default function AdminScreen() {
 
   // Security Access Gate State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authGateMode, setAuthGateMode] = useState<'sign_in' | 'initial_setup' | 'reset_pin' | 'emergency'>('sign_in');
+  const [authGateMode, setAuthGateMode] = useState<'sign_in' | 'initial_setup' | 'reset_pin'>('sign_in');
+  const [hasExistingAdmins, setHasExistingAdmins] = useState(true);
   // Reports & Feedback State
   const [reportsList, setReportsList] = useState<StudentReport[]>([]);
   const [reportsFilter, setReportsFilter] = useState<'all' | 'pending' | 'resolved'>('all');
   const [respondingReportId, setRespondingReportId] = useState<string | null>(null);
   const [adminReplyText, setAdminReplyText] = useState('');
   const [isSubmittingReply, setIsSubmittingReply] = useState(false);
-  const [adminEmail, setAdminEmail] = useState(process.env.EXPO_PUBLIC_ADMIN_EMAIL || '');
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resetCode, setResetCode] = useState('');
@@ -177,10 +191,7 @@ export default function AdminScreen() {
   const [resetCodeSentMessage, setResetCodeSentMessage] = useState('');
   const [authenticatedEmail, setAuthenticatedEmail] = useState('');
   const [authenticatedRole, setAuthenticatedRole] = useState('moderator');
-  const [authMethod, setAuthMethod] = useState<'server' | 'offline_emergency'>('server');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [adminPasscode, setAdminPasscode] = useState('');
-  const [secondaryKey, setSecondaryKey] = useState('');
   const [authError, setAuthError] = useState('');
   const [isLockedOutState, setIsLockedOutState] = useState(false);
   const [lockoutRemainingSeconds, setLockoutRemainingSeconds] = useState(0);
@@ -218,7 +229,7 @@ export default function AdminScreen() {
   const [pendingPapers, setPendingPapers] = useState<PyqPaperRecord[]>([]);
 
   // Version Control State
-  const [manifestVersion, setManifestVersion] = useState('1.1.0');
+  const [manifestVersion] = useState(BUILD_VERSION);
   const [minSupported, setMinSupported] = useState('1.0.0');
   const [isMandatory, setIsMandatory] = useState(true);
   const [apkDownloadUrl, setApkDownloadUrl] = useState(
@@ -343,7 +354,8 @@ export default function AdminScreen() {
       const updateInfo = await checkForAppUpdate();
       if (updateInfo.manifest) {
         setActiveReleaseManifest(updateInfo.manifest);
-        setManifestVersion(updateInfo.manifest.latestVersion);
+        // `manifestVersion` is intentionally NOT taken from the remote manifest: the
+        // published version must stay pinned to the running build (see BUILD_VERSION).
         setMinSupported(updateInfo.manifest.minSupportedVersion);
         setIsMandatory(updateInfo.manifest.isMandatory);
         setApkDownloadUrl(updateInfo.manifest.apkUrl);
@@ -418,8 +430,11 @@ export default function AdminScreen() {
     async function checkSetup() {
       try {
         const hasAdmins = await checkHasAnyAdmin();
+        setHasExistingAdmins(hasAdmins);
         if (!hasAdmins) {
           setAuthGateMode('initial_setup');
+        } else {
+          setAuthGateMode('sign_in');
         }
       } catch {
         // ignore
@@ -429,17 +444,26 @@ export default function AdminScreen() {
 
     async function restoreSession() {
       try {
+        // A local timestamp is NOT proof of an admin session: it survives reinstalls and
+        // could be forged. The console is only restored when Supabase still reports a live
+        // session AND the server confirms the account is on the moderator allowlist.
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !sessionData?.session?.user?.email) return;
+
+        const identity = await getCurrentAdminIdentity();
+        if (!identity) return;
+
+        // The local inactivity timer still applies on top of the server session.
         const raw = await AsyncStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
-        if (raw) {
-          const lastActive = Number(raw);
-          if (Date.now() - lastActive < ADMIN_SESSION_TIMEOUT_MS) {
-            touchAdminSession();
-            setIsAuthenticated(true);
-            setAuthenticatedEmail(session.user.email || 'admin@gbu.ac.in');
-            setAuthenticatedRole('owner');
-            setAuthMethod('server');
-          }
+        const lastActive = raw ? Number(raw) : 0;
+        if (lastActive && Date.now() - lastActive >= ADMIN_SESSION_TIMEOUT_MS) {
+          return;
         }
+
+        touchAdminSession();
+        setIsAuthenticated(true);
+        setAuthenticatedEmail(identity.email);
+        setAuthenticatedRole(identity.role);
       } catch {
         // ignore
       }
@@ -497,11 +521,11 @@ export default function AdminScreen() {
     };
   }, [isAuthenticated, checkLockoutStatus]);
 
-  // Master Admin Authentication Handler with Server-Side & Offline Protection
+  // Admin Authentication Handler — Supabase Auth only (email + password).
   const handleSendResetCode = async () => {
-    const targetEmail = (adminEmail || 'admin@gbu.ac.in').trim();
+    const targetEmail = (adminEmail || '').trim();
     if (!targetEmail) {
-      setAuthError('Please enter your authorized owner email first.');
+      setAuthError('Please enter the email address of your administrator account first.');
       return;
     }
     setIsSendingResetCode(true);
@@ -557,42 +581,28 @@ export default function AdminScreen() {
         setAuthError('Please enter your administrator password.');
         return;
       }
-    } else if (authGateMode === 'emergency') {
-      if (!adminPasscode.trim()) {
-        setAuthError('Please enter the Emergency Master Passcode / PIN.');
-        return;
-      }
     }
 
     setIsAuthenticating(true);
     setAuthError('');
 
     let res: AdminAuthResult;
-    if (authGateMode === 'emergency') {
-      res = await authenticateAdmin({
-        offlinePin: adminPasscode,
-        secondaryKey: secondaryKey || undefined,
-      });
-    } else if (authGateMode === 'reset_pin') {
-      if (resetCode.trim()) {
-        res = await resetAdminPasswordWithEmailCode(
-          adminEmail || 'admin@gbu.ac.in',
-          resetCode.trim(),
-          adminPassword,
-        );
-      } else {
-        res = await resetAdminPasswordWithMasterPin(
-          adminEmail || 'admin@gbu.ac.in',
-          adminPassword,
-          adminPasscode,
-        );
+    if (authGateMode === 'reset_pin') {
+      if (!resetCode.trim()) {
+        setAuthError('Please enter the 6-digit verification code sent to your email.');
+        setIsAuthenticating(false);
+        return;
       }
+      res = await resetAdminPasswordWithEmailCode(
+        adminEmail.trim(),
+        resetCode.trim(),
+        adminPassword,
+      );
     } else {
       res = await authenticateAdmin({
-        email: adminEmail || 'admin@gbu.ac.in',
+        email: adminEmail.trim(),
         password: adminPassword,
         isInitialSetup: authGateMode === 'initial_setup',
-        masterPin: adminPasscode || undefined,
       });
     }
 
@@ -600,11 +610,8 @@ export default function AdminScreen() {
 
     if (res.success) {
       setIsAuthenticated(true);
-      setAuthenticatedEmail(res.userEmail || adminEmail || 'Verified Administrator');
-      setAuthenticatedRole(res.role || (res.authMethod === 'offline_emergency' ? 'emergency_admin' : 'moderator'));
-      setAuthMethod(res.authMethod || 'server');
-      setAdminPasscode('');
-      setSecondaryKey('');
+      setAuthenticatedEmail(res.userEmail || adminEmail.trim() || 'Verified Administrator');
+      setAuthenticatedRole(res.role || 'moderator');
       setAdminPassword('');
       setConfirmPassword('');
       setAuthError('');
@@ -614,8 +621,6 @@ export default function AdminScreen() {
       showToast(
         authGateMode === 'initial_setup'
           ? 'Initial Admin Setup complete! Owner account active.'
-          : res.authMethod === 'offline_emergency'
-          ? 'Console unlocked via Emergency Master Key (Offline Mode).'
           : 'Authenticated successfully via Supabase Auth.'
       );
     } else {
@@ -632,8 +637,6 @@ export default function AdminScreen() {
 
   const handleManualLockConsole = async () => {
     setIsAuthenticated(false);
-    setAdminPasscode('');
-    setSecondaryKey('');
     setAdminPassword('');
     setConfirmPassword('');
     await signOutAdmin();
@@ -1217,10 +1220,31 @@ export default function AdminScreen() {
       .map((n) => n.trim())
       .filter(Boolean);
 
+    const latest = manifestVersion.trim();
+    const min = minSupported.trim();
+
+    // Fail closed on nonsense version pairs. An invalid version is ignored by the
+    // students' app, and a "minimum supported" above the published version traps every
+    // student in an endless compulsory-update loop.
+    if (!isValidSemver(latest)) {
+      showToast(`Invalid version "${latest}". Use MAJOR.MINOR.PATCH (e.g. 1.2.0).`);
+      return;
+    }
+    if (!isValidSemver(min)) {
+      showToast(`Invalid minimum supported version "${min}". Use MAJOR.MINOR.PATCH (e.g. 1.2.0).`);
+      return;
+    }
+    if (compareSemver(min, latest) > 0) {
+      showToast(
+        `Minimum supported version (${min}) cannot be newer than the published version (${latest}).`,
+      );
+      return;
+    }
+
     const manifest: AppVersionManifest = {
       platform: 'android',
-      latestVersion: manifestVersion.trim() || '1.1.0',
-      minSupportedVersion: minSupported.trim() || '1.0.0',
+      latestVersion: latest,
+      minSupportedVersion: min,
       isMandatory,
       title: isMandatory ? 'Mandatory GBU One Update' : 'GBU One Update Available',
       message: isMandatory
@@ -1246,14 +1270,16 @@ export default function AdminScreen() {
         isMandatory,
       });
       showToast(
-        `Version manifest broadcast successfully! (${manifest.latestVersion}, Mandatory: ${isMandatory})`,
+        res.localOnly
+          ? `Saved locally only — cloud publishing is disabled, so students were NOT notified (${manifest.latestVersion}).`
+          : `Version manifest broadcast successfully! (${manifest.latestVersion}, Mandatory: ${isMandatory})`,
       );
     } else {
       showToast(res.error || 'Failed to broadcast update.');
     }
   };
 
-  // Handler: Execute Revert / Rollback release to baseline 1.0.0
+  // Handler: Execute Revert / Rollback release to baseline
   const executeRevertRelease = async () => {
     setIsRevertingRelease(true);
     try {
@@ -1263,7 +1289,6 @@ export default function AdminScreen() {
         releasedAt: new Date().toISOString(),
       };
       setActiveReleaseManifest(baselineManifest);
-      setManifestVersion('1.0.0');
       setMinSupported('1.0.0');
       setIsMandatory(false);
       setApkDownloadUrl('https://github.com/acro777x/gbu-one');
@@ -1271,7 +1296,7 @@ export default function AdminScreen() {
 
       setVersionBroadcastHistory((prev) => {
         const updated = prev.map((item) =>
-          item.latestVersion === (activeReleaseManifest?.latestVersion || '1.1.0')
+          item.latestVersion === (activeReleaseManifest?.latestVersion || BUILD_VERSION)
             ? { ...item, isMandatory: false }
             : item
         );
@@ -1355,38 +1380,16 @@ export default function AdminScreen() {
             {/* Lockout Warning Badge with Live Countdown */}
             {isLockedOutState ? (
               <View style={{ marginBottom: 12 }}>
-                <View
-                  style={[
-                    styles.lockoutBadge,
-                    { backgroundColor: colors.dangerSoft, borderColor: colors.danger },
-                  ]}
-                >
+                <View style={[styles.lockoutBadge, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}>
                   <ShieldAlert size={18} color={colors.danger} />
                   <Text style={[styles.lockoutBadgeText, { color: colors.danger }]}>
                     Access Temporarily Locked: Try again in {formatLockoutTime(lockoutRemainingSeconds)}
                   </Text>
                 </View>
-                <TouchableOpacity
-                  onPress={async () => {
-                    await resetLockoutState();
-                    await checkLockoutStatus();
-                    showToast('Lockout cleared via Master Security PIN override.');
-                  }}
-                  style={{
-                    marginTop: 8,
-                    paddingVertical: 8,
-                    paddingHorizontal: 12,
-                    borderRadius: 8,
-                    backgroundColor: colors.accentSoft,
-                    borderWidth: 1,
-                    borderColor: colors.accent,
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.accent }}>
-                    Instant Master PIN Unlock (Clear Cooldown)
-                  </Text>
-                </TouchableOpacity>
+                {/* NOTE: there is deliberately NO "clear cooldown" button here. The old
+                    "Instant Master PIN Unlock" control reset the lockout without asking for
+                    any credential, so anybody standing at the lock screen could clear it and
+                    keep guessing. The cooldown now expires on its own. */}
               </View>
             ) : failedAttemptsCount > 0 ? (
               /* Attempts Remaining Warning */
@@ -1445,25 +1448,27 @@ export default function AdminScreen() {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={() => {
-                  setAuthGateMode('initial_setup');
-                  setAuthError('');
-                }}
-                style={[
-                  styles.authModeTabBtn,
-                  authGateMode === 'initial_setup' && { backgroundColor: colors.surface, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 3 },
-                ]}
-              >
-                <Text
+              {!hasExistingAdmins && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setAuthGateMode('initial_setup');
+                    setAuthError('');
+                  }}
                   style={[
-                    styles.authModeTabText,
-                    { color: authGateMode === 'initial_setup' ? colors.accent : colors.textSecondary },
+                    styles.authModeTabBtn,
+                    authGateMode === 'initial_setup' && { backgroundColor: colors.surface, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 3 },
                   ]}
                 >
-                  Setup
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.authModeTabText,
+                      { color: authGateMode === 'initial_setup' ? colors.accent : colors.textSecondary },
+                    ]}
+                  >
+                    Setup
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             <View style={styles.lockForm}>
@@ -1830,7 +1835,7 @@ export default function AdminScreen() {
             </View>
             <View style={styles.liveDot} />
             <Text style={[styles.liveStatusText, { color: colors.textSecondary }]}>
-              {authenticatedRole.toUpperCase()} • {authMethod === 'server' ? 'Server Auth' : 'Offline Master'}
+              {authenticatedRole.toUpperCase()} • Server Auth
             </Text>
           </View>
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
@@ -3601,18 +3606,34 @@ export default function AdminScreen() {
                 Publish new app releases. When marked mandatory, all older student apps display a blocking update modal requiring APK update.
               </Text>
 
-              {/* Latest Version */}
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Latest Version</Text>
+              {/* Latest Version — read-only, it is the running build */}
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                Published Version (students are moved to this build)
+              </Text>
               <TextInput
                 value={manifestVersion}
-                onChangeText={setManifestVersion}
-                placeholder="1.1.0"
+                editable={false}
+                placeholder={BUILD_VERSION}
                 placeholderTextColor={colors.textTertiary}
-                style={[styles.input, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
+                style={[
+                  styles.input,
+                  {
+                    color: colors.textPrimary,
+                    borderColor: colors.borderGlass,
+                    backgroundColor: colors.surfaceAlt,
+                    opacity: 0.8,
+                  },
+                ]}
               />
+              <Text style={[styles.fieldHint, { color: colors.textTertiary }]}>
+                Read-only: taken from this build (app.json). Bump the app version before publishing a
+                higher number, otherwise students would be stuck in an endless update loop.
+              </Text>
 
               {/* Min Supported Version */}
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Min Supported Version</Text>
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                Min Supported Version
+              </Text>
               <TextInput
                 value={minSupported}
                 onChangeText={setMinSupported}
@@ -3620,6 +3641,10 @@ export default function AdminScreen() {
                 placeholderTextColor={colors.textTertiary}
                 style={[styles.input, { color: colors.textPrimary, borderColor: colors.borderGlass, backgroundColor: colors.surface }]}
               />
+              <Text style={[styles.fieldHint, { color: colors.textTertiary }]}>
+                Students below this version are blocked until they update. It must be lower than or
+                equal to v{manifestVersion}.
+              </Text>
 
               {/* Mandatory Toggle */}
               <View style={[styles.switchRow, { borderColor: colors.borderGlass, backgroundColor: colors.surface }]}>
@@ -4057,6 +4082,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     marginBottom: 6,
     marginTop: 8,
+  },
+  fieldHint: {
+    fontSize: 11,
+    fontFamily: 'Inter-Regular',
+    marginTop: 6,
+    lineHeight: 15,
   },
   input: {
     height: 44,

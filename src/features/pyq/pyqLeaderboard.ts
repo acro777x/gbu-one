@@ -203,11 +203,14 @@ export async function getLeaderboard(
       if (currentUser.avatarId) existing.avatarId = currentUser.avatarId;
       if (currentUser.uniqueStudentId) existing.uniqueStudentId = currentUser.uniqueStudentId;
       if (currentUser.school) existing.school = currentUser.school;
-      if (typeof currentUser.points === 'number' && currentUser.points > existing.points) {
+      if (typeof currentUser.points === 'number') {
         existing.points = currentUser.points;
       }
-      if (typeof currentUser.uploadsCount === 'number' && currentUser.uploadsCount > existing.uploadsCount) {
+      if (typeof currentUser.uploadsCount === 'number') {
         existing.uploadsCount = currentUser.uploadsCount;
+      }
+      if (existing.points <= 0 && existing.uploadsCount <= 0 && !existing.isOfficialAdmin) {
+        entries.splice(existingIndex, 1);
       }
     } else {
       // Only merge if they have contributions
