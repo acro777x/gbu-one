@@ -12,7 +12,15 @@ import { OCT_NOV_REAL_GBU_NOTICES } from './realGbuNotices';
  *     without a network shows something instead of an empty screen.
  */
 import { useQuery } from '@tanstack/react-query';
-import { MOCK_NOTICES, NoticeItem } from './noticeService';
+import {
+  MOCK_NOTICES,
+  NoticeItem,
+  cleanNoticeTitle,
+  detectNoticeAudience,
+  extractNoticeDeadline,
+  getCanonicalNoticeKey,
+  generateCanonicalNoticeId,
+} from './noticeService';
 import { fetchLiveNotices } from './liveNotices';
 import { toNoticeItems } from './liveNoticeMapping';
 import { useNoticesStatusStore } from './noticesStatus';
@@ -27,30 +35,82 @@ import {
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 function rowToNotice(r: Record<string, unknown>): NoticeItem {
-  const aud = (r.audience ?? {}) as NoticeItem['audience'];
+  const title = String(r.title ?? '');
+  const rawText = (r.raw_text as string | undefined) ?? undefined;
+  const rawAud = (r.audience ?? {}) as NoticeItem['audience'];
+  // If database row audience is empty or unspecific, detect it from title + rawText
+  const hasAudience = rawAud && (rawAud.schools?.length || rawAud.programmes?.length || rawAud.semesters?.length);
+  const audience = hasAudience ? rawAud : detectNoticeAudience(title, rawText ?? '');
+
+  const deadlineAt = (r.deadline_at as string | null | undefined) ?? extractNoticeDeadline(`${title} ${rawText ?? ''}`);
+  const rawRelated = r.related_urls ?? r.relatedUrls;
+  const relatedUrls = Array.isArray(rawRelated) ? (rawRelated as string[]) : undefined;
+
+  const id = String(r.id ?? r.source_id ?? '');
+  const source = (r.source as NoticeItem['source']) ?? 'main';
+  const sourceId = String(r.source_id ?? '');
+  const fileUrl = String(r.file_url ?? '');
+
   return {
-    id: String(r.id ?? r.source_id ?? ''),
-    source: (r.source as NoticeItem['source']) ?? 'main',
-    sourceId: String(r.source_id ?? ''),
-    title: String(r.title ?? ''),
-    cleanTitle: String(r.clean_title ?? r.title ?? ''),
+    id: id || generateCanonicalNoticeId({ source, fileUrl, title, postedAt: String(r.posted_at ?? '') }),
+    source,
+    sourceId: sourceId || id,
+    title,
+    cleanTitle: String(r.clean_title ?? cleanNoticeTitle(title)),
     postedAt: String(r.posted_at ?? new Date().toISOString()),
-    fileUrl: String(r.file_url ?? ''),
+    fileUrl,
     fileType: (() => {
-      const u = String(r.file_url ?? '').toLowerCase();
+      const u = fileUrl.toLowerCase();
       if (u.includes('.pdf')) return 'pdf';
-      if (['.jpg', '.jpeg', '.png', '.webp'].some(ext => u.includes(ext))) return 'image';
+      if (['.jpg', '.jpeg', '.png', '.webp'].some((ext) => u.includes(ext))) return 'image';
       if (r.file_type === 'pdf' && u.includes('.pdf')) return 'pdf';
       if (r.file_type === 'image') return 'image';
       return 'html';
     })(),
-    rawText: (r.raw_text as string | undefined) ?? undefined,
+    rawText,
     category: (r.category as NoticeItem['category']) ?? 'other',
-    audience: aud && typeof aud === 'object' ? aud : {},
+    audience,
     importance: Number(r.importance ?? 0),
-    deadlineAt: (r.deadline_at as string | null | undefined) ?? null,
+    deadlineAt,
     threadId: (r.thread_id as string | null | undefined) ?? null,
     threadUpdateCount: Number(r.thread_update_count ?? 0) || undefined,
+    relatedUrls: relatedUrls && relatedUrls.length > 0 ? relatedUrls : undefined,
+    isSample: false,
+  };
+}
+
+function mergeNoticeItems(target: NoticeItem, incoming: NoticeItem): NoticeItem {
+  const mergedSchools = Array.from(
+    new Set([...(target.audience?.schools || []), ...(incoming.audience?.schools || [])]),
+  );
+  const mergedProgrammes = Array.from(
+    new Set([...(target.audience?.programmes || []), ...(incoming.audience?.programmes || [])]),
+  );
+  const mergedSemesters = Array.from(
+    new Set([...(target.audience?.semesters || []), ...(incoming.audience?.semesters || [])]),
+  );
+  const isAll = target.audience?.all && incoming.audience?.all && mergedSchools.length === 0;
+
+  const mergedRelatedUrls = Array.from(
+    new Set([...(target.relatedUrls || []), ...(incoming.relatedUrls || [])]),
+  );
+
+  return {
+    ...target,
+    ...incoming,
+    id: target.id || incoming.id,
+    sourceId: target.sourceId || incoming.sourceId,
+    // Preserve OCR raw text from target if incoming lacks it
+    rawText: incoming.rawText || target.rawText,
+    deadlineAt: incoming.deadlineAt || target.deadlineAt,
+    importance: Math.max(target.importance, incoming.importance),
+    audience: {
+      schools: mergedSchools.length > 0 ? mergedSchools : undefined,
+      programmes: mergedProgrammes.length > 0 ? mergedProgrammes : undefined,
+      semesters: mergedSemesters.length > 0 ? mergedSemesters : undefined,
+      all: isAll,
+    },
+    relatedUrls: mergedRelatedUrls.length > 0 ? mergedRelatedUrls : undefined,
     isSample: false,
   };
 }
@@ -168,34 +228,71 @@ export function useNoticesQuery() {
       // 3. Fetch scraped notices straight from university web pages
       const fromUniversity = await fetchNoticesFromUniversity();
 
-      // 4. Combine all sources with strict deduplication and tombstone filtering
-      const combinedMap = new Map<string, NoticeItem>();
+      // 4. Combine all sources with strict canonical deduplication and tombstone filtering
+      const canonicalMap = new Map<string, NoticeItem>();
+      const idToCanonical = new Map<string, string>();
+
+      const addOrMergeNotice = (n: NoticeItem) => {
+        if (!n || !n.id || deletedSet.has(n.id) || deletedSet.has(n.sourceId)) return;
+        const key = getCanonicalNoticeKey(n);
+        if (deletedSet.has(key)) return;
+
+        const existingKey =
+          idToCanonical.get(n.id) ||
+          idToCanonical.get(n.sourceId) ||
+          (canonicalMap.has(key) ? key : null);
+
+        if (existingKey && canonicalMap.has(existingKey)) {
+          const merged = mergeNoticeItems(canonicalMap.get(existingKey)!, n);
+          canonicalMap.set(existingKey, merged);
+          idToCanonical.set(n.id, existingKey);
+          idToCanonical.set(n.sourceId, existingKey);
+        } else {
+          canonicalMap.set(key, n);
+          idToCanonical.set(n.id, key);
+          idToCanonical.set(n.sourceId, key);
+        }
+      };
 
       // Admin notices have highest priority
       for (const n of cloudPayload.notices) {
-        if (!n || !n.id || deletedSet.has(n.id) || deletedSet.has(n.sourceId)) continue;
-        combinedMap.set(n.id, n);
+        addOrMergeNotice(n);
       }
 
+      // Live notices from Supabase have OCR text and enrichment
       if (live && live.length > 0) {
         for (const n of live) {
-          if (!n || !n.id || deletedSet.has(n.id) || deletedSet.has(n.sourceId)) continue;
-          if (!combinedMap.has(n.id) && !combinedMap.has(n.sourceId)) {
-            combinedMap.set(n.id, n);
-          }
+          addOrMergeNotice(n);
         }
       }
 
+      // Scraped notices straight from university web pages
       if (fromUniversity.notices.length > 0) {
         for (const n of fromUniversity.notices) {
-          if (!n || !n.id || deletedSet.has(n.id) || deletedSet.has(n.sourceId)) continue;
-          if (!combinedMap.has(n.id) && !combinedMap.has(n.sourceId)) {
-            combinedMap.set(n.id, n);
+          addOrMergeNotice(n);
+        }
+      }
+
+      // Ensure OCR rawText from SQLite cache is never dropped across sync intervals
+      const cached = readCachedNotices();
+      if (cached && cached.length > 0) {
+        for (const c of cached) {
+          if (!c?.rawText) continue;
+          const key = getCanonicalNoticeKey(c);
+          const existingKey =
+            idToCanonical.get(c.id) ||
+            idToCanonical.get(c.sourceId) ||
+            (canonicalMap.has(key) ? key : null);
+          if (existingKey && canonicalMap.has(existingKey)) {
+            const current = canonicalMap.get(existingKey)!;
+            if (!current.rawText) {
+              current.rawText = c.rawText;
+            }
           }
         }
       }
 
-      const mergedNotices = Array.from(combinedMap.values()).sort(
+      const mergedNotices = Array.from(canonicalMap.values()).sort(
         (a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()
       );
 
@@ -209,7 +306,6 @@ export function useNoticesQuery() {
         return mergedNotices;
       }
 
-      const cached = readCachedNotices();
       const filteredCached = cached.filter(
         (n) => n && n.id && !deletedSet.has(n.id) && !deletedSet.has(n.sourceId)
       );

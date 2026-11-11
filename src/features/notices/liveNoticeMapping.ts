@@ -4,7 +4,14 @@
  * The live pages are the source of truth; the bundled sample is only a
  * fallback. Keeping the mapping here (and free of React) makes it testable.
  */
-import { cleanNoticeTitle, type NoticeItem } from './noticeService';
+import {
+  cleanNoticeTitle,
+  detectNoticeAudience,
+  extractNoticeDeadline,
+  calculateNoticeImportance,
+  generateCanonicalNoticeId,
+  type NoticeItem,
+} from './noticeService';
 import type { LiveNotice } from './liveNotices';
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
@@ -31,19 +38,41 @@ export function toNoticeItem(live: LiveNotice): NoticeItem {
     (live.attachmentKind === 'modal' ? live.sourceUrl : '') ??
     '';
 
-  return {
-    id: live.id,
+  const relatedUrlsStr = (live.relatedUrls ?? []).join(' ');
+  const audience = detectNoticeAudience(title, relatedUrlsStr);
+  const deadlineAt = extractNoticeDeadline(title);
+
+  const calculatedImportance = calculateNoticeImportance({
+    title,
+    category: live.category,
+    deadlineAt,
+    audience,
+    postedAt: live.postedAt ?? undefined,
+  });
+  const importance = Math.max(live.importance ?? 0, calculatedImportance);
+
+  const canonicalId = generateCanonicalNoticeId({
     source: live.source,
-    sourceId: live.id,
+    fileUrl,
+    title,
+    cleanTitle: cleanNoticeTitle(title),
+    postedAt: live.postedAt,
+  });
+
+  return {
+    id: live.id || canonicalId,
+    source: live.source,
+    sourceId: live.id || canonicalId,
     title,
     cleanTitle: cleanNoticeTitle(title),
     postedAt: live.postedAt ?? new Date().toISOString(),
     fileUrl,
     fileType: fileTypeFor(live),
     category: live.category,
-    audience: { all: true },
-    importance: live.importance,
-    deadlineAt: null,
+    audience,
+    importance,
+    deadlineAt,
+    relatedUrls: live.relatedUrls && live.relatedUrls.length > 0 ? live.relatedUrls : undefined,
     threadId: null,
     threadUpdateCount: undefined,
     isSample: false,

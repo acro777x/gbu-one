@@ -73,6 +73,32 @@ describe('live notice mapping', () => {
     expect(items).toHaveLength(2);
     expect(items[0].id).toBe('new');
   });
+
+  it('properly extracts and maps audience, deadlineAt, and relatedUrls', () => {
+    const item = toNoticeItem(
+      live({
+        title: 'Office Order: Final Extension of Fee Submission Date for SOICT till 31st Oct',
+        relatedUrls: [
+          'https://exams.gbu.ac.in/uploads/notices/soict_datesheet.pdf',
+          'https://exams.gbu.ac.in/uploads/notices/som_datesheet.pdf',
+        ],
+      })
+    );
+
+    // Audience properly extracts school
+    expect(item.audience.schools).toContain('SOICT');
+    expect(item.audience.all).toBe(false);
+
+    // Deadline is extracted so deadline badges on notice cards function properly
+    expect(item.deadlineAt).not.toBeNull();
+    const deadlineDate = new Date(item.deadlineAt!);
+    expect(deadlineDate.getUTCMonth()).toBe(9); // October
+    expect(deadlineDate.getUTCDate()).toBe(31);
+
+    // Related URLs are mapped
+    expect(item.relatedUrls).toHaveLength(2);
+    expect(item.relatedUrls).toContain('https://exams.gbu.ac.in/uploads/notices/soict_datesheet.pdf');
+  });
 });
 
 describe('real notice data integrity', () => {

@@ -4,6 +4,7 @@
  * Per docs/DATA_SOURCES.md, docs/ARCHITECTURE.md, docs/NOTIFICATIONS.md
  */
 
+import crypto from 'crypto';
 import {
   NoticeItem,
   cleanNoticeTitle,
@@ -34,18 +35,14 @@ export interface NoticesWorkerResult {
 }
 
 /**
- * Generates deterministic sourceId hash from source, url, and date
+ * Generates deterministic sourceId hash from source, url, and date using SHA-256 stable hashing
  */
 export function generateSourceId(source: string, url: string, dateStr: string): string {
   // Normalize test.gbu.ac.in mirror to www.gbu.ac.in (they are byte-identical)
   const normalizedUrl = url.replace(/test\.gbu\.ac\.in/gi, 'www.gbu.ac.in');
   const input = `${source}_${normalizedUrl.trim().toLowerCase()}_${dateStr.trim()}`;
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    hash = (hash << 5) - hash + input.charCodeAt(i);
-    hash |= 0;
-  }
-  return `src_${Math.abs(hash).toString(36)}`;
+  const sha = crypto.createHash('sha256').update(input).digest('hex').slice(0, 16);
+  return `src_${sha}`;
 }
 
 /**

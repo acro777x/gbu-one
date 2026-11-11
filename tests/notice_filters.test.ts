@@ -1,7 +1,14 @@
 /**
  * Unit tests for the N99-style removable notice filters.
  */
-import { filterNotices, type NoticeItem } from '../src/features/notices/noticeService';
+import {
+  filterNotices,
+  extractAvailableSchools,
+  extractAvailableCategories,
+  isNoticeMatchingSchools,
+  isNoticeMatchingQuery,
+} from '../src/features/notices/noticeFilters';
+import { type NoticeItem } from '../src/features/notices/noticeService';
 
 const notice = (over: Partial<NoticeItem> = {}): NoticeItem => ({
   id: 'n1',
@@ -98,5 +105,24 @@ describe('notice filters', () => {
   it('requires every active filter to match', () => {
     const result = filterNotices(notices, { categories: ['datesheet'], schools: ['SOM'] });
     expect(result).toHaveLength(0);
+  });
+
+  it('extracts available schools and categories accurately from the notices list', () => {
+    const schools = extractAvailableSchools(notices);
+    expect(schools).toEqual(['SOE', 'SOICT', 'SOM']);
+
+    const categories = extractAvailableCategories(notices);
+    expect(categories).toEqual(['datesheet', 'fees', 'hostel', 'other']);
+  });
+
+  it('matches school from notice cleanTitle when audience schools was empty', () => {
+    const customNotice = notice({
+      id: 'soict_explicit',
+      cleanTitle: 'SOICT Practical Examination Schedule Autumn 2026',
+      audience: {},
+    });
+    expect(isNoticeMatchingSchools(customNotice, ['SOICT'])).toBe(true);
+    expect(isNoticeMatchingSchools(customNotice, ['SOM'])).toBe(false);
+    expect(isNoticeMatchingQuery(customNotice, 'Practical')).toBe(true);
   });
 });
