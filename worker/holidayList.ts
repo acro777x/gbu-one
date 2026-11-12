@@ -27,6 +27,7 @@ import path from 'path';
 import { extractPdfImages } from './pdfText';
 import { fetchWithTlsTolerance } from './noticesJob';
 import { isTesseractAvailable, runTesseract } from './ocrRunner';
+import { WORKER_CONFIG } from './sources.config';
 
 /** One holiday of the list. */
 export interface Holiday {
@@ -66,8 +67,7 @@ export interface HolidayListOptions {
 }
 
 /** The only copy of the list the university publishes. */
-export const HOLIDAY_LIST_2026_URL =
-  'https://www.gbu.ac.in/Content/gbudata/General/List%20of%20Vacation-2026.pdf';
+export const HOLIDAY_LIST_2026_URL = WORKER_CONFIG.sources.holidays.url;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -141,17 +141,27 @@ function toIsoDate(day: number, month: number, year: number): string | null {
   return `${full}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+/**
+ * The compiled weekday patterns.
+ *
+ * The holiday list is a scanned page, so the OCR produces a few hundred
+ * lines. Building twelve regular expressions per line meant thousands of
+ * throw-away objects for one document, so they are compiled once.
+ */
+const ENGLISH_WEEKDAY_PATTERNS = ENGLISH_WEEKDAYS.map((name) => ({
+  pattern: new RegExp(`\\b${name}\\b`, 'i'),
+}));
+
 /** Finds the weekday of a line, in Devanagari or in English. */
 function findDayOfWeek(line: string): string | undefined {
   const lower = line.toLowerCase();
   for (const name of HINDI_WEEKDAYS) {
     if (line.includes(name)) return name;
   }
-  for (const name of ENGLISH_WEEKDAYS) {
-    if (new RegExp(`\\b${name}\\b`).test(lower)) {
-      const match = new RegExp(`\\b${name}\\b`, 'i').exec(line);
-      if (match) return match[0];
-    }
+  for (const { pattern } of ENGLISH_WEEKDAY_PATTERNS) {
+    if (!pattern.test(lower)) continue;
+    const match = pattern.exec(line);
+    if (match) return match[0];
   }
   return undefined;
 }

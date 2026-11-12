@@ -3,16 +3,32 @@
  * Sends to stored device tokens for push candidates (importance >= 3) and
  * for timetable changes (class-targeted).
  * No-op when Supabase or EXPO_PUSH credentials are missing.
+ *
+ * The Expo Push Service answers HTTP 200 with one receipt per message, and
+ * a receipt can say `status: "error"`. The old code counted a batch as
+ * "sent" whenever the HTTP status was 200, so a rejected message (an
+ * expired token, a rate limit, a broken payload) was counted as delivered
+ * and the change was marked as pushed for good. Every send therefore reads
+ * the receipts.
  */
 import type { NoticeItem } from '../src/features/notices/noticeService';
 import { normaliseClassKey } from '../src/lib/classKey';
 import type { TimetableChangeRecord } from './timetableJob';
-import { getWorkerSupabase, markTimetablePush, type ResultRecord } from './supabaseClient';
+import {
+  getWorkerSupabase,
+  markTimetablePush,
+  deleteDeviceTokens,
+  selectAllRows,
+  type ResultRecord,
+} from './supabaseClient';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 /** Android channel for timetable change pushes (docs/NOTIFICATIONS.md). */
 export const TIMETABLE_CHANNEL_ID = 'timetable_changes';
+
+/** The Expo error that means "this device is gone". */
+const DEVICE_NOT_REGISTERED = 'DeviceNotRegistered';
 
 export interface PushReceipt {
   noticeId: string;
@@ -63,18 +79,131 @@ export function selectTokensForClass(rows: DeviceTokenRow[], classKey: string): 
   return [...new Set(tokens)];
 }
 
+/** One receipt of the Expo Push Service. */
+interface ExpoReceipt {
+  status?: string;
+  message?: string;
+  details?: { error?: string };
+}
+
+/** What one batch of messages achieved. */
+export interface ExpoBatchResult {
+  /** Messages the service accepted. */
+  sent: number;
+  /** Messages the service rejected. */
+  failed: number;
+  /** Tokens the service reported as no longer registered. */
+  deadTokens: string[];
+  /** The first error message, for the log. */
+  error?: string;
+}
+
+/**
+ * Sends one batch and reads the receipts.
+ *
+ * The receipts decide whether the messages were delivered: HTTP 200 alone
+ * only means that the request was understood.
+ */
+export async function sendExpoBatch(
+  messages: Array<Record<string, unknown>>,
+  accessToken: string,
+): Promise<ExpoBatchResult> {
+  let response: Response;
+  try {
+    response = await fetch(EXPO_PUSH_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(messages),
+    });
+  } catch (err) {
+    return {
+      sent: 0,
+      failed: messages.length,
+      deadTokens: [],
+      error: err instanceof Error ? err.message : 'push-request-failed',
+    };
+  }
+
+  if (!response.ok) {
+    return {
+      sent: 0,
+      failed: messages.length,
+      deadTokens: [],
+      error: `http-${response.status}`,
+    };
+  }
+
+  let receipts: ExpoReceipt[] = [];
+  try {
+    const body = (await response.json()) as unknown;
+    if (Array.isArray(body)) {
+      receipts = body as ExpoReceipt[];
+    } else if (body && typeof body === 'object' && Array.isArray((body as { data?: unknown }).data)) {
+      receipts = (body as { data: ExpoReceipt[] }).data;
+    }
+  } catch (err) {
+    return {
+      sent: 0,
+      failed: messages.length,
+      deadTokens: [],
+      error: err instanceof Error ? err.message : 'unreadable-push-response',
+    };
+  }
+
+  if (receipts.length === 0) {
+    // No receipt at all: nothing can be claimed to have been delivered.
+    return {
+      sent: 0,
+      failed: messages.length,
+      deadTokens: [],
+      error: 'no-push-receipts',
+    };
+  }
+
+  let sent = 0;
+  let failed = 0;
+  let error: string | undefined;
+  const deadTokens: string[] = [];
+  for (let index = 0; index < receipts.length; index++) {
+    const receipt = receipts[index];
+    if (receipt?.status === 'ok') {
+      sent += 1;
+      continue;
+    }
+    failed += 1;
+    const detail = receipt?.details?.error;
+    if (detail === DEVICE_NOT_REGISTERED) {
+      const token = messages[index]?.to;
+      if (typeof token === 'string') deadTokens.push(token);
+    }
+    error = error ?? receipt?.message ?? detail ?? 'push-rejected';
+  }
+
+  return { sent, failed, deadTokens, error };
+}
+
+/** Removes the tokens the push service rejected as gone. */
+async function removeDeadTokens(tokens: string[]): Promise<void> {
+  if (tokens.length === 0) return;
+  const removed = await deleteDeviceTokens(tokens);
+  if (removed > 0) {
+    console.warn(`Worker: removed ${removed} dead device token(s)`);
+  }
+}
+
 async function fetchTokensForNotice(): Promise<string[]> {
   const sb = getWorkerSupabase();
   if (!sb) return [];
-  try {
-    const { data } = await sb.from('device_tokens').select('token').limit(1000);
-    const tokens = ((data ?? []) as Array<{ token: string }>)
-      .map((r) => r?.token)
-      .filter(isExpoToken);
-    return [...new Set(tokens)];
-  } catch {
+  const read = await selectAllRows<{ token: string }>(sb, 'device_tokens', 'token', 'token');
+  if (!read.ok) {
+    console.warn('Worker: device token read failed:', read.error);
     return [];
   }
+  const tokens = read.rows.map((r) => r?.token).filter(isExpoToken);
+  return [...new Set(tokens)];
 }
 
 /** Loads the device tokens registered for a single class. */
@@ -83,15 +212,17 @@ export async function fetchTokensForClass(classKey: string): Promise<string[]> {
   if (!sb) return [];
   const wanted = normaliseClassKey(classKey);
   if (!wanted) return [];
-  try {
-    const { data } = await sb
-      .from('device_tokens')
-      .select('token,class_key')
-      .limit(2000);
-    return selectTokensForClass((data ?? []) as DeviceTokenRow[], wanted);
-  } catch {
+  const read = await selectAllRows<{ token: string; class_key: string | null }>(
+    sb,
+    'device_tokens',
+    'token,class_key',
+    'token',
+  );
+  if (!read.ok) {
+    console.warn('Worker: device token read failed:', read.error);
     return [];
   }
+  return selectTokensForClass(read.rows, wanted);
 }
 
 /** Builds the Expo payload for a timetable change (docs/NOTIFICATIONS.md). */
@@ -115,8 +246,9 @@ export function buildTimetablePushMessage(change: TimetableChangeRecord): {
 
 /**
  * Sends one push per timetable change to the devices of that class only.
- * A change is recorded as pushed only after a successful send, so a failed
- * send is retried on the next worker run.
+ *
+ * A change is recorded as pushed only after the push service confirmed the
+ * delivery, so a failed send is retried on the next worker run.
  */
 export async function sendPushForTimetableChanges(
   changes: TimetableChangeRecord[],
@@ -153,42 +285,49 @@ export async function sendPushForTimetableChanges(
 
     const { title, body, data } = buildTimetablePushMessage(change);
     let sent = 0;
-    try {
-      for (const batch of chunk(tokens, 100)) {
-        const messages = batch.map((to) => ({
-          to,
-          sound: 'default',
-          priority: 'high',
-          title,
-          body,
-          channelId: TIMETABLE_CHANNEL_ID,
-          data,
-        }));
-        const res = await fetch(EXPO_PUSH_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify(messages),
-        });
-        if (res.ok) sent += batch.length;
-      }
-    } catch (err) {
-      console.warn('Worker: timetable push send failed:', err);
+    let failed = 0;
+    let error: string | undefined;
+    const deadTokens: string[] = [];
+
+    for (const batch of chunk(tokens, 100)) {
+      const messages = batch.map((to) => ({
+        to,
+        sound: 'default',
+        priority: 'high',
+        title,
+        body,
+        channelId: TIMETABLE_CHANNEL_ID,
+        data,
+      }));
+      const result = await sendExpoBatch(messages, accessToken);
+      sent += result.sent;
+      failed += result.failed;
+      deadTokens.push(...result.deadTokens);
+      error = error ?? result.error;
     }
 
-    if (sent > 0) {
+    await removeDeadTokens(deadTokens);
+
+    if (sent > 0 && failed === 0) {
       await markTimetablePush(
         change.changeKey,
         change.classKey,
         change.semesterSessionId,
         sent,
       );
+    } else {
+      // The change was not delivered to everybody, so it stays unmarked and
+      // the next worker run tries again.
+      console.warn(
+        `Worker: timetable push for ${change.changeKey} incomplete (sent ${sent}, failed ${failed}${
+          error ? `, ${error}` : ''
+        }) - it will be retried`,
+      );
     }
+
     receipts.push({
       changeKey: change.changeKey, classKey: change.classKey,
-      sent, skipped: sent === 0, reason: sent === 0 ? 'send-failed' : undefined,
+      sent, skipped: sent === 0, reason: sent === 0 ? (error ?? 'send-failed') : undefined,
     });
   }
   return receipts;
@@ -233,26 +372,30 @@ export async function sendPushForCandidates(
     }
 
     let sent = 0;
-    try {
-      for (const batch of chunk(tokens, 100)) {
-        const messages = batch.map((to) => ({
-          to,
-          sound: 'default',
-          title: 'GBU One — New notice',
-          body: n.cleanTitle.slice(0, 140),
-          data: { sourceId: n.sourceId, category: n.category },
-        }));
-        const res = await fetch(EXPO_PUSH_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify(messages),
-        });
-        if (res.ok) sent += batch.length;
-      }
-      // Mark pushed so reruns never re-notify for the same notice.
+    let failed = 0;
+    let error: string | undefined;
+    const deadTokens: string[] = [];
+
+    for (const batch of chunk(tokens, 100)) {
+      const messages = batch.map((to) => ({
+        to,
+        sound: 'default',
+        title: 'GBU One — New notice',
+        body: n.cleanTitle.slice(0, 140),
+        data: { sourceId: n.sourceId, category: n.category },
+      }));
+      const result = await sendExpoBatch(messages, accessToken);
+      sent += result.sent;
+      failed += result.failed;
+      deadTokens.push(...result.deadTokens);
+      error = error ?? result.error;
+    }
+
+    await removeDeadTokens(deadTokens);
+
+    // Mark pushed so reruns never re-notify for the same notice. Only when
+    // every message was accepted: a partial delivery has to be retried.
+    if (sent > 0 && failed === 0) {
       try {
         const { data: row } = await sb!
           .from('notices').select('id,audience').eq('source_id', n.sourceId).maybeSingle();
@@ -265,10 +408,18 @@ export async function sendPushForCandidates(
       } catch {
         // ignore
       }
-    } catch (err) {
-      console.warn('Worker: push send failed:', err);
+    } else {
+      console.warn(
+        `Worker: notice push for ${n.sourceId} incomplete (sent ${sent}, failed ${failed}${
+          error ? `, ${error}` : ''
+        })`,
+      );
     }
-    receipts.push({ noticeId: n.sourceId, sent, skipped: sent === 0 });
+
+    receipts.push({
+      noticeId: n.sourceId, sent, skipped: sent === 0,
+      reason: sent === 0 ? (error ?? 'send-failed') : undefined,
+    });
   }
   return receipts;
 }
@@ -329,6 +480,8 @@ export async function sendPushForResults(
     }
 
     let sent = 0;
+    let error: string | undefined;
+    const deadTokens: string[] = [];
     const title = 'GBU One — Results Declared';
     const body = `${r.title || `Result declared for ${r.programme} (${r.semester ? `Sem ${r.semester}` : 'Latest'})`}. Tap to view.`.slice(0, 140);
     const data = {
@@ -338,37 +491,30 @@ export async function sendPushForResults(
       semester: r.semester,
     };
 
-    try {
-      for (const batch of chunk(tokens, 100)) {
-        const messages = batch.map((to) => ({
-          to,
-          sound: 'default',
-          priority: 'high',
-          title,
-          body,
-          channelId: 'results',
-          data,
-        }));
-        const res = await fetch(EXPO_PUSH_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify(messages),
-        });
-        if (res.ok) sent += batch.length;
-      }
-    } catch (err) {
-      console.warn('Worker: result push send failed:', err);
+    for (const batch of chunk(tokens, 100)) {
+      const messages = batch.map((to) => ({
+        to,
+        sound: 'default',
+        priority: 'high',
+        title,
+        body,
+        channelId: 'results',
+        data,
+      }));
+      const result = await sendExpoBatch(messages, accessToken);
+      sent += result.sent;
+      deadTokens.push(...result.deadTokens);
+      error = error ?? result.error;
     }
+
+    await removeDeadTokens(deadTokens);
 
     receipts.push({
       fileUrl: url,
       programme: r.programme,
       sent,
       skipped: sent === 0,
-      reason: sent === 0 ? 'send-failed' : undefined,
+      reason: sent === 0 ? (error ?? 'send-failed') : undefined,
     });
   }
   return receipts;

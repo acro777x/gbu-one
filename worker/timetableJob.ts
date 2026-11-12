@@ -17,6 +17,7 @@ import {
 } from '../src/features/timetable/timetableProvider';
 import { WORKER_CONFIG } from './sources.config';
 import { fetchWithTlsTolerance } from './noticesJob';
+import { fetchWithRetry, politeWait } from './http';
 
 export interface TimetableChangeRecord {
   id: string;
@@ -339,29 +340,57 @@ export class TimetablePollerJob {
 
   /**
    * Fetches raw JSON data from GBU API for a given session
+   *
+   * The API is published on two hosts. When the primary one cannot be
+   * reached, the legacy host is tried, so a moved endpoint does not cost a
+   * whole stage.
    */
   async fetchSessionData(sessionId: string): Promise<RawGBUTimetableItem[]> {
-    const url = `${WORKER_CONFIG.sources.timetableApi.baseUrl}?schd=${sessionId}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), WORKER_CONFIG.sources.timetableApi.timeoutMs);
+    const bases = [
+      WORKER_CONFIG.sources.timetableApi.baseUrl,
+      WORKER_CONFIG.sources.timetableApi.legacyBaseUrl,
+    ];
+    let lastError: unknown = null;
 
-    try {
-      const response = await fetchWithTlsTolerance(url, {
-        headers: {
-          'User-Agent': WORKER_CONFIG.userAgent,
-        },
-        signal: controller.signal,
-      });
+    for (const base of bases) {
+      const url = `${base}?schd=${sessionId}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        WORKER_CONFIG.sources.timetableApi.timeoutMs,
+      );
 
-      if (!response.ok) {
-        throw new Error(`GBU API responded with status ${response.status}`);
+      try {
+        await politeWait(url, WORKER_CONFIG.sources.timetableApi.rateLimitMs);
+        const response = await fetchWithRetry(
+          url,
+          {
+            headers: {
+              'User-Agent': WORKER_CONFIG.userAgent,
+            },
+          },
+          {
+            attempts: 2,
+            baseDelayMs: 2000,
+            timeoutMs: WORKER_CONFIG.sources.timetableApi.timeoutMs,
+            fetchImpl: (target, init) => fetchWithTlsTolerance(target, init),
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`GBU API responded with status ${response.status}`);
+        }
+
+        const json = await response.json();
+        return Array.isArray(json) ? (json as RawGBUTimetableItem[]) : [];
+      } catch (err) {
+        lastError = err;
+      } finally {
+        clearTimeout(timeoutId);
       }
-
-      const json = await response.json();
-      return Array.isArray(json) ? (json as RawGBUTimetableItem[]) : [];
-    } finally {
-      clearTimeout(timeoutId);
     }
+
+    throw lastError instanceof Error ? lastError : new Error('timetable fetch failed');
   }
 
   /**

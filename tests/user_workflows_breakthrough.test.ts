@@ -160,10 +160,13 @@ describe('Hostile User Workflows Breakthrough Suite', () => {
       expect(validateUploadFile({ name: 'script.js', mimeType: 'application/javascript', size: 4096 }).ok).toBe(false);
     });
 
-    it('rejects zero-byte files and missing sizes', () => {
+    it('rejects zero-byte files but accepts a size the picker could not measure', () => {
       expect(validateUploadFile({ name: 'paper.pdf', mimeType: 'application/pdf', size: 0 }).ok).toBe(false);
       expect(validateUploadFile({ name: 'paper.pdf', mimeType: 'application/pdf', size: -100 }).ok).toBe(false);
-      expect(validateUploadFile({ name: 'paper.pdf', mimeType: 'application/pdf', size: null }).ok).toBe(false);
+      // A cloud document provider may report `size: null`. That is an
+      // UNKNOWN size, not an empty file: rejecting it as "The selected file
+      // is empty" lost real question papers.
+      expect(validateUploadFile({ name: 'paper.pdf', mimeType: 'application/pdf', size: null }).ok).toBe(true);
     });
 
     it('rejects files exceeding 20 MB limit', () => {
@@ -175,12 +178,18 @@ describe('Hostile User Workflows Breakthrough Suite', () => {
       }
     });
 
-    it('accepts valid PDF, JPG, PNG, DOC, and DOCX files within limits', () => {
+    it('accepts valid PDF, JPG and PNG files within limits', () => {
       expect(validateUploadFile({ name: 'paper.pdf', mimeType: 'application/pdf', size: 1024 * 500 }).ok).toBe(true);
       expect(validateUploadFile({ name: 'scan.jpg', mimeType: 'image/jpeg', size: 1024 * 300 }).ok).toBe(true);
       expect(validateUploadFile({ name: 'scan.png', mimeType: 'image/png', size: 1024 * 400 }).ok).toBe(true);
-      expect(validateUploadFile({ name: 'paper.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 1024 * 200 }).ok).toBe(true);
-      expect(validateUploadFile({ name: 'notes.doc', mimeType: 'application/msword', size: 1024 * 150 }).ok).toBe(true);
+    });
+
+    it('rejects DOC and DOCX, which the storage bucket does not allow', () => {
+      // The bucket allows application/pdf, image/jpeg and image/png only.
+      // A Word file used to pass the app's validation and was then refused
+      // by the bucket with a raw error the student could not act on.
+      expect(validateUploadFile({ name: 'paper.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 1024 * 200 }).ok).toBe(false);
+      expect(validateUploadFile({ name: 'notes.doc', mimeType: 'application/msword', size: 1024 * 150 }).ok).toBe(false);
     });
   });
 

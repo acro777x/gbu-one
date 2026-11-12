@@ -96,10 +96,14 @@ describe('generated schema', () => {
       //  - a student queues a paper row (the WITH CHECK binds it to the
       //    uploader, so nobody can claim another student's identity)
       //  - a guest registers its own push token
+      //  - a guest UPDATES its own push token row (the class key is attached
+      //    that way; without it a guest who changed section kept the old
+      //    class key and received the wrong timetable changes)
       const allowed = [
         'pyq pending upload',
         'pyq papers insert pending',
         'device tokens guest insert',
+        'device tokens guest update',
       ];
       expect({ name, allowed: allowed.includes(name) }).toEqual({ name, allowed: true });
     }
@@ -150,6 +154,25 @@ describe('generated schema', () => {
     for (const table of tables) {
       expect(generated).toContain(`alter table public.${table} enable row level security;`);
     }
+  });
+
+  it('lets a student read only their own uploads', () => {
+    const body = policyBody('pyq papers own read');
+    expect(body).toContain('uploader_id = auth.uid()');
+    // It must never be based on the device identity: `uploader_student_id`
+    // is self-asserted by the client, so a student could read another
+    // student's pending upload by claiming their device id.
+    expect(body).not.toContain('uploader_student_id');
+    expect(body).not.toContain('using (true)');
+  });
+
+  it('awards contributor points only for a signed-in account', () => {
+    // The device identity is self-asserted: a guest can write any
+    // uploader_student_id it likes. If the view grouped by that, one device
+    // could claim another student's points.
+    expect(generated).toContain('group by uploader_id, uploader_student_id;');
+    expect(generated).toContain('where uploader_id is not null');
+    expect(generated).not.toMatch(/group by uploader_student_id;/);
   });
 
   it('makes the realtime broadcast channels moderator-only', () => {

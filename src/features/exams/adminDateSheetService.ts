@@ -31,11 +31,27 @@ export const CDN_DATE_SLOTS_URL =
 export const CDN_DATE_SLOTS_UPLOAD_URL =
   'https://pjnxllnncsoroevgfbmt.supabase.co/storage/v1/object/campus-events/exam_date_slots.json';
 
-function getServiceKey(): string {
-  return (
-    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-    ''
-  );
+/**
+ * The headers a cloud write uses.
+ *
+ * The bearer token is the signed-in moderator's own access token: the
+ * `exam_date_slots` table and the storage bucket are moderator-only, and the
+ * client must never hold a secret that could bypass that.
+ */
+async function getWriteAuthHeaders(): Promise<Record<string, string>> {
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+  let accessToken = '';
+  try {
+    const { data } = await supabase.auth.getSession();
+    accessToken = data?.session?.access_token ?? '';
+  } catch {
+    // No session: the server will refuse the write, which is correct.
+  }
+  return {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken || anonKey}`,
+    'Content-Type': 'application/json',
+  };
 }
 
 /**
@@ -102,7 +118,12 @@ export async function saveExamDateSlots(
   const uniqueSlots = Array.from(slotMap.values());
   const rows: DateSlotRow[] = uniqueSlots.map(examSlotToRow);
 
-  // 2. Write to Supabase Postgres `exam_date_slots` table
+  const failures: string[] = [];
+  let written = false;
+
+  // 2. Write to Supabase Postgres `exam_date_slots` table.
+  //    The Supabase client carries the signed-in moderator's session, so the
+  //    moderator-only write policy accepts it.
   if (isSupabaseConfigured) {
     try {
       const BATCH = 100;
@@ -112,17 +133,19 @@ export async function saveExamDateSlots(
           .from('exam_date_slots')
           .upsert(batch, { onConflict: 'slot_key' });
         if (error) {
-          console.warn('exam_date_slots table upsert warning:', error.message);
+          failures.push(`Database write refused: ${error.message}`);
+        } else {
+          written = true;
         }
       }
     } catch (err) {
-      console.warn('exam_date_slots Postgres error:', err);
+      failures.push(`Database write failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   // 3. Write to Cloud Storage CDN for guaranteed delivery
-  const serviceKey = getServiceKey();
   try {
+    const authHeaders = await getWriteAuthHeaders();
     let existingSlots: DateSlotRow[] = [];
     const getRes = await fetch(`${CDN_DATE_SLOTS_URL}?t=${Date.now()}`);
     if (getRes.ok) {
@@ -143,27 +166,28 @@ export async function saveExamDateSlots(
     const allSlots = Array.from(combinedMap.values());
     const putRes = await fetch(CDN_DATE_SLOTS_UPLOAD_URL, {
       method: 'PUT',
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders,
       body: JSON.stringify(allSlots),
     });
 
-    if (!putRes.ok && putRes.status === 404) {
-      await fetch(CDN_DATE_SLOTS_UPLOAD_URL, {
+    if (putRes.ok) {
+      written = true;
+    } else if (putRes.status === 404) {
+      const postRes = await fetch(CDN_DATE_SLOTS_UPLOAD_URL, {
         method: 'POST',
-        headers: {
-          apikey: serviceKey,
-          Authorization: `Bearer ${serviceKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders,
         body: JSON.stringify(allSlots),
       });
+      if (postRes.ok) {
+        written = true;
+      } else {
+        failures.push(`Storage upload failed (HTTP ${postRes.status})`);
+      }
+    } else {
+      failures.push(`Storage upload failed (HTTP ${putRes.status})`);
     }
   } catch (err) {
-    console.warn('CDN date slots sync warning:', err);
+    failures.push(`Storage upload failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // 4. Save to local AsyncStorage
@@ -185,7 +209,19 @@ export async function saveExamDateSlots(
     // ignore
   }
 
-  return { ok: true, count: uniqueSlots.length };
+  if (!written) {
+    return {
+      ok: false,
+      count: uniqueSlots.length,
+      error: `The date sheet was not published. ${failures.join(' ')}`.trim(),
+    };
+  }
+
+  return {
+    ok: true,
+    count: uniqueSlots.length,
+    error: failures.length > 0 ? `Published with warnings. ${failures.join(' ')}` : undefined,
+  };
 }
 
 /**
@@ -281,8 +317,8 @@ export async function deleteDateSlotByKey(slotKey: string): Promise<boolean> {
   }
 
   // 2. Storage CDN
-  const serviceKey = getServiceKey();
   try {
+    const authHeaders = await getWriteAuthHeaders();
     const res = await fetch(`${CDN_DATE_SLOTS_URL}?t=${Date.now()}`);
     if (res.ok) {
       const cdnRows: DateSlotRow[] = await res.json();
@@ -290,11 +326,7 @@ export async function deleteDateSlotByKey(slotKey: string): Promise<boolean> {
         const updated = cdnRows.filter((r) => r.slot_key !== slotKey);
         await fetch(CDN_DATE_SLOTS_UPLOAD_URL, {
           method: 'PUT',
-          headers: {
-            apikey: serviceKey,
-            Authorization: `Bearer ${serviceKey}`,
-            'Content-Type': 'application/json',
-          },
+          headers: authHeaders,
           body: JSON.stringify(updated),
         });
       }

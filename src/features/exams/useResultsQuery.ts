@@ -1,8 +1,10 @@
 /**
  * GBU One — Declared Results Query (offline-first).
  *
- * Scraped and confirmed results come from Supabase (`results`);
- * bundled seed data keeps the exam hub usable when offline or unconfigured.
+ * Scraped and confirmed results come from Supabase (`results`). The bundled
+ * seed keeps the exam hub usable when the phone is offline, and every seeded
+ * row is flagged as a sample so the screen can say so. A sample result never
+ * raises a notification: the university did not declare anything.
  */
 import { useQuery } from '@tanstack/react-query';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
@@ -17,8 +19,21 @@ export interface DeclaredResultItem {
   title: string;
   fileUrl: string;
   postedAt: string;
+  /**
+   * True for the bundled seed. The screen labels those rows, and the app
+   * never sends a notification for them.
+   */
+  isSample?: boolean;
 }
 
+/**
+ * The bundled announcements.
+ *
+ * These are NOT declarations made by the university: they are the examples
+ * the app ships with so the screen has something to show offline. They are
+ * flagged as samples, they are labelled in the UI, and they never trigger a
+ * notification.
+ */
 export const SEED_DECLARED_RESULTS: DeclaredResultItem[] = [
   {
     id: 'res_btech_cse_4',
@@ -28,6 +43,7 @@ export const SEED_DECLARED_RESULTS: DeclaredResultItem[] = [
     title: 'Result of B.Tech (CSE) IV Semester (EVEN SEM 2026)',
     fileUrl: 'https://exams.gbu.ac.in/uploads/results/soict.pdf',
     postedAt: '2026-10-15T00:00:00.000Z',
+    isSample: true,
   },
   {
     id: 'res_btech_ece_6',
@@ -37,6 +53,7 @@ export const SEED_DECLARED_RESULTS: DeclaredResultItem[] = [
     title: 'Declaration of Result of B.Tech (ECE) VI Semester (EVEN SEM 2026)',
     fileUrl: 'https://exams.gbu.ac.in/uploads/results/soict.pdf',
     postedAt: '2026-10-12T00:00:00.000Z',
+    isSample: true,
   },
   {
     id: 'res_mba_2',
@@ -46,6 +63,7 @@ export const SEED_DECLARED_RESULTS: DeclaredResultItem[] = [
     title: 'Result of MBA II Semester (EVEN SEM 2026) Declared',
     fileUrl: 'https://exams.gbu.ac.in/uploads/results/som.pdf',
     postedAt: '2026-10-10T00:00:00.000Z',
+    isSample: true,
   },
   {
     id: 'res_mca_4',
@@ -55,6 +73,7 @@ export const SEED_DECLARED_RESULTS: DeclaredResultItem[] = [
     title: 'Grade Card & Result Declaration of MCA IV Semester',
     fileUrl: 'https://exams.gbu.ac.in/uploads/results/soict.pdf',
     postedAt: '2026-09-28T00:00:00.000Z',
+    isSample: true,
   },
   {
     id: 'res_ballb_8',
@@ -64,6 +83,7 @@ export const SEED_DECLARED_RESULTS: DeclaredResultItem[] = [
     title: 'Result of B.A. LL.B VIII Semester (EVEN SEM 2026)',
     fileUrl: 'https://exams.gbu.ac.in/uploads/results/soljg.pdf',
     postedAt: '2026-09-20T00:00:00.000Z',
+    isSample: true,
   },
   {
     id: 'res_mtech_cse_2',
@@ -73,6 +93,7 @@ export const SEED_DECLARED_RESULTS: DeclaredResultItem[] = [
     title: 'Result of M.Tech (CSE) II Semester Declared',
     fileUrl: 'https://exams.gbu.ac.in/uploads/results/soict.pdf',
     postedAt: '2026-09-15T00:00:00.000Z',
+    isSample: true,
   },
 ];
 
@@ -106,6 +127,7 @@ export async function listDeclaredResults(): Promise<DeclaredResultItem[]> {
       title: String(r.title ?? `${r.programme} Result`),
       fileUrl: String(r.file_url ?? ''),
       postedAt: String(r.posted_at ?? ''),
+      isSample: false,
     }));
   } catch {
     return [];

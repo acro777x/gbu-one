@@ -189,7 +189,11 @@ describe('parseMainNoticesHtml (source A)', () => {
     const notices = parseMainNoticesHtml(MAIN_HTML);
     const scholarship = notices.find((notice) => notice.title.includes('Scholarship'));
     expect(scholarship?.category).toBe('scholarship');
-    expect(scholarship?.importance).toBe(2);
+    // The device uses the shared scorer now (the same one the worker uses),
+    // so a scholarship notice is worth 3 points there as well. The old
+    // client-only scorer gave 2, which is exactly the divergence that made
+    // the phone and the server rank a notice differently.
+    expect(scholarship?.importance).toBe(3);
     expect(classifyLiveNotice('Revised Date Sheet for End Semester Examination')).toBe('datesheet');
     expect(classifyLiveNotice('Tender Notice for Campus Wi-Fi Maintenance')).toBe('other');
     expect(classifyLiveNotice('Notice for NCC Enrollment and Selection Process')).toBe('event');

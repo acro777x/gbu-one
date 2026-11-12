@@ -4,8 +4,15 @@
  * end: the channel, the bundled chime, the scheduled trigger and the
  * notification itself.
  *
- * Reach it at /dev/alarm-test. It is only meant for the team, never for the
- * students.
+ * WHY THIS SCREEN IS GUARDED
+ *
+ * The route is reachable in the shipped student APK. A screen that exists
+ * only for the team must not be part of the release build, so it renders
+ * nothing at all outside a development build: there is no screen to find,
+ * no way in, and nothing to explain. The owner wants the screen kept for
+ * now, so it is guarded rather than deleted.
+ *
+ * Reach it at /dev/alarm-test in a development build.
  */
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, ScrollView } from 'react-native';
@@ -25,6 +32,9 @@ import {
 export default function AlarmTestScreen() {
   const { colors } = useAppTheme();
   const [status, setStatus] = useState('Pick a delay and ring a real alarm.');
+
+  // Not a development build: this screen does not exist.
+  if (!__DEV__) return null;
 
   const ring = async (seconds: number) => {
     try {

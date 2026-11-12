@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { Text, TextStyle, StyleSheet, View } from 'react-native';
 import { theme } from '../../lib/theme';
+import { useReduceMotion } from '../../lib/useReduceMotion';
 
 export interface ScrambleTextProps {
   text: string;
   duration?: number;
   delay?: number;
   style?: TextStyle;
+  /**
+   * Forces the motion off (or on). Left out, the OS "reduce motion" setting
+   * decides - the prop always wins, the OS setting is the default.
+   */
   reduceMotion?: boolean;
   onDone?: () => void;
 }
@@ -18,13 +23,15 @@ export const ScrambleText: React.FC<ScrambleTextProps> = ({
   duration = 800,
   delay = 0,
   style,
-  reduceMotion = false,
+  reduceMotion,
   onDone,
 }) => {
-  const [output, setOutput] = useState(reduceMotion ? text : '');
+  const systemReduce = useReduceMotion();
+  const effectiveReduce = reduceMotion ?? systemReduce;
+  const [output, setOutput] = useState(effectiveReduce ? text : '');
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (effectiveReduce) {
       setOutput(text);
       onDone?.();
       return;
@@ -66,7 +73,7 @@ export const ScrambleText: React.FC<ScrambleTextProps> = ({
       clearTimeout(timeoutId);
       if (intervalId) clearInterval(intervalId);
     };
-  }, [text, duration, delay, reduceMotion]);
+  }, [text, duration, delay, effectiveReduce]);
 
   return (
     <View accessible accessibilityLabel={text}>

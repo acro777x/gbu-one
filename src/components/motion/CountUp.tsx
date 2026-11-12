@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Text, TextStyle, StyleSheet, View, StyleProp } from 'react-native';
 import { theme } from '../../lib/theme';
+import { useReduceMotion } from '../../lib/useReduceMotion';
 
 export interface CountUpProps {
   value: number;
@@ -9,6 +10,10 @@ export interface CountUpProps {
   prefix?: string;
   decimals?: number;
   style?: StyleProp<TextStyle>;
+  /**
+   * Forces the motion off (or on). Left out, the OS "reduce motion" setting
+   * decides - the prop always wins, the OS setting is the default.
+   */
   reduceMotion?: boolean;
   onDone?: () => void;
 }
@@ -20,13 +25,15 @@ export const CountUp: React.FC<CountUpProps> = ({
   prefix = '',
   decimals = 0,
   style,
-  reduceMotion = false,
+  reduceMotion,
   onDone,
 }) => {
-  const [current, setCurrent] = useState(reduceMotion ? value : 0);
+  const systemReduce = useReduceMotion();
+  const effectiveReduce = reduceMotion ?? systemReduce;
+  const [current, setCurrent] = useState(effectiveReduce ? value : 0);
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (effectiveReduce) {
       setCurrent(value);
       onDone?.();
       return;
@@ -53,7 +60,7 @@ export const CountUp: React.FC<CountUpProps> = ({
 
     const handle = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(handle);
-  }, [value, duration, reduceMotion]);
+  }, [value, duration, effectiveReduce]);
 
   const formatted = `${prefix}${current.toFixed(decimals)}${suffix}`;
 

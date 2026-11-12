@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { TextStyle, StyleSheet, View, StyleProp } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -10,7 +10,6 @@ import Animated, {
   cancelAnimation,
   runOnJS,
   Easing,
-  SharedValue,
 } from 'react-native-reanimated';
 import { theme } from '../../lib/theme';
 import { useReduceMotion } from '../../lib/useReduceMotion';
@@ -21,42 +20,23 @@ export interface TypeWriterProps {
   delay?: number;
   cursor?: boolean;
   style?: StyleProp<TextStyle>;
+  /**
+   * Forces the motion off (or on). Left out, the OS "reduce motion" setting
+   * decides - the prop always wins, the OS setting is the default.
+   */
   reduceMotion?: boolean;
   onDone?: () => void;
 }
 
-interface AnimatedCharProps {
-  char: string;
-  index: number;
-  revealedCount: SharedValue<number>;
-  style?: StyleProp<TextStyle>;
-  reduceMotion: boolean;
-}
-
-const AnimatedChar: React.FC<AnimatedCharProps> = ({
-  char,
-  index,
-  revealedCount,
-  style,
-  reduceMotion,
-}) => {
-  const animatedStyle = useAnimatedStyle(() => {
-    'worklet';
-    if (reduceMotion) {
-      return { opacity: 1 };
-    }
-    return {
-      opacity: revealedCount.value >= index + 1 ? 1 : 0,
-    };
-  });
-
-  return (
-    <Animated.Text style={[styles.text, style, animatedStyle]}>
-      {char}
-    </Animated.Text>
-  );
-};
-
+/**
+ * GBU One - the typewriter.
+ *
+ * The whole string is ONE text node. It used to be one node per character
+ * inside a wrapping row, which meant the line broke in the middle of a word
+ * as soon as the characters were laid out, and that the reveal could not
+ * follow the text the reader actually sees. One node keeps the line breaking
+ * the reader's business and lets the reveal move as a single block.
+ */
 export const TypeWriter: React.FC<TypeWriterProps> = ({
   text,
   speed = 45,
@@ -71,7 +51,7 @@ export const TypeWriter: React.FC<TypeWriterProps> = ({
 
   const [isDone, setIsDone] = useState(effectiveReduce);
   const cursorOpacity = useSharedValue(1);
-  const revealedCount = useSharedValue(effectiveReduce ? text.length : 0);
+  const reveal = useSharedValue(effectiveReduce ? 1 : 0);
 
   const handleComplete = useCallback(() => {
     setIsDone(true);
@@ -93,24 +73,25 @@ export const TypeWriter: React.FC<TypeWriterProps> = ({
       -1,
       true,
     );
-  }, [isDone]);
+  }, [isDone, cursorOpacity]);
 
   useEffect(() => {
     if (effectiveReduce) {
-      revealedCount.value = text.length;
+      reveal.value = 1;
+      setIsDone(true);
       handleComplete();
       return;
     }
 
-    revealedCount.value = 0;
+    reveal.value = 0;
     setIsDone(false);
 
-    revealedCount.value = withDelay(
+    reveal.value = withDelay(
       delay,
       withTiming(
-        text.length,
+        1,
         {
-          duration: text.length * speed,
+          duration: Math.max(1, text.length * speed),
           easing: Easing.linear,
         },
         (finished) => {
@@ -122,68 +103,27 @@ export const TypeWriter: React.FC<TypeWriterProps> = ({
     );
 
     return () => {
-      cancelAnimation(revealedCount);
+      cancelAnimation(reveal);
     };
-  }, [text, speed, delay, effectiveReduce, handleComplete]);
+  }, [text, speed, delay, effectiveReduce, handleComplete, reveal]);
+
+  const animatedTextStyle = useAnimatedStyle(() => ({
+    opacity: reveal.value,
+    transform: [{ translateY: (1 - reveal.value) * 6 }],
+  }));
 
   const animatedCursorStyle = useAnimatedStyle(() => ({
     opacity: cursorOpacity.value,
   }));
 
-  // Structure characters into words to allow normal line wrapping
-  const words = useMemo(() => {
-    let globalIndex = 0;
-    const splitWords = text.split(' ');
-    return splitWords.map((word, wIdx) => {
-      const chars = word.split('').map((char) => {
-        const item = { char, index: globalIndex };
-        globalIndex++;
-        return item;
-      });
-
-      const hasSpace = wIdx < splitWords.length - 1;
-      const spaceIndex = hasSpace ? globalIndex++ : -1;
-
-      return {
-        chars,
-        hasSpace,
-        spaceIndex,
-      };
-    });
-  }, [text]);
-
   return (
     <View style={styles.container} accessible accessibilityLabel={text}>
-      <View style={styles.textRow}>
-        {words.map((w, wIdx) => (
-          <View key={`w_${wIdx}`} style={styles.wordRow}>
-            {w.chars.map((c) => (
-              <AnimatedChar
-                key={`c_${c.index}`}
-                char={c.char}
-                index={c.index}
-                revealedCount={revealedCount}
-                style={style}
-                reduceMotion={effectiveReduce}
-              />
-            ))}
-            {w.hasSpace && (
-              <AnimatedChar
-                char=" "
-                index={w.spaceIndex}
-                revealedCount={revealedCount}
-                style={style}
-                reduceMotion={effectiveReduce}
-              />
-            )}
-          </View>
-        ))}
-        {cursor && !isDone && (
-          <Animated.Text style={[styles.cursor, style, animatedCursorStyle]}>
-            |
-          </Animated.Text>
-        )}
-      </View>
+      <Animated.Text style={[styles.text, style, animatedTextStyle]}>
+        {text}
+        {cursor && !isDone ? (
+          <Animated.Text style={[styles.cursor, animatedCursorStyle]}>|</Animated.Text>
+        ) : null}
+      </Animated.Text>
     </View>
   );
 };
@@ -192,16 +132,6 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  textRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  wordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   text: {
     color: theme.colors.textPrimary,

@@ -13,6 +13,13 @@ export interface NoticeItem {
   fileUrl: string;
   fileType: 'pdf' | 'image' | 'html';
   rawText?: string;
+  /**
+   * Attachments that were recovered from a JavaScript-only notice (the exam
+   * portal publishes the school-wise end-semester date sheets inside a modal,
+   * so the notice itself has no file link). Each entry is a document the
+   * student can open, with the label the app shows.
+   */
+  relatedAttachments?: Array<{ label: string; url: string }>;
   category:
     | 'exam'
     | 'datesheet'
@@ -69,7 +76,14 @@ export function cleanNoticeTitle(rawTitle: string): string {
     return 'Official Examination Circular';
   }
   cleaned = cleaned.replace(/^(office\s+order\s*[-:.]?\s*)/i, '');
-  cleaned = cleaned.replace(/^(notice\s*[-:.]?\s*)/i, '');
+  // The university publishes "Notice for X", "Notice of X" and "Notice dated X".
+  // Removing the word "Notice" alone leaves the connector behind, so the title
+  // reads "for Scholarship on NSP Portal". The connector is removed with it.
+  const noticePrefix = /^(notice\s*[-:.]?\s*)/i.exec(cleaned);
+  if (noticePrefix) {
+    cleaned = cleaned.slice(noticePrefix[0].length);
+    cleaned = cleaned.replace(/^(?:for|of|dated|regarding|about|on|re|per|under)\s+/i, '');
+  }
   cleaned = cleaned.replace(/^(notification\s*[-:.]?\s*)/i, '');
   cleaned = cleaned.replace(/^(circular\s*[-:.]?\s*)/i, '');
   cleaned = cleaned.replace(/^(urgent\s+notice\s*[-:.]?\s*)/i, '');
@@ -79,7 +93,32 @@ export function cleanNoticeTitle(rawTitle: string): string {
 }
 
 /**
- * Classifies notice into semantic categories
+ * The words that mark a title as carrying a deadline. They are used by the
+ * deadline extractor and by the importance scorer, so the two always agree.
+ */
+export const DEADLINE_KEYWORDS: string[] = [
+  'last date',
+  'last date extended',
+  'deadline',
+  'extended to',
+  'date extend',
+  'due date',
+  'till ',
+  'up to ',
+];
+
+/** True when the text carries a deadline word. */
+export function hasDeadlineKeyword(text: string): boolean {
+  const lower = (text ?? '').toLowerCase();
+  return DEADLINE_KEYWORDS.some((keyword) => lower.includes(keyword));
+}
+
+/**
+ * Classifies notice into semantic categories.
+ *
+ * This is the single classifier for the whole app: the worker, the on-device
+ * scrape and the admin console all call it, so a notice can never be filed
+ * under one category on the server and another on the phone.
  */
 export function classifyNotice(title: string): NoticeItem['category'] {
   const lower = title.toLowerCase();
@@ -107,6 +146,7 @@ export function classifyNotice(title: string): NoticeItem['category'] {
     lower.includes('exam') ||
     lower.includes('admit card') ||
     lower.includes('back paper') ||
+    lower.includes('repeat paper') ||
     lower.includes('mid sem') ||
     lower.includes('end sem') ||
     lower.includes('special back') ||
@@ -114,10 +154,26 @@ export function classifyNotice(title: string): NoticeItem['category'] {
   ) {
     return 'exam';
   }
-  if (lower.includes('hostel') || lower.includes('mess') || lower.includes('room allotment')) {
+  if (
+    lower.includes('hostel') ||
+    lower.includes('mess') ||
+    lower.includes('room allotment') ||
+    lower.includes('ohms') ||
+    lower.includes('warden')
+  ) {
     return 'hostel';
   }
-  if (lower.includes('scholarship') || lower.includes('fellowship') || lower.includes('freeship')) {
+  if (
+    lower.includes('scholarship') ||
+    lower.includes('fellowship') ||
+    lower.includes('freeship') ||
+    lower.includes('tablet') ||
+    lower.includes('smartphone') ||
+    lower.includes('yojana') ||
+    lower.includes('yojna') ||
+    lower.includes('vikshit bharat') ||
+    lower.includes('viksit bharat')
+  ) {
     return 'scholarship';
   }
   if (lower.includes('fee') || lower.includes('dues') || lower.includes('tuition fee') || lower.includes('late fee')) {
@@ -140,23 +196,33 @@ export function classifyNotice(title: string): NoticeItem['category'] {
     return 'placement';
   }
   if (
+    lower.includes('academic calendar') ||
+    lower.includes('holiday') ||
+    lower.includes('vacation') ||
+    lower.includes('semester registration') ||
+    lower.includes('registration for session') ||
+    lower.includes('orientation') ||
+    lower.includes('induction') ||
+    lower.includes('anti-ragging') ||
+    lower.includes('eligib')
+  ) {
+    return 'academic';
+  }
+  if (
     lower.includes('event') ||
     lower.includes('fest') ||
     lower.includes('hackathon') ||
     lower.includes('sports') ||
     lower.includes('competition') ||
     lower.includes('cultural') ||
-    lower.includes('convocation')
+    lower.includes('convocation') ||
+    lower.includes('webinar') ||
+    lower.includes('workshop') ||
+    lower.includes('ncc') ||
+    lower.includes('celebrat') ||
+    lower.includes('volunteer')
   ) {
     return 'event';
-  }
-  if (
-    lower.includes('academic calendar') ||
-    lower.includes('holiday') ||
-    lower.includes('vacation') ||
-    lower.includes('semester registration')
-  ) {
-    return 'academic';
   }
 
   return 'other';
@@ -277,6 +343,11 @@ export function extractNoticeDeadline(text: string): string | null {
 
 /**
  * Calculates importance score (0-5) per docs/NOTIFICATIONS.md
+ *
+ * A title that announces a deadline is worth the student's attention even when
+ * the date could not be parsed, so the deadline word counts on its own. The
+ * scorer is shared by the worker and the on-device scrape so both sides rank
+ * a notice the same way.
  */
 export function calculateNoticeImportance(params: {
   title: string;
@@ -287,9 +358,11 @@ export function calculateNoticeImportance(params: {
 }): number {
   let score = 0;
 
-  // Deadline present -> +3
+  // Deadline present -> +3; a deadline word without a parsable date -> +2
   if (params.deadlineAt) {
     score += 3;
+  } else if (hasDeadlineKeyword(params.title)) {
+    score += 2;
   }
 
   // High importance student categories -> +3
@@ -518,6 +591,57 @@ export function generateCanonicalNoticeId(notice: {
 }): string {
   const key = getCanonicalNoticeKey(notice);
   return `not_${sha256Hex(key).slice(0, 16)}`;
+}
+
+/**
+ * The file kind a notice points at, decided from the URL.
+ *
+ * The university's download endpoint puts the real file name in the `nName`
+ * query parameter, so the extension has to be read from there: a URL such as
+ * `.../DownloadFile?nName=abc.pdfNotice.pdf` is a PDF even though its path
+ * carries no extension at all, and a name that merely mentions ".png" must not
+ * turn a PDF into an image.
+ */
+export function fileTypeForUrl(rawUrl: string | null | undefined): NoticeItem['fileType'] {
+  const url = (rawUrl ?? '').trim();
+  if (!url) return 'html';
+
+  const nName = /[?&]nName=([^&#]*)/i.exec(url);
+  let candidate: string;
+  if (nName && nName[1]) {
+    try {
+      candidate = decodeURIComponent(nName[1].replace(/\+/g, ' '));
+    } catch {
+      candidate = nName[1];
+    }
+  } else {
+    candidate = url.split(/[?#]/)[0] ?? '';
+  }
+
+  const extension = /\.([a-z0-9]{1,5})(?:$|[?#&])/i.exec(candidate)?.[1]?.toLowerCase() ?? '';
+  if (extension === 'pdf') return 'pdf';
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(extension)) return 'image';
+
+  // No extension in the file name: fall back to the URL itself.
+  if (/\.pdf(?:$|[?#&])/i.test(url)) return 'pdf';
+  if (/\.(?:jpe?g|png|webp|gif|bmp)(?:$|[?#&])/i.test(url)) return 'image';
+  return 'html';
+}
+
+/**
+ * A readable label for a recovered attachment, built from the school code in
+ * the file name (the exam portal publishes one date sheet per school).
+ */
+export function labelForRelatedAttachment(url: string): string {
+  const name = url.split('/').pop() ?? '';
+  const code = /^([a-z]{3,10})[-_]/i.exec(name)?.[1];
+  if (code) {
+    const school = code.toUpperCase();
+    if (/date\s*sheet|datasheet/i.test(name)) return `${school} date sheet`;
+    return `${school} notice`;
+  }
+  if (/date\s*sheet|datasheet/i.test(name)) return 'Date sheet';
+  return 'Attachment';
 }
 
 export {

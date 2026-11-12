@@ -438,27 +438,39 @@ export class SamayTimetableProvider implements TimetableProvider {
 /**
  * Bundled mock fallback: plausible week grid so the timetable screen always
  * renders offline, even before the first successful Samay fetch.
+ *
+ * A programme that has no sample of its own gets an EMPTY schedule. It used
+ * to fall back to the BCS pool, so a student of MBA, BCA, B.Tech (IT) or
+ * law was shown Data Structures and Operating Systems - real subjects with
+ * real-looking teachers, from somebody else's degree. An honest empty
+ * schedule is better than a convincing lie.
  */
 function mockTimetableFor(classKey: string, sessionId: string): Timetable {
   const norm = classKey.trim().toUpperCase();
-  const slots: Slot[] = [];
   const parsed = parseGBUClassCode(norm);
-  const pool = MOCK_SUBJECT_POOL[parsed.programmeCode] ?? MOCK_SUBJECT_POOL.BCS;
-  const days: Slot['day'][] = [1, 2, 3, 4, 5, 6];
-  let k = 0;
-  for (const day of days) {
-    for (let p = 1; p <= 5; p++) {
-      const s = pool[k % pool.length];
-      const timing = GBU_PERIOD_TIMES[p];
-      slots.push({
-        id: 'mock-' + norm + '-' + day + '-' + p,
-        day, period: p, start: timing.start, end: timing.end,
-        subject: s.name, subjectCode: s.code,
-        faculty: s.faculty, room: s.room, type: 'lecture',
-      });
-      k++;
+  const pool = MOCK_SUBJECT_POOL[parsed.programmeCode];
+  const slots: Slot[] = [];
+
+  // No sample for this programme: return nothing rather than another
+  // programme's subjects.
+  if (pool) {
+    const days: Slot['day'][] = [1, 2, 3, 4, 5, 6];
+    let k = 0;
+    for (const day of days) {
+      for (let p = 1; p <= 5; p++) {
+        const s = pool[k % pool.length];
+        const timing = GBU_PERIOD_TIMES[p];
+        slots.push({
+          id: 'mock-' + norm + '-' + day + '-' + p,
+          day, period: p, start: timing.start, end: timing.end,
+          subject: s.name, subjectCode: s.code,
+          faculty: s.faculty, room: s.room, type: 'lecture',
+        });
+        k++;
+      }
     }
   }
+
   return {
     classKey: norm, fetchedAt: new Date().toISOString(),
     semesterSessionId: sessionId, slots, source: 'mock',

@@ -6,7 +6,7 @@ You are building **GBU One**, a student companion app for Gautam Buddha Universi
 
 ## Current Project Context (October 2026)
 
-- **Test Suite**: **420 passed, 420 total across 29 test suites** (`npm test`). All unit, integration, and security tests must remain green.
+- **Test Suite**: **722 passed, 722 total across 41 test suites** (`npm test`). All unit, integration, and security tests must remain green. The suite type-checks (it uses `tsconfig.test.json`, which turns off `isolatedModules`), so a type error fails `npm test` as well as `npm run typecheck`.
 - **Implementation State**: Phases 0 through 6 are fully implemented (Timetable, Notices, Class Alarms, PYQ Library & Moderation Queue, Exam Date Sheets & Results Watch, Academic Calendar, SQLite Offline Cache, Light-First UI System).
 - **Open Blockers / Owner Actions**: Tracked in `docs/OPEN_QUESTIONS.md` (Supabase RLS dashboard SQL paste, EAS push setup, 103 PYQ Telegram archive file answers, and survey review).
 

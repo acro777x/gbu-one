@@ -37,8 +37,8 @@ export default function NoticeDetailScreen() {
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
 
-  // Live notices first (they carry the extracted document text), then the
-  // bundled seed used on first launch before the worker has synced anything.
+  // The same query the list uses, so the detail screen reads the cached
+  // result instead of running the whole scrape again.
   const { data: liveNotices = [] } = useNoticesQuery();
   const notice: NoticeItem | undefined = useMemo(
     () => liveNotices.find((n) => n.id === id) ?? MOCK_NOTICES.find((n) => n.id === id),
@@ -357,33 +357,70 @@ export default function NoticeDetailScreen() {
           </View>
         </View>
 
-        {/* Document Action Box */}
-        <View
-          style={[
-            styles.docBox,
-            {
-              backgroundColor: isDark ? colors.surfaceAlt : '#FFFFFF',
-              borderColor: colors.borderGlass,
-            },
-          ]}
-        >
-          <View style={styles.docIconContainer}>
-            {notice.fileType === 'pdf' ? (
-              <FileText size={32} color={colors.accent} />
-            ) : (
-              <ImageIcon size={32} color={colors.accent} />
-            )}
-          </View>
+        {/* Document Action Box - only when the notice really points at a file */}
+        {notice.fileUrl ? (
+          <View
+            style={[
+              styles.docBox,
+              {
+                backgroundColor: isDark ? colors.surfaceAlt : '#FFFFFF',
+                borderColor: colors.borderGlass,
+              },
+            ]}
+          >
+            <View style={styles.docIconContainer}>
+              {notice.fileType === 'pdf' ? (
+                <FileText size={32} color={colors.accent} />
+              ) : (
+                <ImageIcon size={32} color={colors.accent} />
+              )}
+            </View>
 
-          <View style={styles.docInfo}>
-            <Text numberOfLines={1} style={[styles.docName, { color: colors.textPrimary }]}>
-              {notice.cleanTitle}.{notice.fileType}
-            </Text>
-            <Text style={[styles.docMeta, { color: colors.textSecondary }]}>
-              Official GBU Circular • Verified Authenticity
-            </Text>
+            <View style={styles.docInfo}>
+              <Text numberOfLines={1} style={[styles.docName, { color: colors.textPrimary }]}>
+                {notice.cleanTitle}.{notice.fileType}
+              </Text>
+              <Text style={[styles.docMeta, { color: colors.textSecondary }]}>
+                Official GBU Circular • Verified Authenticity
+              </Text>
+            </View>
           </View>
-        </View>
+        ) : null}
+
+        {/* The exam portal publishes the school-wise date sheets inside a
+            modal, so they arrive as attachments of the announcement notice. */}
+        {notice.relatedAttachments && notice.relatedAttachments.length > 0 ? (
+          <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.borderGlass }]}>
+            <View style={styles.summaryHeaderRow}>
+              <View style={[styles.sparkleIcon, { backgroundColor: colors.accentSoft }]}>
+                <FileText size={16} color={colors.accent} />
+              </View>
+              <Text style={[styles.summaryHeading, { color: colors.textPrimary }]}>Attached documents</Text>
+            </View>
+
+            <Text style={[styles.summaryBody, { color: colors.textSecondary }]}>
+              These documents came with this notice. Open the one for your school.
+            </Text>
+
+            {notice.relatedAttachments.map((attachment) => (
+              <Pressable
+                key={attachment.url}
+                onPress={() => void Linking.openURL(attachment.url)}
+                style={({ pressed }) => [
+                  styles.attachmentRow,
+                  { borderColor: colors.borderGlass, opacity: pressed ? 0.7 : 1 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${attachment.label}`}
+              >
+                <Text style={[styles.attachmentLabel, { color: colors.textPrimary }]}>
+                  {attachment.label}
+                </Text>
+                <ExternalLink size={16} color={colors.accent} />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
 
         {/* Image attachments are previewed here; a PDF needs the viewer. */}
         {fileKind === 'image' && (
@@ -620,6 +657,21 @@ const styles = StyleSheet.create({
   docMeta: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,
+  },
+  attachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  attachmentLabel: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
   },
   ctaRow: {
     flexDirection: 'row',

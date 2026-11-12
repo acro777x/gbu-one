@@ -9,12 +9,17 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../lib/theme';
+import { useReduceMotion } from '../../lib/useReduceMotion';
 
 export interface ShimmerTextProps {
   text: string;
   duration?: number;
   style?: TextStyle;
   containerStyle?: ViewStyle;
+  /**
+   * Forces the motion off (or on). Left out, the OS "reduce motion" setting
+   * decides - the prop always wins, the OS setting is the default.
+   */
   reduceMotion?: boolean;
 }
 
@@ -23,12 +28,14 @@ export const ShimmerText: React.FC<ShimmerTextProps> = ({
   duration = 1800,
   style,
   containerStyle,
-  reduceMotion = false,
+  reduceMotion,
 }) => {
+  const systemReduce = useReduceMotion();
+  const effectiveReduce = reduceMotion ?? systemReduce;
   const translateX = useSharedValue(-120);
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (effectiveReduce) {
       translateX.value = 0;
       return;
     }
@@ -41,7 +48,7 @@ export const ShimmerText: React.FC<ShimmerTextProps> = ({
       -1,
       false,
     );
-  }, [duration, reduceMotion]);
+  }, [duration, effectiveReduce]);
 
   const shimmerStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
@@ -52,7 +59,7 @@ export const ShimmerText: React.FC<ShimmerTextProps> = ({
       <Animated.Text style={[styles.baseText, style]}>
         {text}
       </Animated.Text>
-      {!reduceMotion && (
+      {!effectiveReduce && (
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <Animated.View style={[styles.shimmerOverlay, shimmerStyle]}>
             <LinearGradient

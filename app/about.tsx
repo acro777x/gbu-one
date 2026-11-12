@@ -35,6 +35,17 @@ export default function AboutScreen() {
     Linking.openURL('mailto:student.gbuone@gmail.com?subject=GBU%20One%20Inquiry').catch(() => {});
   };
 
+  // Corrections to MIRRORED university documents must reach the university,
+  // not only the app maintainer - a student-app maintainer has no authority
+  // over an official circular. These addresses are published by the
+  // university itself (verified on gbu.ac.in/contact-us and the examination
+  // portal's own header).
+  const handleUniversityContact = (address: string, subject: string) => {
+    Linking.openURL(
+      `mailto:${address}?subject=${encodeURIComponent(subject)}`,
+    ).catch(() => {});
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Top Header */}
@@ -136,7 +147,32 @@ export default function AboutScreen() {
             <Text style={[styles.sectionHeading, { color: colors.textPrimary }]}>Contact & Copyright Takedown</Text>
           </View>
           <Text style={[styles.bodyParagraph, { color: colors.textPrimary }]}>
-            For questions, takedown inquiries, or to report discrepancies in mirrored documents, contact the maintainer team:
+            GBU One mirrors public notices, timetables and results published by the
+            university. If a mirrored document is wrong, or you need a document
+            removed, please tell the university first - it is the only party that
+            can act on an official circular:
+          </Text>
+          <PillButton
+            label="info@gbu.ac.in"
+            onPress={() => handleUniversityContact('info@gbu.ac.in', 'GBU One - correction or takedown request')}
+            variant="outline"
+            size="sm"
+            icon={<ExternalLink size={14} color={colors.accent} style={{ marginRight: 6 }} />}
+            style={{ marginTop: 8 }}
+            accessibilityLabel="Email the university general information address about a correction or takedown request"
+          />
+          <PillButton
+            label="exams@gbu.ac.in"
+            onPress={() => handleUniversityContact('exams@gbu.ac.in', 'GBU One - exam or result correction')}
+            variant="outline"
+            size="sm"
+            icon={<ExternalLink size={14} color={colors.accent} style={{ marginRight: 6 }} />}
+            style={{ marginTop: 8 }}
+            accessibilityLabel="Email the university examination office about an exam or result correction"
+          />
+          <Text style={[styles.bodyParagraph, { color: colors.textSecondary, marginTop: 14 }]}>
+            For anything about the app itself (bugs, feature requests, or a question
+            the university cannot answer), contact the maintainer team:
           </Text>
           <PillButton
             label="student.gbuone@gmail.com"
@@ -145,6 +181,7 @@ export default function AboutScreen() {
             size="sm"
             icon={<ExternalLink size={14} color={colors.accent} style={{ marginRight: 6 }} />}
             style={{ marginTop: 8 }}
+            accessibilityLabel="Email the GBU One maintainer team"
           />
         </GlassCard>
 

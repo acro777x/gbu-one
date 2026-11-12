@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   FlatList,
   ScrollView,
-  Share,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +16,6 @@ import {
   Trophy,
   Award,
   Sparkles,
-  ShieldCheck,
   UploadCloud,
   CheckCircle2,
 } from 'lucide-react-native';
@@ -31,7 +29,7 @@ import { PyqLeaderboardPodium } from '../../src/components/pyq/PyqLeaderboardPod
 import {
   getLeaderboard,
   shareLeaderboard,
-  DEFAULT_LEADERBOARD_SEED,
+  sortAndRankEntries,
   type LeaderboardEntry,
   type CurrentUserParam,
 } from '../../src/features/pyq/pyqLeaderboard';
@@ -64,21 +62,21 @@ const ContributorRow = React.memo<ContributorRowProps>(({ item, isCurrent, isDar
     item.rank === 1
       ? 'rgba(245, 158, 11, 0.16)'
       : item.rank === 2
-      ? 'rgba(148, 163, 184, 0.16)'
-      : item.rank === 3
-      ? 'rgba(217, 119, 6, 0.16)'
-      : isDark
-      ? 'rgba(255, 255, 255, 0.05)'
-      : colors.surfaceMuted;
+        ? 'rgba(148, 163, 184, 0.16)'
+        : item.rank === 3
+          ? 'rgba(217, 119, 6, 0.16)'
+          : isDark
+            ? 'rgba(255, 255, 255, 0.05)'
+            : colors.surfaceMuted;
 
   const medalBorder =
     item.rank === 1
       ? '#F59E0B'
       : item.rank === 2
-      ? '#94A3B8'
-      : item.rank === 3
-      ? '#D97706'
-      : colors.borderGlass;
+        ? '#94A3B8'
+        : item.rank === 3
+          ? '#D97706'
+          : colors.borderGlass;
 
   return (
     <View
@@ -109,11 +107,6 @@ const ContributorRow = React.memo<ContributorRowProps>(({ item, isCurrent, isDar
           avatarId={item.avatarId}
           size={40}
         />
-        {item.isOfficialAdmin && (
-          <View style={[styles.adminShieldBadge, { backgroundColor: colors.accent }]}>
-            <ShieldCheck size={9} color="#FFFFFF" />
-          </View>
-        )}
       </View>
 
       {/* Contributor Meta */}
@@ -128,11 +121,6 @@ const ContributorRow = React.memo<ContributorRowProps>(({ item, isCurrent, isDar
           >
             {item.name}
           </Text>
-          {item.isOfficialAdmin && (
-            <View style={[styles.roleTag, { backgroundColor: colors.accent }]}>
-              <Text style={styles.roleTagText}>Official Admin</Text>
-            </View>
-          )}
           {isCurrent && (
             <View style={[styles.roleTag, { backgroundColor: colors.accentSoft, borderColor: colors.accent, borderWidth: 1 }]}>
               <Text style={[styles.roleTagText, { color: colors.accent }]}>You</Text>
@@ -151,7 +139,7 @@ const ContributorRow = React.memo<ContributorRowProps>(({ item, isCurrent, isDar
           {item.points.toLocaleString()} pts
         </Text>
         <Text style={[styles.entryUploads, { color: colors.textTertiary }]}>
-          {item.isOfficialAdmin ? 'Verified Library' : `${item.uploadsCount} papers`}
+          {`${item.uploadsCount} papers`}
         </Text>
       </View>
     </View>
@@ -164,9 +152,8 @@ export default function PyqLeaderboardScreen() {
   const { user } = useAuthStore();
 
   const [selectedSchool, setSelectedSchool] = useState<SchoolChip>('All');
-  const [entries, setEntries] = useState<LeaderboardEntry[]>(() =>
-    DEFAULT_LEADERBOARD_SEED.map((item) => ({ ...item })),
-  );
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const leaderboardUser = useMemo<CurrentUserParam | undefined>(
@@ -195,8 +182,14 @@ export default function PyqLeaderboardScreen() {
     try {
       const data = await getLeaderboard(leaderboardUser);
       setEntries(data);
-    } catch {
-      // Graceful fallback to initial seed
+      setLoadError(null);
+    } catch (err) {
+      setEntries([]);
+      setLoadError(
+        err instanceof Error
+          ? err.message
+          : 'The contributor standings could not be loaded.',
+      );
     }
   }, [leaderboardUser]);
 
@@ -212,28 +205,37 @@ export default function PyqLeaderboardScreen() {
     await shareLeaderboard(entries, myRank);
   }, [entries, myRank]);
 
+  /**
+   * The contributors of one school.
+   *
+   * The ranks are recomputed for the filtered list: the old build kept the
+   * GLOBAL ranks, so a SOICT-only list showed "Rank 4, 5, 6" under a
+   * "SOICT Contributors" heading, and the podium always showed the global
+   * top three.
+   */
   const filteredEntries = useMemo(() => {
     if (selectedSchool === 'All') return entries;
     const target = selectedSchool.toUpperCase();
-    return entries.filter((e) => {
+    const filtered = entries.filter((e) => {
       const sch = (e.school || '').toUpperCase();
       if (target === 'SOLJG') {
         return sch === 'SOLJG' || sch === 'SOL';
       }
       return sch === target;
     });
+    return sortAndRankEntries(filtered);
   }, [entries, selectedSchool]);
 
   const renderContributorItem = useCallback(
     ({ item }: { item: LeaderboardEntry }) => (
       <ContributorRow
         item={item}
-        isCurrent={leaderboardUser?.id === item.id}
+        isCurrent={leaderboardUser?.uniqueStudentId === item.id}
         isDark={isDark}
         colors={colors}
       />
     ),
-    [colors, isDark, leaderboardUser?.id],
+    [colors, isDark, leaderboardUser?.uniqueStudentId],
   );
 
   const renderHeader = useCallback(
@@ -243,7 +245,7 @@ export default function PyqLeaderboardScreen() {
         <PyqLeaderboardPodium
           currentUser={leaderboardUser}
           refreshTrigger={refreshTrigger}
-          entries={entries}
+          entries={filteredEntries}
           hideActionRow={true}
         />
 
@@ -263,8 +265,9 @@ export default function PyqLeaderboardScreen() {
           </View>
 
           <Text style={[styles.guideDesc, { color: colors.textSecondary }]}>
-            Submit your mid-sem, end-sem, or back-paper question papers. Once verified by student
-            moderators, +50 points are credited directly to your profile and student ID!
+            Submit your mid-sem, end-sem, or back-paper question papers. Once approved by a
+            moderator, +50 points are credited to your student ID. Points are calculated by the
+            server from your approved papers.
           </Text>
 
           <View style={styles.guidePerksRow}>
@@ -324,7 +327,7 @@ export default function PyqLeaderboardScreen() {
       refreshTrigger,
       colors,
       selectedSchool,
-      filteredEntries.length,
+      filteredEntries,
     ],
   );
 
@@ -404,10 +407,12 @@ export default function PyqLeaderboardScreen() {
           <View style={styles.emptyContainer}>
             <Trophy size={36} color={colors.textTertiary} style={{ marginBottom: 10 }} />
             <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-              No contributors for {selectedSchool} yet
+              {loadError ? 'The standings could not be loaded' : `No contributors for ${selectedSchool} yet`}
             </Text>
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              Be the first to contribute a past question paper from {selectedSchool} and claim Rank #1!
+              {loadError
+                ? 'Please check your connection and pull down to try again.'
+                : `Be the first to contribute a past question paper from ${selectedSchool} and claim Rank #1!`}
             </Text>
             <PillButton
               label="Contribute PYQ"
@@ -417,6 +422,15 @@ export default function PyqLeaderboardScreen() {
               onPress={() => router.push('/(tabs)/pyq')}
               style={{ marginTop: 14 }}
             />
+            {loadError ? (
+              <PillButton
+                label="Try again"
+                variant="outline"
+                size="sm"
+                onPress={() => setRefreshTrigger((trigger) => trigger + 1)}
+                style={{ marginTop: 8 }}
+              />
+            ) : null}
           </View>
         }
         contentContainerStyle={[
@@ -582,16 +596,6 @@ const styles = StyleSheet.create({
   avatarWrap: {
     position: 'relative',
     marginRight: 10,
-  },
-  adminShieldBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   entryInfo: {
     flex: 1,

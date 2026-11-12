@@ -20,7 +20,9 @@ import {
   TIMETABLE_PUSH_PREF_KEY,
   buildDeviceTokenRow,
   canAttemptRegistration,
+  isDuplicateTokenError,
   resolveClassKeyForRow,
+  resolveDeviceTokenWriteMode,
   resolveEasProjectId,
   type PushRegistrationResult,
 } from './pushPolicy';
@@ -149,22 +151,50 @@ export async function registerDeviceForPush(
     userId,
   });
 
+  /*
+   * A guest registers with the ANON key and a null user id.
+   *
+   * The `device tokens guest insert` policy allows an insert by `anon` with
+   * a null owner, and nothing else: there is no update policy for `anon`.
+   * An UPSERT is an insert that may turn into an update, so for a guest it
+   * is refused by row level security the moment the token already exists.
+   * A guest therefore does a plain insert, and a duplicate is treated as
+   * "already registered" rather than as a failure.
+   */
   try {
-    const { error } = await supabase
-      .from('device_tokens')
-      .upsert(row, { onConflict: 'token' });
-    if (error) return { registered: false, reason: 'save-failed' };
+    if (resolveDeviceTokenWriteMode(row.user_id) === 'insert') {
+      const { error } = await supabase.from('device_tokens').insert(row);
+      if (error) {
+        // The token is unique, so a duplicate means the device is already
+        // registered, which is exactly what the student wanted.
+        if (isDuplicateTokenError(error)) {
+          await cacheToken(token);
+          return { registered: true, token };
+        }
+        return { registered: false, reason: 'save-failed' };
+      }
+    } else {
+      const { error } = await supabase
+        .from('device_tokens')
+        .upsert(row, { onConflict: 'token' });
+      if (error) return { registered: false, reason: 'save-failed' };
+    }
   } catch {
     return { registered: false, reason: 'save-failed' };
   }
 
+  await cacheToken(token);
+
+  return { registered: true, token };
+}
+
+/** Caches the token so the preferences can be applied later. */
+async function cacheToken(token: string): Promise<void> {
   try {
     await AsyncStorage.setItem(PUSH_TOKEN_STORAGE_KEY, token);
   } catch {
     // Caching the token is a convenience, not a requirement.
   }
-
-  return { registered: true, token };
 }
 
 /**

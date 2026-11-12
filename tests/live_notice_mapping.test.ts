@@ -71,7 +71,10 @@ describe('live notice mapping', () => {
       live({ id: 'blank', title: '' }),
     ]);
     expect(items).toHaveLength(2);
-    expect(items[0].id).toBe('new');
+    // Every notice gets the SAME canonical id, so the worker's copy and the
+    // device's copy of one notice collapse into a single entry.
+    expect(items[0].id).toMatch(/^not_[0-9a-f]{16}$/);
+    expect(items[0].postedAt).toBe('2026-10-19T00:00:00.000Z');
   });
 
   it('properly extracts and maps audience, deadlineAt, and relatedUrls', () => {
@@ -102,15 +105,18 @@ describe('live notice mapping', () => {
 });
 
 describe('real notice data integrity', () => {
-  it('ensures every bundled notice is an authentic real GBU notice, not a sample', () => {
+  it('flags every bundled notice as archive data, never as live university data', () => {
     expect(MOCK_NOTICES.length).toBeGreaterThan(0);
-    expect(MOCK_NOTICES.every((notice) => notice.isSample === false)).toBe(true);
+    // The bundled archive is a snapshot: it was captured earlier and it is
+    // NOT read from the university when the app runs. Every row says so, so
+    // no code path can present it as a live notice.
+    expect(MOCK_NOTICES.every((notice) => notice.isSample === true)).toBe(true);
   });
 
   it('detects a list that is entirely sample data vs real data', () => {
     const sampleItem = { ...toNoticeItem(live()), isSample: true };
     expect(allNoticesAreSample([sampleItem])).toBe(true);
-    expect(allNoticesAreSample(MOCK_NOTICES)).toBe(false);
+    expect(allNoticesAreSample(MOCK_NOTICES)).toBe(true);
     expect(allNoticesAreSample([toNoticeItem(live())])).toBe(false);
     expect(allNoticesAreSample([])).toBe(false);
   });

@@ -31,10 +31,10 @@ Both the **Student Companion App** and the **Admin Console** have been built, de
 | <img src="docs/qa/screen_tecno_student_app.png" width="230" alt="Student Home Hub" /> | <img src="docs/qa/screen_tecno_events_fixed.png" width="230" alt="Campus Events & Gallery" /> | <img src="docs/qa/screen_verification_pyq.png" width="230" alt="Open PYQ Repository" /> |
 | *Live class schedule, quick hub, notice carousel, and offline sync.* | *Campus fests, workshops, multi-photo albums with vector back button.* | *Universal question papers for all 8 schools with one-tap download.* |
 
-| Master Admin Security Gate | Admin Console & Live Gallery Upload | Mandatory Update Interceptor |
+| Admin Sign-in Gate | Admin Console & Live Gallery Upload | Mandatory Update Interceptor |
 |:---:|:---:|:---:|
 | <img src="docs/qa/screen_tecno_admin_lock.png" width="230" alt="Admin Security Gate" /> | <img src="docs/qa/screen_tecno_admin_gallery_tools.png" width="230" alt="Admin Console & Gallery Tools" /> | <img src="docs/qa/screen_admin_auto_update.png" width="230" alt="Mandatory Update Interceptor" /> |
-| *Single Admin PIN/Passcode gate blocking unauthorized student access.* | *Native phone gallery picker, image thumbnail trays, and live publishing.* | *Hardware-back intercepting modal enforcing critical university releases.* |
+| *Supabase Auth sign-in gated by the server-side moderator allowlist.* | *Native phone gallery picker, image thumbnail trays, and live publishing.* | *Hardware-back intercepting modal enforcing critical university releases.* |
 
 ---
 
@@ -49,14 +49,14 @@ GBU One utilizes a single, unified codebase to produce two distinct, decoupled A
 | **Compiled Artifact** | `apk/gbu-one.apk` (247 MB) | `apk/gbu-one-admin.apk` (247 MB) |
 | **Coexistence** | Can be installed side-by-side with Admin build | Can be installed side-by-side with Student build |
 | **Default Entry Route** | Home Tabs (`app/(tabs)/index.tsx`) | Admin Security Gate (`app/admin/index.tsx`) |
-| **Access Control** | Open to all GBU students (Guest mode supported) | **Restricted Single-Admin PIN / Passcode Security Gate** |
+| **Access Control** | Open to all GBU students (Guest mode supported) | **Supabase Auth sign-in, authorised by the server-side `moderators` allowlist** |
 | **Target Audience** | All GBU UG, PG, and PhD students | University club coordinators, event leads, moderators |
 | **Core Functions** | Timetable, class alarms, notices, PYQ library, calendar, events viewer | Event publishing, gallery upload, PYQ moderation, app update broadcast |
 
 ### Strict Single-Admin Security Architecture
 To guarantee that no unauthorized student or third party can access the administrative controls, a multi-layer defense-in-depth security model is enforced:
 1. **Isolated Package Build**: The Admin APK is compiled under package `in.gbu.one.admin` using `tools/build_admin.py` and is distributed exclusively to authorized coordinators.
-2. **Master Admin Security Gate**: The entry screen (`app/admin/index.tsx`) mounts a hardened access verification screen (`Master Admin Security Access`). Even if someone acquires the Admin APK, all moderation tools and publishing controls remain cryptographically locked behind a Master PIN / Passcode (`EXPO_PUBLIC_ADMIN_PIN`).
+2. **Admin Authentication Gate**: The entry screen (`app/admin/index.tsx`) requires a Supabase Auth sign-in. Authorisation comes from the server-side `public.moderators` allowlist (`public.is_moderator()` / `public.is_owner()`) enforced by row level security - not from a PIN baked into the APK. The old offline "emergency master key" path, which compared a PIN that shipped inside the binary, has been deleted.
 3. **One-Tap Instant Lock**: Admins can lock the console instantly with the top-right header `Lock` button whenever leaving the device unattended.
 4. **PostgreSQL Row Level Security (RLS)**: Mutating tables (`campus_events`, `app_versions`, `pyq_papers`) is guarded at the database layer via `is_moderator()` security definers. Direct API calls without valid service keys or claims are rejected by Postgres policies.
 5. **Safe Fallback Navigation**: Every administrative sub-view includes defensive `router.canGoBack()` checks with explicit fallbacks to prevent screen trapping or dead-ends.
@@ -89,7 +89,7 @@ flowchart TD
     end
 
     subgraph AdminTarget["GBU One Admin APK (in.gbu.one.admin)"]
-        AdminLock["Master Admin Security PIN Gate"]
+        AdminLock["Supabase Auth Sign-in (moderator allowlist)"]
         AdminDashboard["Admin Console (/admin)"]
         GalleryPicker["Device Gallery Photo Picker (expo-document-picker)"]
         EventPublisher["Event & Photo Array Publisher"]
@@ -203,7 +203,7 @@ All database schemas are defined in `supabase/schema.ts` and synchronized to `su
 | **Campus Events** | `/events` | Category filter, event details sheet, thumbnail gallery, full-screen lightbox viewer, vector back button | Bundled events + AsyncStorage |
 | **Academic Calendar** | `/calendar` | Semester phase picker, exam countdown, official vacation sheet PDF launcher | Offline parsed calendar events |
 | **Exam Date Sheets** | `/exams` | Programme picker, PDF reader launcher, Results Watch background poller | Local date sheet storage |
-| **Admin Console** | `/admin` | Master PIN Security Gate, Gallery Photo Picker, PYQ moderation actions, update broadcast | Local override cache |
+| **Admin Console** | `/admin` | Supabase Auth sign-in, Gallery Photo Picker, PYQ moderation actions, update broadcast | Local override cache |
 
 ---
 

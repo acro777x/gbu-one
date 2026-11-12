@@ -1,6 +1,17 @@
 /**
  * GBU One — S12 Timetable Source State Machine
  *
+ * INTEGRATION STATUS: **NOT YET WIRED IN.**
+ *
+ * `src/features/timetable/timetableProvider.ts` and `timetableStore.ts`
+ * resolve the live / cached / sample / error tiers themselves. This
+ * machine is the intended replacement for that hand-rolled resolution, but
+ * the provider has to be re-shaped around it first.
+ *
+ * Until then this module is a SPECIFICATION with its own tests, not the
+ * code the app runs. `tests/state_machines.test.ts` asserts that claim
+ * explicitly, so the gap cannot be quietly forgotten.
+ *
  * Implements the deterministic S12 Timetable Source lifecycle:
  *   'idle' -> 'loading' -> 'live' | 'cached' | 'sample' | 'error'
  *

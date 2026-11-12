@@ -1,8 +1,20 @@
 /**
  * GBU One — Class Alarms & Reminder Hub
  *
- * Provides dedicated diagnostics, active alarm management, and real-time
- * alarm firing tests for GBU class schedules.
+ * The honest diagnostics screen for the class alarms: what the OS has
+ * actually allowed, which channel the alarm really went to, and which alarms
+ * are armed right now.
+ *
+ * Three rules run through this screen:
+ *
+ *  1. **Never claim an alarm rang when it did not.** The test buttons ask
+ *     for the notification permission first and stop there if it was refused.
+ *  2. **Never show a green badge for something that failed.** The channel
+ *     badge reports the channel that was really created - an Android channel
+ *     cannot be changed after it exists, so a silent channel would stay
+ *     silent for the rest of the semester.
+ *  3. **Never leave the student without a way out.** A blocked permission
+ *     cannot be asked for again, so the screen opens the system settings.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -13,50 +25,70 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
-  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import {
   ArrowLeft,
-  Bell,
   BellRing,
-  BellOff,
   Volume2,
   Clock,
   CheckCircle2,
   AlertTriangle,
   Trash2,
-  Sparkles,
   MapPin,
   RefreshCw,
+  Settings as SettingsIcon,
 } from 'lucide-react-native';
 import { GlassCard, PillButton, Toast, EmptyState } from '../src/components/ui';
 import {
   ensureClassReminderChannel,
   scheduleTestAlarm,
   cancelClassAlarmsForSlot,
-  CLASS_REMINDER_CHANNEL_ID,
+  getExactAlarmCapability,
+  exactAlarmSettingsHint,
+  openAlarmSettings,
+  type ClassChannelStatus,
+  type ExactAlarmCapability,
 } from '../src/features/notifications/classAlarm';
 import {
   formatLeadTimeVerbose,
-  type ClassReminder,
+  resolvePermissionState,
+  NOTIFICATION_PERMISSION_ASKED_KEY,
+  type NotificationPermissionState,
 } from '../src/features/notifications/notificationPreferences';
 import {
-  readStoredReminders,
-  removeStoredReminder,
+  useNotificationPreferences,
   clearAllStoredReminders,
 } from '../src/features/notifications/useNotificationPreferences';
-import { formatRoomLocation } from '../src/features/timetable/roomMapping';
 import { useAppTheme } from '../src/lib/ThemeContext';
 import { theme } from '../src/lib/theme';
 
+/**
+ * The permission rule itself lives with the rest of the notification logic
+ * in `src/features/notifications/notificationPreferences.ts`, so it can be
+ * unit tested without a device. It is re-exported here for convenience.
+ */
+export {
+  resolvePermissionState,
+  NOTIFICATION_PERMISSION_ASKED_KEY,
+  type NotificationPermissionState,
+};
+
 export default function AlarmsScreen() {
-  const { colors, isDark } = useAppTheme();
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const [reminders, setReminders] = useState<ClassReminder[]>([]);
-  const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'undetermined'>('undetermined');
+
+  // The alarm list is the SHARED store, so a dismissal in the notification
+  // shade is reflected here at once instead of after a reload.
+  const { reminders, isLoading, removeReminder } = useNotificationPreferences();
+
+  const [permissionState, setPermissionState] =
+    useState<NotificationPermissionState>('unknown');
+  const [exactAlarm, setExactAlarm] = useState<ExactAlarmCapability>('unknown');
+  const [channelStatus, setChannelStatus] = useState<ClassChannelStatus | null>(null);
   const [testingAlarm, setTestingAlarm] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
@@ -66,77 +98,206 @@ export default function AlarmsScreen() {
     setToastVisible(true);
   };
 
-  const loadRemindersAndPermissions = useCallback(async () => {
+  const loadDiagnostics = useCallback(async () => {
     try {
-      const stored = await readStoredReminders();
-      setReminders(stored);
-
-      const perm = await Notifications.getPermissionsAsync();
-      setPermissionStatus(perm.granted ? 'granted' : perm.canAskAgain ? 'undetermined' : 'denied');
+      const [perm, askedBefore] = await Promise.all([
+        Notifications.getPermissionsAsync(),
+        AsyncStorage.getItem(NOTIFICATION_PERMISSION_ASKED_KEY),
+      ]);
+      setPermissionState(
+        resolvePermissionState(perm, askedBefore === 'true'),
+      );
     } catch {
-      // ignore
+      // A platform that cannot report the permission leaves the state as it
+      // was: the student is not told anything that is not true.
+    }
+
+    try {
+      setExactAlarm(await getExactAlarmCapability());
+    } catch {
+      setExactAlarm('unknown');
+    }
+
+    try {
+      setChannelStatus(await ensureClassReminderChannel());
+    } catch {
+      setChannelStatus(null);
     }
   }, []);
 
   useEffect(() => {
-    void loadRemindersAndPermissions();
-    if (Platform.OS === 'android') {
-      void ensureClassReminderChannel();
-    }
-  }, [loadRemindersAndPermissions]);
+    void loadDiagnostics();
+  }, [loadDiagnostics]);
 
-  const handleRequestPermission = async () => {
-    const perm = await Notifications.requestPermissionsAsync();
-    setPermissionStatus(perm.granted ? 'granted' : 'denied');
-    if (perm.granted) {
-      showToast('Notification permission enabled!');
-    } else {
-      showToast('Notifications denied. Please enable in Android Settings > Apps > GBU One');
+  /**
+   * Asks the OS for the notification permission.
+   *
+   * It returns whether the permission is now on, so the caller can stop
+   * instead of going on to claim that an alarm rang when nothing could.
+   */
+  const handleRequestPermission = useCallback(async (): Promise<boolean> => {
+    try {
+      const perm = await Notifications.requestPermissionsAsync();
+      await AsyncStorage.setItem(NOTIFICATION_PERMISSION_ASKED_KEY, 'true');
+      const next = resolvePermissionState(perm, true);
+      setPermissionState(next);
+      if (next === 'granted') {
+        showToast('Notification permission enabled.');
+        return true;
+      }
+      if (next === 'blocked') {
+        showToast('Notifications are blocked. Open the app settings to allow them.');
+      } else {
+        showToast('Notifications were refused. You can allow them from the app settings.');
+      }
+      return false;
+    } catch {
+      showToast('The notification permission could not be requested.');
+      return false;
     }
-  };
+  }, []);
+
+  /** Opens the system settings page for this app. */
+  const handleOpenSettings = useCallback(async () => {
+    const opened = await openAlarmSettings();
+    if (!opened) {
+      // `Linking.openSettings` is the only API React Native exposes, so
+      // this is the last resort: tell the student where to go instead.
+      showToast(
+        Platform.OS === 'android'
+          ? 'Open Settings > Apps > GBU One > Notifications.'
+          : 'Open Settings > Notifications > GBU One.',
+      );
+    }
+  }, []);
 
   const handleImmediateAlarm = async () => {
-    if (permissionStatus !== 'granted') {
-      await handleRequestPermission();
+    if (permissionState !== 'granted') {
+      const granted = await handleRequestPermission();
+      // Nothing can ring without the permission: say so, and stop.
+      if (!granted) return;
     }
     try {
       await scheduleTestAlarm(0);
-      showToast('Alarm ringing now! Check notification bar / heads-up banner.');
+      showToast('Test alarm sent - check the notification shade.');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not trigger immediate alarm');
+      showToast(err instanceof Error ? err.message : 'Could not trigger the test alarm');
     }
   };
 
   const handleTestAlarm = async () => {
-    if (permissionStatus !== 'granted') {
-      await handleRequestPermission();
+    if (permissionState !== 'granted') {
+      const granted = await handleRequestPermission();
+      if (!granted) return;
     }
     setTestingAlarm(true);
     try {
       await scheduleTestAlarm(5);
-      showToast('Test alarm armed! You have 5 seconds: press Home or watch screen.');
+      showToast('Test alarm armed - it rings in 5 seconds.');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not schedule test alarm');
+      showToast(err instanceof Error ? err.message : 'Could not schedule the test alarm');
     } finally {
       setTimeout(() => setTestingAlarm(false), 5000);
     }
   };
 
   const handleCancelReminder = async (slotId: string) => {
+    // The OS alarm goes first, then the stored record: the shared store is
+    // updated through the hook's own writer, so the timetable screen sees
+    // the removal at the same moment.
     await cancelClassAlarmsForSlot(slotId);
-    await removeStoredReminder(slotId);
-    setReminders((prev) => prev.filter((r) => r.slotId !== slotId));
+    await removeReminder(slotId);
     showToast('Alarm removed');
   };
 
   const handleClearAll = async () => {
-    for (const r of reminders) {
-      await cancelClassAlarmsForSlot(r.slotId);
+    for (const reminder of reminders) {
+      await cancelClassAlarmsForSlot(reminder.slotId);
     }
     await clearAllStoredReminders();
-    setReminders([]);
     showToast('All class alarms cleared');
   };
+
+  const permissionBadge = (() => {
+    if (permissionState === 'granted') {
+      return (
+        <View style={[styles.diagBadge, { backgroundColor: colors.successSoft }]}>
+          <CheckCircle2 size={14} color={colors.success} />
+          <Text style={[styles.diagBadgeText, { color: colors.success }]}>Active</Text>
+        </View>
+      );
+    }
+    if (permissionState === 'blocked') {
+      return (
+        <TouchableOpacity
+          onPress={() => void handleOpenSettings()}
+          style={[styles.diagActionBtn, { backgroundColor: colors.warning }]}
+          accessibilityRole="button"
+          accessibilityLabel="Open the system settings to allow notifications"
+        >
+          <Text style={[styles.diagActionBtnText, { color: colors.onAccent }]}>Open settings</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (permissionState === 'denied') {
+      return (
+        <TouchableOpacity
+          onPress={() => void handleRequestPermission()}
+          style={[styles.diagActionBtn, { backgroundColor: colors.accent }]}
+          accessibilityRole="button"
+          accessibilityLabel="Ask for the notification permission again"
+        >
+          <Text style={[styles.diagActionBtnText, { color: colors.onAccent }]}>Try again</Text>
+        </TouchableOpacity>
+      );
+    }
+    return (
+      <TouchableOpacity
+        onPress={() => void handleRequestPermission()}
+        style={[styles.diagActionBtn, { backgroundColor: colors.accent }]}
+        accessibilityRole="button"
+        accessibilityLabel="Allow notifications for class alarms"
+      >
+        <Text style={[styles.diagActionBtnText, { color: colors.onAccent }]}>Enable</Text>
+      </TouchableOpacity>
+    );
+  })();
+
+  const channelBadge = (() => {
+    if (!channelStatus) {
+      return (
+        <View style={[styles.diagBadge, { backgroundColor: colors.surfaceMuted }]}>
+          <Text style={[styles.diagBadgeText, { color: colors.textSecondary }]}>Checking…</Text>
+        </View>
+      );
+    }
+    if (!channelStatus.ok || !channelStatus.hasSound) {
+      return (
+        <View style={[styles.diagBadge, { backgroundColor: colors.dangerSoft }]}>
+          <AlertTriangle size={14} color={colors.danger} />
+          <Text style={[styles.diagBadgeText, { color: colors.danger }]}>Silent</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={[styles.diagBadge, { backgroundColor: colors.successSoft }]}>
+        <CheckCircle2 size={14} color={colors.success} />
+        <Text style={[styles.diagBadgeText, { color: colors.success }]}>
+          {channelStatus.variant === 'fallback' ? 'Ready (backup)' : 'Ready'}
+        </Text>
+      </View>
+    );
+  })();
+
+  const soundDetail =
+    Platform.OS === 'android'
+      ? 'res/raw/class_alarm.mp3 • High Priority Alarm'
+      : 'Bundled university alarm (29s) • Plays with the class alarm channel';
+
+  const settingsAdvice =
+    Platform.OS === 'android'
+      ? 'Android Settings > Apps > GBU One > Notifications'
+      : 'iOS Settings > Notifications > GBU One';
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]} edges={['top']}>
@@ -146,6 +307,7 @@ export default function AlarmsScreen() {
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/timetable'))}
           style={[styles.backBtn, { backgroundColor: colors.surface }]}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
           accessibilityLabel="Back"
         >
           <ArrowLeft size={20} color={colors.textPrimary} />
@@ -157,9 +319,11 @@ export default function AlarmsScreen() {
           </Text>
         </View>
         <TouchableOpacity
-          onPress={loadRemindersAndPermissions}
+          onPress={() => void loadDiagnostics()}
           style={[styles.iconBtn, { backgroundColor: colors.surface }]}
-          accessibilityLabel="Refresh"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Refresh the alarm status"
         >
           <RefreshCw size={18} color={colors.accent} />
         </TouchableOpacity>
@@ -184,53 +348,68 @@ export default function AlarmsScreen() {
             <View style={styles.diagLeft}>
               <Text style={[styles.diagLabel, { color: colors.textPrimary }]}>Notification Permission</Text>
               <Text style={[styles.diagSub, { color: colors.textSecondary }]}>
-                {permissionStatus === 'granted'
+                {permissionState === 'granted'
                   ? 'Active and ready to trigger on schedule'
-                  : 'Permission needed to alert you before class starts'}
+                  : permissionState === 'blocked'
+                    ? 'Blocked. The system will not ask again - allow it in the settings.'
+                    : permissionState === 'denied'
+                      ? 'Refused. You can allow notifications from the settings.'
+                      : 'Permission needed to alert you before class starts'}
               </Text>
             </View>
-            {permissionStatus === 'granted' ? (
-              <View style={[styles.diagBadge, { backgroundColor: colors.successSoft }]}>
-                <CheckCircle2 size={14} color={colors.success} />
-                <Text style={[styles.diagBadgeText, { color: colors.success }]}>Active</Text>
-              </View>
-            ) : (
-              <TouchableOpacity
-                onPress={handleRequestPermission}
-                style={[styles.diagActionBtn, { backgroundColor: colors.accent }]}
-              >
-                <Text style={[styles.diagActionBtnText, { color: colors.onAccent }]}>Enable</Text>
-              </TouchableOpacity>
-            )}
+            {permissionBadge}
           </View>
 
           {/* Audio Channel Row */}
           <View style={[styles.diagRow, { borderBottomColor: colors.borderGlass }]}>
             <View style={styles.diagLeft}>
               <Text style={[styles.diagLabel, { color: colors.textPrimary }]}>Sound Channel</Text>
-              <Text style={[styles.diagSub, { color: colors.textSecondary }]}>
-                res/raw/class_alarm.mp3 • High Priority Alarm
-              </Text>
+              <Text style={[styles.diagSub, { color: colors.textSecondary }]}>{soundDetail}</Text>
             </View>
-            <View style={[styles.diagBadge, { backgroundColor: colors.accentSoft }]}>
-              <CheckCircle2 size={14} color={colors.accent} />
-              <Text style={[styles.diagBadgeText, { color: colors.accent }]}>Channel Ready</Text>
-            </View>
+            {channelBadge}
           </View>
+
+          {/*
+            The exact-alarm permission is not granted to an app that is not
+            an alarm clock on Android 14, and the student can revoke it on
+            Android 12+. An alarm that quietly becomes inexact can ring
+            minutes late, so the app says so instead of leaving it to chance.
+          */}
+          {Platform.OS === 'android' && exactAlarm === 'denied' ? (
+            <View style={[styles.warningBox, { backgroundColor: colors.warningSoft, borderColor: colors.warning }]}>
+              <View style={styles.diagLeft}>
+                <Text style={[styles.diagLabel, { color: colors.textPrimary }]}>
+                  Exact alarms are not allowed
+                </Text>
+                <Text style={[styles.diagSub, { color: colors.textSecondary }]}>
+                  Your class alarms may ring late while the app is asleep. Allow them in{' '}
+                  {exactAlarmSettingsHint() ?? 'the Android settings'}.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => void handleOpenSettings()}
+                style={[styles.diagActionBtn, { backgroundColor: colors.warning }]}
+                accessibilityRole="button"
+                accessibilityLabel="Open the settings to allow exact alarms"
+              >
+                <Text style={[styles.diagActionBtnText, { color: colors.onAccent }]}>Open settings</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {/* Test Alarm Action */}
           <View style={styles.testBtnBox}>
             <View style={{ gap: 10 }}>
               <PillButton
                 label="Test Alarm Sound (Fire Immediately)"
-                onPress={handleImmediateAlarm}
+                onPress={() => void handleImmediateAlarm()}
                 variant="primary"
                 size="md"
                 icon={<BellRing size={16} color={colors.onAccent} style={{ marginRight: 6 }} />}
               />
               <PillButton
                 label={testingAlarm ? 'Armed — Rings in 5s…' : 'Arm 5-Second Test Alarm (Background Test)'}
-                onPress={handleTestAlarm}
+                onPress={() => void handleTestAlarm()}
                 variant="outline"
                 size="md"
                 loading={testingAlarm}
@@ -249,7 +428,13 @@ export default function AlarmsScreen() {
             Active Class Alarms ({reminders.length})
           </Text>
           {reminders.length > 0 && (
-            <TouchableOpacity onPress={handleClearAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={() => void handleClearAll()}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.clearAllBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Clear every class alarm"
+            >
               <Text style={[styles.clearAllText, { color: colors.danger }]}>Clear All</Text>
             </TouchableOpacity>
           )}
@@ -257,8 +442,12 @@ export default function AlarmsScreen() {
 
         {reminders.length === 0 ? (
           <EmptyState
-            title="No Alarms Scheduled"
-            description="Open your Timetable, tap any class slot, and choose a reminder lead time to ring before class starts."
+            title={isLoading ? 'Reading your alarms…' : 'No Alarms Scheduled'}
+            description={
+              isLoading
+                ? 'Your scheduled class alarms are being read from this device.'
+                : 'Open your Timetable, tap any class slot, and choose a reminder lead time to ring before class starts.'
+            }
           />
         ) : (
           reminders.map((reminder) => (
@@ -274,10 +463,19 @@ export default function AlarmsScreen() {
                       Starts at {reminder.start} ({formatLeadTimeVerbose(reminder.leadMinutes)} before)
                     </Text>
                   </View>
+                  {reminder.repeatsWeekly ? (
+                    <View style={styles.reminderMetaRow}>
+                      <MapPin size={13} color={colors.accent} />
+                      <Text style={[styles.reminderMetaText, { color: colors.textSecondary }]}>
+                        Repeats every week
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
                 <TouchableOpacity
-                  onPress={() => handleCancelReminder(reminder.slotId)}
+                  onPress={() => void handleCancelReminder(reminder.slotId)}
                   style={[styles.deleteBtn, { backgroundColor: colors.surface }]}
+                  accessibilityRole="button"
                   accessibilityLabel={`Cancel reminder for ${reminder.subject}`}
                 >
                   <Trash2 size={16} color={colors.danger} />
@@ -292,15 +490,32 @@ export default function AlarmsScreen() {
           <View style={styles.guideHeader}>
             <AlertTriangle size={16} color={colors.warning} />
             <Text style={[styles.guideTitle, { color: colors.textPrimary }]}>
-              Ensuring 100% Alarm Reliability on Android
+              Keeping your class alarms reliable
             </Text>
           </View>
           <Text style={[styles.guideText, { color: colors.textSecondary }]}>
-            1. Keep 'Do Not Disturb' configured to allow GBU One alarms.{'\n'}
-            2. Disable aggressive battery saver for GBU One in your phone's battery settings so the alarm isn't suppressed in deep sleep.{'\n'}
-            3. On Xiaomi/Realme/Oppo, enable 'Autostart' and remove background restrictions.
+            {Platform.OS === 'android'
+              ? `1. Allow notifications and alarms for GBU One (${settingsAdvice}).\n2. Keep 'Do Not Disturb' configured to allow GBU One alarms.\n3. Disable aggressive battery saver for GBU One in your phone's battery settings so the alarm isn't suppressed in deep sleep.\n4. On Xiaomi/Realme/Oppo, enable 'Autostart' and remove background restrictions.`
+              : `1. Allow notifications for GBU One (${settingsAdvice}).\n2. Keep 'Do Not Disturb' configured to allow GBU One alarms.\n3. Choose 'Time Sensitive' notifications so an alarm is not held back by a Focus mode.`}
           </Text>
         </GlassCard>
+
+        {/* The settings shortcut is repeated at the bottom: a student who
+            scrolled past the diagnostics card still has a way to fix the
+            permission. */}
+        {permissionState !== 'granted' ? (
+          <TouchableOpacity
+            onPress={() => void handleOpenSettings()}
+            style={[styles.settingsLink, { borderColor: colors.borderGlass, backgroundColor: colors.surfaceAlt }]}
+            accessibilityRole="button"
+            accessibilityLabel="Open the system settings for GBU One"
+          >
+            <SettingsIcon size={16} color={colors.accent} />
+            <Text style={[styles.settingsLinkText, { color: colors.textPrimary }]}>
+              Open the system settings for GBU One
+            </Text>
+          </TouchableOpacity>
+        ) : null}
       </ScrollView>
 
       <Toast
@@ -325,16 +540,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -392,6 +607,16 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 11,
     marginTop: 2,
+    lineHeight: 15,
+  },
+  warningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    marginTop: 12,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   diagBadge: {
     flexDirection: 'row',
@@ -407,7 +632,9 @@ const styles = StyleSheet.create({
   },
   diagActionBtn: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 6,
   },
   diagActionBtnText: {
@@ -434,6 +661,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 16,
+  },
+  clearAllBtn: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   clearAllText: {
     fontFamily: 'Inter-SemiBold',
@@ -467,9 +699,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   deleteBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -491,5 +723,20 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 12,
     lineHeight: 18,
+  },
+  settingsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 44,
+    marginTop: 16,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  settingsLinkText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
   },
 });

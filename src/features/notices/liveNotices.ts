@@ -23,6 +23,14 @@
  *   `div#allNotices[style="display:none"]`), so no JavaScript execution is needed.
  */
 
+import {
+  calculateNoticeImportance,
+  classifyNotice,
+  detectNoticeAudience,
+  extractNoticeDeadline,
+  type NoticeItem,
+} from './noticeService';
+
 export const MAIN_NOTICES_URL = 'https://www.gbu.ac.in/page/notices';
 
 /** Byte-identical mirror of {@link MAIN_NOTICES_URL}, used when the primary host is unreachable. */
@@ -32,17 +40,12 @@ export const EXAM_NOTICES_URL = 'https://exams.gbu.ac.in/';
 
 export type LiveNoticeSource = 'main' | 'exams';
 
-export type LiveNoticeCategory =
-  | 'exam'
-  | 'datesheet'
-  | 'result'
-  | 'fees'
-  | 'scholarship'
-  | 'hostel'
-  | 'admission'
-  | 'academic'
-  | 'event'
-  | 'other';
+/**
+ * The coarse category of a notice. The device uses the same categories as the
+ * worker (see `noticeService.ts`), so a notice never changes category between
+ * the server and the phone.
+ */
+export type LiveNoticeCategory = NoticeItem['category'];
 
 /** A notice parsed out of one of the live public GBU pages. */
 export interface LiveNotice {
@@ -265,140 +268,36 @@ export function resolveAbsoluteUrl(href: string, baseUrl: string): string | null
 
 /**
  * Classifies a notice title into a coarse bucket the app can filter on.
- * Keyword based, mirroring the style used by `noticeService.ts`.
+ *
+ * The device does not classify on its own: it calls the shared classifier in
+ * `noticeService.ts`, which the worker also uses. Two classifiers would file
+ * the same notice under different categories on the phone and on the server.
  */
 export function classifyLiveNotice(title: string): LiveNoticeCategory {
-  const lower = (title ?? '').toLowerCase();
-
-  if (
-    lower.includes('tender') ||
-    lower.includes('quotation') ||
-    lower.includes('procurement') ||
-    lower.includes('recruitment of faculty') ||
-    lower.includes('corrigendum for tender') ||
-    lower.includes('eoi')
-  ) {
-    return 'other';
-  }
-  if (lower.includes('datesheet') || lower.includes('date sheet')) return 'datesheet';
-  if (lower.includes('result') || lower.includes('grade card') || lower.includes('mark sheet')) {
-    return 'result';
-  }
-  if (
-    lower.includes('exam') ||
-    lower.includes('admit card') ||
-    lower.includes('back paper') ||
-    lower.includes('backpaper') ||
-    lower.includes('mid sem') ||
-    lower.includes('end sem') ||
-    lower.includes('repeat paper') ||
-    lower.includes('supplementary')
-  ) {
-    return 'exam';
-  }
-  if (
-    lower.includes('hostel') ||
-    lower.includes('mess') ||
-    lower.includes('room allotment') ||
-    lower.includes('ohms') ||
-    lower.includes('warden')
-  ) {
-    return 'hostel';
-  }
-  if (
-    lower.includes('scholarship') ||
-    lower.includes('fellowship') ||
-    lower.includes('freeship') ||
-    lower.includes('tablet') ||
-    lower.includes('smartphone') ||
-    lower.includes('yojana') ||
-    lower.includes('yojna') ||
-    lower.includes('vikshit bharat') ||
-    lower.includes('viksit bharat')
-  ) {
-    return 'scholarship';
-  }
-  if (lower.includes('fee') || lower.includes('dues')) return 'fees';
-  if (
-    lower.includes('admission') ||
-    lower.includes('counselling') ||
-    lower.includes('seat allotment') ||
-    lower.includes('entrance test')
-  ) {
-    return 'admission';
-  }
-  if (
-    lower.includes('academic calendar') ||
-    lower.includes('holiday') ||
-    lower.includes('vacation') ||
-    lower.includes('semester registration') ||
-    lower.includes('registration for session') ||
-    lower.includes('orientation') ||
-    lower.includes('induction') ||
-    lower.includes('anti-ragging') ||
-    lower.includes('eligib')
-  ) {
-    return 'academic';
-  }
-  if (
-    lower.includes('event') ||
-    lower.includes('fest') ||
-    lower.includes('hackathon') ||
-    lower.includes('sports') ||
-    lower.includes('competition') ||
-    lower.includes('cultural') ||
-    lower.includes('convocation') ||
-    lower.includes('placement') ||
-    lower.includes('internship') ||
-    lower.includes('campus drive') ||
-    lower.includes('webinar') ||
-    lower.includes('workshop') ||
-    lower.includes('ncc') ||
-    lower.includes('celebrat') ||
-    lower.includes('volunteer')
-  ) {
-    return 'event';
-  }
-  return 'other';
+  return classifyNotice(title);
 }
-
-const DEADLINE_KEYWORDS = [
-  'last date',
-  'last date extended',
-  'deadline',
-  'extended to',
-  'date extend',
-  'till ',
-  'up to ',
-  'due date',
-];
-
-const NOISE_KEYWORDS = ['tender', 'quotation', 'procurement', 'recruitment of faculty'];
 
 /**
  * Scores a notice from 0 (noise) to 5 (act now).
  *
- * Deadline-bearing and exam/result notices score highest; administrative
- * tenders are pushed down. The score is a pure function of the notice so it
- * never changes between renders.
+ * The score comes from the shared scorer in `noticeService.ts`, so the phone
+ * and the worker rank a notice identically. The exam portal's `New` badge is
+ * the one extra signal the server cannot see.
  */
 export function scoreLiveNoticeImportance(
   title: string,
   category: LiveNoticeCategory,
   isNew = false
 ): number {
-  const lower = (title ?? '').toLowerCase();
-  let score = 0;
-
-  if (category === 'exam' || category === 'datesheet' || category === 'result') score += 3;
-  else if (category === 'fees' || category === 'scholarship') score += 2;
-  else if (category === 'admission' || category === 'hostel' || category === 'academic') score += 1;
-
-  if (DEADLINE_KEYWORDS.some((keyword) => lower.includes(keyword))) score += 2;
-  if (isNew) score += 1;
-  if (NOISE_KEYWORDS.some((keyword) => lower.includes(keyword))) score -= 3;
-
-  return Math.max(0, Math.min(5, score));
+  const deadlineAt = extractNoticeDeadline(title);
+  const audience = detectNoticeAudience(title);
+  const score = calculateNoticeImportance({
+    title,
+    category,
+    deadlineAt,
+    audience,
+  });
+  return Math.max(0, Math.min(5, isNew ? score + 1 : score));
 }
 
 function toIsoUtc(year: number, monthIndex: number, day: number): string | null {

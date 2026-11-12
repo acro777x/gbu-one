@@ -59,6 +59,41 @@ export const ADMIT_CARD_NOTICE_URL =
   'https://exams.gbu.ac.in/admin/public/uploads/notices/Admit Cards.pdf';
 
 /**
+ * The school codes the university publishes its sheets under, and the other
+ * spellings the same school is known by.
+ *
+ * The examination portal publishes `soljg.pdf` for the school of law and
+ * `sovasas.pdf` for the school of vocational agriculture, while the app's
+ * class catalogue calls them `SOL` and `SOVSAS`. A student must never be
+ * told that their school has no sheet because of a spelling.
+ */
+const SCHOOL_CODE_ALIASES: Record<string, string> = {
+  SOL: 'SOL',
+  SOLJG: 'SOL',
+  LAW: 'SOL',
+  SOBSC: 'SOBSC',
+  BASIC: 'SOBSC',
+  SOVSAS: 'SOVSAS',
+  SOVASAS: 'SOVSAS',
+  SOVAS: 'SOVSAS',
+  SOICT: 'SOICT',
+  ICT: 'SOICT',
+  SOBT: 'SOBT',
+  SOE: 'SOE',
+  SOHSS: 'SOHSS',
+  SOM: 'SOM',
+};
+
+/**
+ * The canonical school code, e.g. `SOLJG` -> `SOL`.
+ */
+export function normaliseSchoolCode(school: string | undefined | null): string {
+  const raw = (school ?? '').trim().toUpperCase().replace(/[\s-]+/g, '');
+  if (!raw) return '';
+  return SCHOOL_CODE_ALIASES[raw] ?? raw;
+}
+
+/**
  * The result sheet for a school, if the portal publishes one under that
  * name. The app's own school names match the portal's file codes.
  */
@@ -66,10 +101,12 @@ export function resultSheetForSchool(
   school: string | undefined | null,
   special = false,
 ): ResultSheet | undefined {
-  const wanted = (school ?? '').trim().toUpperCase();
+  const wanted = normaliseSchoolCode(school);
   if (!wanted) return undefined;
   return PUBLIC_RESULT_SHEETS.find(
-    (sheet) => sheet.school === wanted && Boolean(sheet.special) === Boolean(special),
+    (sheet) =>
+      normaliseSchoolCode(sheet.school) === wanted &&
+      Boolean(sheet.special) === Boolean(special),
   );
 }
 

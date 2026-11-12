@@ -23,6 +23,7 @@
 import { extractPdfImages, extractPdfText } from './pdfText';
 import { fetchWithTlsTolerance } from './noticesJob';
 import { isTesseractAvailable, runTesseract } from './ocrRunner';
+import { WORKER_CONFIG } from './sources.config';
 
 /** One row of the academic calendar. */
 export interface AcademicEvent {
@@ -60,15 +61,14 @@ export interface AcademicCalendarOptions {
 }
 
 /** Preferred copy: a PDF with a real text layer. */
-export const ACADEMIC_CALENDAR_URL =
-  'https://exams.gbu.ac.in/uploads/imp_link/Academic%20Calendar%202026-27.pdf';
+export const ACADEMIC_CALENDAR_URL = WORKER_CONFIG.sources.academicCalendar.url;
 
 /**
  * Fallback copy on the main site. It is a scan, so it needs OCR.
  * The apex `gbu.ac.in` host fails TLS hostname validation; only `www` works.
  */
 export const ACADEMIC_CALENDAR_FALLBACK_URL =
-  'https://www.gbu.ac.in/Content/gbudata/General/Academic%20Calendar%202026-27.pdf';
+  WORKER_CONFIG.sources.academicCalendar.fallbackUrl;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_BYTES = 15 * 1024 * 1024;

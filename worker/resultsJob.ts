@@ -6,9 +6,15 @@
 
 import { fetchWithTlsTolerance, isSoft404 } from './noticesJob';
 import { WORKER_CONFIG } from './sources.config';
+import { fetchWithRetry, politeWait } from './http';
 import {
   type ResultRecord,
+  checkSchema,
+  STAGE_TABLES,
   fetchKnownResultUrls,
+  fetchPushedResultUrls,
+  markResultPushed,
+  markResultSeen,
   upsertResults,
   recordWorkerRun,
   isWorkerSupabaseConfigured,
@@ -424,15 +430,31 @@ export class ResultsWorkerJob {
     for (const source of sources) {
       let html = '';
       try {
-        const res = await fetchWithTlsTolerance(source.url, {
-          headers: { 'User-Agent': WORKER_CONFIG.userAgent },
-        });
+        await politeWait(source.url, WORKER_CONFIG.sources.examResults.rateLimitMs);
+        const res = await fetchWithRetry(
+          source.url,
+          { headers: { 'User-Agent': WORKER_CONFIG.userAgent } },
+          {
+            attempts: 3,
+            baseDelayMs: 1000,
+            timeoutMs: WORKER_CONFIG.sources.examResults.timeoutMs,
+            fetchImpl: (target, init) => fetchWithTlsTolerance(target, init),
+          },
+        );
         if (res.ok) {
           html = await res.text();
         } else if (source.fallbackUrl) {
-          const fallbackRes = await fetchWithTlsTolerance(source.fallbackUrl, {
-            headers: { 'User-Agent': WORKER_CONFIG.userAgent },
-          });
+          await politeWait(source.fallbackUrl, WORKER_CONFIG.sources.examResults.rateLimitMs);
+          const fallbackRes = await fetchWithRetry(
+            source.fallbackUrl,
+            { headers: { 'User-Agent': WORKER_CONFIG.userAgent } },
+            {
+              attempts: 2,
+              baseDelayMs: 1000,
+              timeoutMs: WORKER_CONFIG.sources.examResults.timeoutMs,
+              fetchImpl: (target, init) => fetchWithTlsTolerance(target, init),
+            },
+          );
           if (fallbackRes.ok) html = await fallbackRes.text();
         }
       } catch (err) {
@@ -477,8 +499,46 @@ export async function runResultsStage(): Promise<void> {
   }
 
   try {
-    const knownUrls = await fetchKnownResultUrls();
-    const isFirstSync = knownUrls.size === 0;
+    // The push log is a table the worker added on top of the schema. When it
+    // is missing, the stage cannot say what was already pushed, so it fails
+    // instead of pushing the whole backlog.
+    const schema = await checkSchema(STAGE_TABLES);
+    if (!schema.ok) {
+      const message =
+        `the results push log is missing (${schema.missing.join(', ') || 'unknown'}` +
+        `${schema.error ? `, ${schema.error}` : ''}). ` +
+        'The owner has to paste supabase/schema.sql into the Supabase dashboard.';
+      console.error(JSON.stringify({ event: 'worker_results_error', error: message }));
+      await recordWorkerRun('results', 'error', 0, 0, message);
+      throw new Error(message);
+    }
+
+    const known = await fetchKnownResultUrls();
+    if (!known.ok) {
+      // A failed read must not look like "the table is empty": the first
+      // sync would then skip every push and look like a healthy run.
+      const message = `known result read failed: ${known.error ?? 'unknown error'}`;
+      console.error(JSON.stringify({ event: 'worker_results_error', error: message }));
+      await recordWorkerRun('results', 'error', 0, 0, message);
+      throw new Error(message);
+    }
+    const knownUrls = known.rows;
+
+    // The push log is what says whether a result was already announced.
+    // The results table only says whether the row is stored.
+    //
+    // A failed read of the push log is dangerous: without it every result
+    // looks unpushed and the whole backlog would be pushed at the devices.
+    // The stage therefore fails instead of pushing.
+    const pushedRead = await fetchPushedResultUrls();
+    if (!pushedRead.ok) {
+      const message = `result push log read failed: ${pushedRead.error ?? 'unknown error'}`;
+      console.error(JSON.stringify({ event: 'worker_results_error', error: message }));
+      await recordWorkerRun('results', 'error', 0, 0, message);
+      throw new Error(message);
+    }
+    const pushedUrls = pushedRead.rows;
+    const isFirstSync = knownUrls.size === 0 && pushedUrls.size === 0;
 
     const job = new ResultsWorkerJob([...knownUrls]);
     const result = await job.runJob();
@@ -498,10 +558,18 @@ export async function runResultsStage(): Promise<void> {
       console.log(JSON.stringify({ event: 'worker_results_upserted', written }));
     }
 
-    // Never blast pushes on initial seed / first sync
+    // Never blast pushes on initial seed / first sync.
     const pushable = isFirstSync ? [] : result.pushCandidates;
     if (pushable.length > 0) {
-      const receipts = await sendPushForResults(pushable, knownUrls);
+      // Every candidate is recorded as "seen" first, so a failed push is
+      // retried on the next run instead of being lost.
+      for (const candidate of pushable) {
+        const url = candidate.fileUrl || candidate.file_url || '';
+        if (!url) continue;
+        await markResultSeen(url, candidate.programme);
+      }
+
+      const receipts = await sendPushForResults(pushable, pushedUrls);
       const sent = receipts.reduce((a, r) => a + r.sent, 0);
       console.log(
         JSON.stringify({
@@ -510,6 +578,13 @@ export async function runResultsStage(): Promise<void> {
           receipts: receipts.length,
         })
       );
+
+      // Only a confirmed send marks the result as pushed.
+      for (const receipt of receipts) {
+        if (receipt.sent > 0 && !receipt.skipped) {
+          await markResultPushed(receipt.fileUrl, receipt.programme, receipt.sent);
+        }
+      }
     }
 
     await recordWorkerRun('results', 'ok', result.totalFound, result.newResultsCount);
@@ -517,5 +592,6 @@ export async function runResultsStage(): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(JSON.stringify({ event: 'worker_results_error', error: msg }));
     await recordWorkerRun('results', 'error', 0, 0, msg);
+    throw err;
   }
 }

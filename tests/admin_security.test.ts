@@ -1,12 +1,14 @@
 import crypto from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../src/lib/supabase';
+import * as adminSecurityModule from '../src/features/admin/adminSecurity';
 import {
   authenticateAdmin,
   authenticateAdminWithSupabase,
   signOutAdmin,
   checkHasAnyAdmin,
-  verifyAdminCredentials,
   getLockoutState,
   getRemainingLockoutSeconds,
   isLockedOut,
@@ -227,118 +229,86 @@ describe('Admin Security & Lockout System', () => {
     });
   });
 
-  describe('Multi-factor & Master Key Verification', () => {
-    it('fails when no master PIN is configured in environment', async () => {
+  // ---------------------------------------------------------------------
+  // The offline "emergency master key" path was DELETED.
+  //
+  // It compared a PIN that was inlined into the shipped APK as
+  // `EXPO_PUBLIC_ADMIN_PIN`, so anybody who unpacked the binary owned the
+  // console - and the "master PIN" was additionally printed in this very
+  // test file. These tests now assert the opposite: that no credential
+  // other than a server-verified Supabase Auth session can open the
+  // console, and that the brute-force lockout still works.
+  // ---------------------------------------------------------------------
+  describe('No offline emergency path', () => {
+    it('does not export a master PIN reader at all', () => {
+      // The module is imported at the top of this file, so `require` here
+      // would return the SAME object the named imports came from.
+      expect((adminSecurityModule as Record<string, unknown>).getMasterAdminPin).toBeUndefined();
+      expect((adminSecurityModule as Record<string, unknown>).getMasterAdminMfaKey).toBeUndefined();
+      expect((adminSecurityModule as Record<string, unknown>).verifyAdminCredentials).toBeUndefined();
+    });
+
+    it('refuses to authenticate without an email and a password', async () => {
+      const result = await authenticateAdmin({});
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/email and password/i);
+    });
+
+    it('ignores a legacy offlinePin option instead of honouring it', async () => {
+      process.env.EXPO_PUBLIC_ADMIN_PIN = '111222';
+      const result = await authenticateAdmin({ offlinePin: '111222' } as never);
+      expect(result.success).toBe(false);
       delete process.env.EXPO_PUBLIC_ADMIN_PIN;
-      const result = await verifyAdminCredentials('852096');
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Invalid Master PIN');
     });
 
-    it('authenticates with configured env master PIN (EXPO_PUBLIC_ADMIN_PIN)', async () => {
-      process.env.EXPO_PUBLIC_ADMIN_PIN = '999111';
-      const result = await verifyAdminCredentials('999111');
-      expect(result.success).toBe(true);
-      expect(result.lockedOut).toBe(false);
-      expect(result.remainingAttempts).toBe(MAX_ADMIN_ATTEMPTS);
+    it('never reads a credential-shaped environment variable', () => {
+      const source = readFileSync(
+        join(__dirname, '..', 'src', 'features', 'admin', 'adminSecurity.ts'),
+        'utf8',
+      );
+      expect(source).not.toMatch(/process\.env\.EXPO_PUBLIC_ADMIN_PIN/);
+      expect(source).not.toMatch(/process\.env\.EXPO_PUBLIC_ADMIN_MFA_KEY/);
+      expect(source).not.toMatch(/process\.env\.EXPO_PUBLIC_ADMIN_PASSWORD/);
+      expect(source).not.toMatch(/process\.env\.EXPO_PUBLIC_ADMIN_EMAIL/);
+      expect(source).not.toMatch(/process\.env\.EXPO_PUBLIC_ADMIN_SERVICE_ROLE_KEY/);
     });
+  });
 
-    it('authenticates with valid secondary MFA key when configured in env', async () => {
-      process.env.EXPO_PUBLIC_ADMIN_PIN = '852096';
-      process.env.EXPO_PUBLIC_ADMIN_MFA_KEY = 'GBU-SECURE-2026';
-      const result = await verifyAdminCredentials('852096', 'GBU-SECURE-2026');
-      expect(result.success).toBe(true);
-      expect(result.lockedOut).toBe(false);
-    });
-
-    it('authenticates with custom env MFA key (EXPO_PUBLIC_ADMIN_MFA_KEY)', async () => {
-      process.env.EXPO_PUBLIC_ADMIN_PIN = '852096';
-      process.env.EXPO_PUBLIC_ADMIN_MFA_KEY = 'GBU-SUPER-ADMIN-2026';
-      const result = await verifyAdminCredentials('852096', 'GBU-SUPER-ADMIN-2026');
-      expect(result.success).toBe(true);
-      expect(result.lockedOut).toBe(false);
-    });
-
-    it('fails when invalid secondary key is supplied even if PIN is correct', async () => {
-      process.env.EXPO_PUBLIC_ADMIN_PIN = '852096';
-      process.env.EXPO_PUBLIC_ADMIN_MFA_KEY = 'GBU-SECURE-2026';
-      const result = await verifyAdminCredentials('852096', 'WRONG-MFA');
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Invalid Secondary Security Key');
-      expect(result.remainingAttempts).toBe(4);
-    });
-
-    it('fails with invalid PIN and increments failed attempts', async () => {
-      process.env.EXPO_PUBLIC_ADMIN_PIN = '852096';
-      const result = await verifyAdminCredentials('000000');
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Invalid Master PIN');
-      expect(result.remainingAttempts).toBe(4);
-
+  describe('Brute-force lockout (server auth path)', () => {
+    it('counts a failed attempt', async () => {
+      await recordFailedAttempt();
       const state = await getLockoutState();
       expect(state.failedAttempts).toBe(1);
     });
 
-    it('successful auth resets attempt counter back to 0', async () => {
-      process.env.EXPO_PUBLIC_ADMIN_PIN = '852096';
-      // Fail 3 times
-      await verifyAdminCredentials('wrong1');
-      await verifyAdminCredentials('wrong2');
-      await verifyAdminCredentials('wrong3');
-
-      let state = await getLockoutState();
-      expect(state.failedAttempts).toBe(3);
-
-      // Now authenticate successfully
-      const successResult = await verifyAdminCredentials('852096');
-      expect(successResult.success).toBe(true);
-
-      state = await getLockoutState();
-      expect(state.failedAttempts).toBe(0);
-      expect(state.lockoutUntil).toBeNull();
-    });
-
-    it('locks out on the 5th bad attempt in verifyAdminCredentials', async () => {
+    it('locks out on the 5th bad attempt', async () => {
       for (let i = 0; i < 4; i++) {
-        const res = await verifyAdminCredentials('wrong');
-        expect(res.success).toBe(false);
-        expect(res.lockedOut).toBe(false);
-        expect(res.remainingAttempts).toBe(4 - i);
+        await recordFailedAttempt();
       }
-
-      // 5th attempt
-      const fifth = await verifyAdminCredentials('wrong');
-      expect(fifth.success).toBe(false);
-      expect(fifth.lockedOut).toBe(true);
-      expect(fifth.remainingAttempts).toBe(0);
-      expect(fifth.lockoutSeconds).toBe(300);
-      expect(fifth.error).toContain('Access Temporarily Locked');
-
-      // Subsequent attempt while locked out
-      const lockedAttempt = await verifyAdminCredentials('852096');
-      expect(lockedAttempt.success).toBe(false);
-      expect(lockedAttempt.lockedOut).toBe(true);
-      expect(lockedAttempt.error).toContain('Access Temporarily Locked');
+      await recordFailedAttempt();
+      expect(await isLockedOut()).toBe(true);
+      expect(await getRemainingLockoutSeconds()).toBeGreaterThan(0);
     });
 
-    it('safely serializes concurrent bad passcode submissions preventing brute force race', async () => {
-      const results = await Promise.all([
-        verifyAdminCredentials('wrong1'),
-        verifyAdminCredentials('wrong2'),
-        verifyAdminCredentials('wrong3'),
-        verifyAdminCredentials('wrong4'),
-        verifyAdminCredentials('wrong5'),
+    it('safely serializes concurrent bad submissions, preventing a brute force race', async () => {
+      await Promise.all([
+        recordFailedAttempt(),
+        recordFailedAttempt(),
+        recordFailedAttempt(),
+        recordFailedAttempt(),
+        recordFailedAttempt(),
       ]);
-
-      expect(results.filter((r: { success: boolean }) => r.success)).toHaveLength(0);
       const state = await getLockoutState();
       expect(state.failedAttempts).toBe(5);
       expect(await isLockedOut()).toBe(true);
+    });
 
-      // Sixth attempt is locked out immediately
-      const sixth = await verifyAdminCredentials('wrong6');
-      expect(sixth.lockedOut).toBe(true);
-      expect(sixth.error).toContain('Access Temporarily Locked');
+    it('resets the counter when the lockout is cleared by the server path', async () => {
+      await recordFailedAttempt();
+      await resetLockoutState();
+      const state = await getLockoutState();
+      expect(state.failedAttempts).toBe(0);
+      expect(state.lockoutUntil).toBeNull();
     });
   });
 
@@ -722,40 +692,28 @@ describe('Admin Security & Lockout System', () => {
       expect(res.role).toBe('owner');
     });
 
-    it('routes offlinePin through NIST SHA-256 Emergency Master Key engine', async () => {
-      process.env.EXPO_PUBLIC_ADMIN_PIN = '852096';
+    it('never authenticates through the removed emergency master key', async () => {
+      // The emergency path was deleted: a PIN baked into the APK is not a
+      // credential, it is a public constant.
+      process.env.EXPO_PUBLIC_ADMIN_PIN = '111222';
       process.env.EXPO_PUBLIC_ADMIN_MFA_KEY = 'GBU-SECURE-2026';
       const res = await authenticateAdmin({
-        offlinePin: '852096',
+        offlinePin: '111222',
         secondaryKey: 'GBU-SECURE-2026',
-      });
-
-      expect(res.success).toBe(true);
-      expect(res.authMethod).toBe('offline_emergency');
-      expect(res.role).toBe('emergency_admin');
-
-      // Verified audit entry created
-      const auditLog = await getAdminAuditLog();
-      const emergencyEntry = auditLog.find(
-        (e) => e.action === 'admin_login_success' && e.details.method === 'offline_emergency',
-      );
-      expect(emergencyEntry).toBeDefined();
-    });
-
-    it('fails when bad offline emergency PIN is provided', async () => {
-      const res = await authenticateAdmin({
-        offlinePin: '000000',
-      });
+      } as never);
 
       expect(res.success).toBe(false);
-      expect(res.error).toContain('Invalid Master PIN');
+      expect(res.authMethod).not.toBe('offline_emergency' as never);
 
       const auditLog = await getAdminAuditLog();
       expect(
         auditLog.some(
-          (e) => e.action === 'admin_login_failed' && e.details.method === 'offline_emergency',
+          (e) => e.action === 'admin_login_success' && e.details.method === 'offline_emergency',
         ),
-      ).toBe(true);
+      ).toBe(false);
+
+      delete process.env.EXPO_PUBLIC_ADMIN_PIN;
+      delete process.env.EXPO_PUBLIC_ADMIN_MFA_KEY;
     });
   });
 

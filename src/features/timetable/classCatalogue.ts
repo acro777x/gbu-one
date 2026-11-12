@@ -198,6 +198,18 @@ export const FALLBACK_CATALOGUE: Array<{
     sections: ['Ph.D. Biotechnology'],
   },
   {
+    // Published by the timetable API as `DAM-I` with
+    // program_name = "Ph.D. Applied  Mathematics", school = SOVSAS.
+    // It was missing from the catalogue, so a Ph.D. Applied Mathematics
+    // student could not select their own section and saw an empty
+    // timetable. Verified against the live API on 2026-11-12.
+    code: 'DAM',
+    apiCode: 'DAM',
+    name: 'Ph.D. Applied Mathematics',
+    school: 'SOVSAS',
+    sections: ['DAM-I'],
+  },
+  {
     code: 'BCE',
     apiCode: 'BEE',
     name: 'B.Tech (CE)',
@@ -406,6 +418,32 @@ export const FALLBACK_CATALOGUE: Array<{
     name: 'MCA',
     school: 'SOICT',
     sections: ['MCA-DS-I', 'MCA-DS-II'],
+  },
+  {
+    // The School of Law and the School of Basic Science publish NO
+    // timetable at all: the live timetable API returns sections for only
+    // six schools (SOBT, SOE, SOHSS, SOICT, SOM, SOVSAS - verified
+    // 2026-11-12). They are listed here anyway, because the examination
+    // portal DOES publish a result sheet for each of them
+    // (`soljg.pdf` and `sobsc.pdf`), and a student who cannot pick their
+    // school cannot watch for their own result.
+    //
+    // The section codes are deliberately empty rather than invented: no
+    // timetable exists to read them from, and a made-up section would put
+    // a student in the wrong class. The timetable screen shows an honest
+    // empty schedule for these two.
+    code: 'SOL',
+    apiCode: 'SOL',
+    name: 'School of Law (no timetable published)',
+    school: 'SOL',
+    sections: [],
+  },
+  {
+    code: 'SOBSC',
+    apiCode: 'SOBSC',
+    name: 'School of Basic Science (no timetable published)',
+    school: 'SOBSC',
+    sections: [],
   },
   {
     code: 'PhDCS',

@@ -96,3 +96,24 @@ Rule: take the first unchecked task, finish it (typecheck + lint + tests), tick 
 
 ## Later ideas (do not build without owner approval)
 Hindi UI, home-screen widgets, faculty directory, hostel/mess notices, incubation links.
+
+## Security & honesty audit (2026-11-11 to 2026-11-12)
+
+A full audit of the app, the worker and the live backend found and fixed:
+
+- [x] The Supabase secret key was inlined into the shipped client bundle. The build sanitiser now checks the VALUE (not just the variable name), refuses a release build that would ship one, and strips it from the admin build too. `tests/bundle_secrets.test.ts` guards it; CI greps for it as well.
+- [x] The offline "emergency master key" admin path was deleted (it compared a PIN that shipped inside the APK). The admin console now only accepts a server-verified Supabase Auth sign-in.
+- [x] The lockout could be cleared by anyone standing at the lock screen ("Instant Master PIN Unlock"). The cooldown now expires on its own.
+- [x] The admin "publish" reported success while nothing was published. Every sink is checked and the real reason is shown.
+- [x] "Your Submitted Reports" showed every student's reports. The filter is now strict ownership, and the server-side policy is `reports own read`.
+- [x] Sign-out was undone by the Profile screen. Sign-out is now terminal and wipes the personal keys, the query cache and the attendance and mail stores.
+- [x] The bundled fallback data was labelled "Live from gbu.ac.in". The sample state is now honest everywhere (notices, results, attendance, the prototype screens).
+- [x] The worker reported success while writing nothing: it ran "parse-only" when the Supabase secrets were missing. The cron now fails if a secret is missing and fails if no `worker_runs` row appeared.
+- [x] The worker destroyed the OCR text on every run, re-pushed every notice after 1,000 rows, trusted HTTP 200 from the Expo push API, and never ran the date-sheet stage. All fixed, with `tests/worker_pipeline.test.ts`.
+- [x] Approving a PYQ paper corrupted the published file (it went through a JS string). The file is now copied inside Supabase Storage and the copy is fingerprinted.
+- [x] The exam date sheet matched only `BCS-*`, so almost every programme saw another programme's date sheet. The canonical class key now carries the programme, the batch and the section.
+- [x] The class catalogue was missing `DAM-I` (Ph.D. Applied Mathematics), so those students could not select their own section. `tests/class_catalogue_live.test.ts` now cross-checks the catalogue against the live API.
+- [x] The notifications could not repeat, the shade Snooze/Dismiss did nothing when the app was not running, and the stored alarm lost its title and body.
+- [x] `npm test` was transpile-only, so a green run carried no type information. The suite now type-checks (`tsconfig.test.json`).
+- [x] Four of the six typed state machines were modules nothing imported. The auth machine is now wired into the auth store; the rest declare their status and `tests/state_machine_integration.test.ts` keeps the claim honest.
+- [ ] Owner actions that still block the app - see `docs/SUPABASE_PASTE_GUIDE.md` and `docs/OPEN_QUESTIONS.md` #21, #23, #24, #25.

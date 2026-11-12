@@ -206,12 +206,52 @@ describe('Typed State-Machine Layer', () => {
 
     it('rejects invalid transitions gracefully', () => {
       const s0 = createInitialAuthState('guest');
-      expect(canTransitionAuth(s0, 'LOGOUT')).toBe(false);
+      // Booting an existing account is only valid from 'uninitialized': a
+      // guest session that has already been established cannot suddenly
+      // discover a stored account.
+      expect(canTransitionAuth(s0, 'BOOT_EXISTING_USER')).toBe(false);
 
-      const res = transitionAuth(s0, { type: 'LOGOUT' });
+      const res = transitionAuth(s0, { type: 'BOOT_EXISTING_USER', payload: { userId: 'usr_1' } });
       expect(res.ok).toBe(false);
       expect(res.error).toContain('cannot process');
       expect(res.state.value).toBe('guest'); // state preserved
+    });
+
+    it('allows a sign-out from every unlocked state', () => {
+      // The student pressed "Log out", so it must take effect - including
+      // before the app has finished hydrating, and from a guest or an
+      // unverified session.
+      for (const value of ['uninitialized', 'onboarding', 'guest', 'unverified'] as const) {
+        const state = createInitialAuthState(value, { userId: 'usr_1' });
+        expect(canTransitionAuth(state, 'LOGOUT')).toBe(true);
+        const res = transitionAuth(state, { type: 'LOGOUT' });
+        expect(res.ok).toBe(true);
+        expect(res.state.value).toBe('uninitialized');
+      }
+      // Signing out of a real account leaves the app in guest mode.
+      const authed = createInitialAuthState('authenticated', { userId: 'usr_1' });
+      const res = transitionAuth(authed, { type: 'LOGOUT' });
+      expect(res.ok).toBe(true);
+      expect(res.state.value).toBe('guest');
+    });
+
+    it('counts a failed sign-in from every unlocked state', () => {
+      // A wrong password on a FRESH install must still count towards the
+      // brute-force lockout. It used to be reachable only from 'guest', so
+      // the lockout never started until after one successful sign-in.
+      for (const value of ['uninitialized', 'onboarding', 'guest', 'unverified'] as const) {
+        const state = createInitialAuthState(value, { userId: 'usr_1' });
+        expect(canTransitionAuth(state, 'LOGIN_FAILURE')).toBe(true);
+        const res = transitionAuth(state, { type: 'LOGIN_FAILURE' });
+        expect(res.ok).toBe(true);
+        expect(res.state.context.failedAttempts).toBe(1);
+      }
+    });
+
+    it('keeps an unverified offline session distinct from guest and authenticated', () => {
+      const state = createInitialAuthState('unverified', { userId: 'usr_1', isGuest: false });
+      expect(validateAuthInvariants(state).valid).toBe(true);
+      expect(state.value).toBe('unverified');
     });
 
     it('detects invariant violations in corrupted state', () => {

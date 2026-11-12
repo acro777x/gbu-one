@@ -5,9 +5,18 @@
  * back ten minutes, or clear it. The bell and the sheet animate in with the
  * app's own motion, so it reads as part of the app rather than a system
  * dialog.
+ *
+ * Two things are deliberate:
+ *
+ *  1. **A stray tap must not dismiss the alarm.** The sheet's backdrop is
+ *     inert, and the close control is labelled with the ACTION it performs
+ *     ("Dismiss the class alarm") so a screen reader says what will happen.
+ *  2. **A screen reader has to be told.** The alarm can ring while the
+ *     student is somewhere else in the app, so the sheet announces itself
+ *     and carries a live region.
  */
-import React, { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, AccessibilityInfo } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -20,6 +29,7 @@ import { PillButton } from '../ui';
 import { useAppTheme } from '../../lib/ThemeContext';
 import { motion } from '../../lib/motion';
 import { theme } from '../../lib/theme';
+import { formatLeadTimeVerbose } from '../../features/notifications/notificationPreferences';
 import type { RingedAlarm } from '../../features/notifications/useClassAlarmLifecycle';
 
 export interface AlarmRungPromptProps {
@@ -29,18 +39,22 @@ export interface AlarmRungPromptProps {
   onSnooze: () => void;
   /** Clears the alarm. */
   onDismiss: () => void;
+  /** The last thing that went wrong, e.g. a snooze that could not be armed. */
+  error?: string | null;
 }
 
 export const AlarmRungPrompt: React.FC<AlarmRungPromptProps> = ({
   alarm,
   onSnooze,
   onDismiss,
+  error,
 }) => {
   const { colors } = useAppTheme();
   const bellScale = useSharedValue(0.6);
   const bellRotate = useSharedValue(-12);
   const titleOpacity = useSharedValue(0);
   const titleShift = useSharedValue(12);
+  const announcedFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (!alarm) return;
@@ -49,6 +63,32 @@ export const AlarmRungPrompt: React.FC<AlarmRungPromptProps> = ({
     titleOpacity.value = withTiming(1, { duration: 220 });
     titleShift.value = withSpring(0, motion.spring.snappy);
   }, [alarm, bellScale, bellRotate, titleOpacity, titleShift]);
+
+  /**
+   * Tell the student the alarm rang.
+   *
+   * The alarm can ring while the student is reading something else, and the
+   * sheet is not necessarily on screen at that moment, so the announcement
+   * is made explicitly. It is made once per alarm, not on every render.
+   */
+  useEffect(() => {
+    if (!alarm) return;
+    const key = `${alarm.reminder.slotId}:${alarm.reminder.fireAt}`;
+    if (announcedFor.current === key) return;
+    announcedFor.current = key;
+    const lead = alarm.reminder.leadMinutes;
+    const when =
+      lead > 0
+        ? `${formatLeadTimeVerbose(lead)} before it starts`
+        : 'the class starts now';
+    try {
+      AccessibilityInfo.announceForAccessibility(
+        `Class alarm. ${alarm.subject}, ${when}.`,
+      );
+    } catch {
+      // A platform without the announcement API simply does not announce.
+    }
+  }, [alarm]);
 
   const bellStyle = useAnimatedStyle(() => ({
     transform: [{ scale: bellScale.value }, { rotate: `${bellRotate.value}deg` }],
@@ -61,9 +101,23 @@ export const AlarmRungPrompt: React.FC<AlarmRungPromptProps> = ({
 
   if (!alarm) return null;
 
+  const lead = alarm.reminder.leadMinutes;
+  const leadText =
+    lead > 0
+      ? ` The alarm rang ${formatLeadTimeVerbose(lead)} before it starts.`
+      : ' The alarm rang as the class started.';
+
   return (
-    <SheetOverlay visible onClose={onDismiss} title="Class alarm">
-      <View style={styles.body}>
+    <SheetOverlay
+      visible
+      onClose={onDismiss}
+      title="Class alarm"
+      // A tap on the backdrop must not throw the alarm away: the student
+      // answers it with Snooze or Dismiss, on purpose.
+      dismissOnBackdropPress={false}
+      closeLabel="Dismiss the class alarm"
+    >
+      <View style={styles.body} accessibilityLiveRegion="assertive">
         <Animated.View
           style={[
             styles.bell,
@@ -75,16 +129,32 @@ export const AlarmRungPrompt: React.FC<AlarmRungPromptProps> = ({
         </Animated.View>
 
         <Animated.View style={textStyle}>
-          <Text style={[styles.subject, { color: colors.textPrimary }]}>
+          <Text
+            style={[styles.subject, { color: colors.textPrimary }]}
+            accessibilityRole="header"
+          >
             {alarm.subject}
           </Text>
           <Text style={[styles.detail, { color: colors.textSecondary }]}>
-            {alarm.reminder.start} class - the alarm rang
-            {alarm.reminder.leadMinutes > 0
-              ? ` ${alarm.reminder.leadMinutes} minutes before it starts.`
-              : '.'}
+            {alarm.reminder.start} class.{leadText}
           </Text>
+          {alarm.delivered === false ? (
+            <Text style={[styles.detail, { color: colors.textTertiary }]}>
+              The app did not see this notification arrive, so the alarm may
+              not have been delivered.
+            </Text>
+          ) : null}
         </Animated.View>
+
+        {error ? (
+          <Text
+            style={[styles.error, { color: colors.danger }]}
+            accessibilityLiveRegion="assertive"
+            accessibilityRole="alert"
+          >
+            {error}
+          </Text>
+        ) : null}
 
         <View style={styles.actions}>
           <PillButton
@@ -134,6 +204,13 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     textAlign: 'center',
     marginTop: 4,
+  },
+  error: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginTop: theme.spacing.sm,
   },
   actions: {
     flexDirection: 'row',

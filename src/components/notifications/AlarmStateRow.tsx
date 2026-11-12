@@ -95,6 +95,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   cancel: {
+    // The project floor for a touch target is 44pt (AGENTS.md). The chip
+    // itself is only ~23pt tall, so the box around the word carries the
+    // full 44pt rather than leaning on hitSlop.
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingVertical: 4,
     paddingHorizontal: 6,
   },

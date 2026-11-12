@@ -97,10 +97,23 @@ export type ExactAlarmCapability = 'granted' | 'denied' | 'unknown';
 
 let channelPromise: Promise<ClassChannelStatus> | null = null;
 let activeChannelId: string = CLASS_REMINDER_CHANNEL_ID;
+let lastChannelStatus: ClassChannelStatus | null = null;
 
 /** The channel the alarms are posted to right now. */
 export function getClassAlarmChannelId(): string {
   return activeChannelId;
+}
+
+/**
+ * The state of the alarm channel, once it has been worked out.
+ *
+ * The Alarms screen shows this instead of a hard-coded "Channel Ready"
+ * badge: an Android channel cannot be changed after it is created, so a
+ * channel that came up without the university sound would otherwise stay
+ * silent for the rest of the semester with nothing on screen to say so.
+ */
+export function getClassAlarmChannelStatus(): ClassChannelStatus | null {
+  return lastChannelStatus;
 }
 
 /**
@@ -134,6 +147,10 @@ export function ensureClassReminderChannel(): Promise<ClassChannelStatus> {
   }
   if (!channelPromise) {
     channelPromise = (async () => {
+      const remember = (status: ClassChannelStatus): ClassChannelStatus => {
+        lastChannelStatus = status;
+        return status;
+      };
       try {
         await Notifications.setNotificationCategoryAsync(CLASS_ALARM_CATEGORY, [
           {
@@ -171,13 +188,13 @@ export function ensureClassReminderChannel(): Promise<ClassChannelStatus> {
           },
         );
         activeChannelId = CLASS_REMINDER_CHANNEL_ID;
-        return {
+        return remember({
           channelId: CLASS_REMINDER_CHANNEL_ID,
           channelName: CLASS_REMINDER_CHANNEL_NAME,
           variant: 'primary',
           hasSound: true,
           ok: true,
-        };
+        });
       } catch (primaryError) {
         // The first channel failed. It may already exist as a silent channel
         // (Android channels cannot be changed), so a second channel with the
@@ -197,7 +214,7 @@ export function ensureClassReminderChannel(): Promise<ClassChannelStatus> {
             },
           );
           activeChannelId = CLASS_REMINDER_FALLBACK_CHANNEL_ID;
-          return {
+          return remember({
             channelId: CLASS_REMINDER_FALLBACK_CHANNEL_ID,
             channelName: CLASS_REMINDER_FALLBACK_CHANNEL_NAME,
             variant: 'fallback',
@@ -207,10 +224,10 @@ export function ensureClassReminderChannel(): Promise<ClassChannelStatus> {
               primaryError instanceof Error
                 ? primaryError.message
                 : 'The primary alarm channel could not be created',
-          };
+          });
         } catch (fallbackError) {
           activeChannelId = CLASS_REMINDER_CHANNEL_ID;
-          return {
+          return remember({
             channelId: CLASS_REMINDER_CHANNEL_ID,
             channelName: CLASS_REMINDER_CHANNEL_NAME,
             variant: 'silent',
@@ -220,7 +237,7 @@ export function ensureClassReminderChannel(): Promise<ClassChannelStatus> {
               fallbackError instanceof Error
                 ? fallbackError.message
                 : 'No alarm channel could be created',
-          };
+          });
         }
       }
     })();
@@ -248,6 +265,20 @@ export async function getExactAlarmCapability(): Promise<ExactAlarmCapability> {
   } catch {
     return 'unknown';
   }
+}
+
+/**
+ * Where the student has to go to allow exact alarms.
+ *
+ * React Native has no API for the "Alarms & reminders" screen, so the app
+ * can only open its own settings page. The path below is therefore spelled
+ * out in words: the student has to find it themselves.
+ *
+ * iOS has no such permission at all, so there is no path to give.
+ */
+export function exactAlarmSettingsHint(): string | null {
+  if (Platform.OS !== 'android') return null;
+  return 'Settings > Apps > GBU One > Alarms & reminders > Allow';
 }
 
 /**

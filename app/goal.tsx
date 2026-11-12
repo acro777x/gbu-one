@@ -1,3 +1,14 @@
+/**
+ * GBU One - Attendance Goal Planner (prototype).
+ *
+ * The planner works on the student's own attendance record, but the
+ * attendance store starts EMPTY, so every number on this screen is a
+ * projection built on whatever is recorded - and on nothing at all until
+ * the student records a class.
+ *
+ * The banner below says so, in the same words as the other preview
+ * screens: this is a preview, not a record of the student's performance.
+ */
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +27,9 @@ export default function GoalScreen() {
 
   const totalAttended = subjects.reduce((acc, s) => acc + s.attended, 0);
   const totalClasses = subjects.reduce((acc, s) => acc + s.total, 0);
+  // With nothing recorded there is no percentage to show: a "100%" built
+  // from zero classes would be a number the student never earned.
+  const hasRecord = totalClasses > 0;
   const overallStatus = calculateAttendanceStatus(totalAttended, totalClasses, targetGoal);
   const currentPercentage = Math.round(overallStatus.percentage);
 
@@ -34,25 +48,52 @@ export default function GoalScreen() {
           style={[styles.backBtn, { backgroundColor: colors.surfaceAlt }]}
           onPress={() => router.back()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
         >
           <ArrowLeft size={18} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Attendance Goal Planner</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/*
+          The sample-data banner. It is the same banner the other preview
+          screens carry, and it is announced to a screen reader: a student
+          must never read a projection and think it is their record.
+        */}
+        <View
+          style={[styles.previewBanner, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
+          <Text style={[styles.previewBannerTitle, { color: colors.accent }]}>PREVIEW MODE • SAMPLE DATA</Text>
+          <Text style={[styles.previewBannerText, { color: colors.textSecondary }]}>
+            The figures below are projections worked out from the attendance recorded on this device.
+            They are not your university record, and they are not a promise about your attendance.
+          </Text>
+        </View>
+
         {/* Current Standing Card */}
         <GlassCard style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <View>
               <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>CURRENT ATTENDANCE</Text>
               <View style={styles.percentRow}>
-                <CountUp value={currentPercentage} style={{ ...styles.summaryPercent, color: colors.textPrimary }} />
-                <Text style={[styles.summaryPercentSign, { color: colors.accent }]}>%</Text>
+                {hasRecord ? (
+                  <>
+                    <CountUp value={currentPercentage} style={{ ...styles.summaryPercent, color: colors.textPrimary }} />
+                    <Text style={[styles.summaryPercentSign, { color: colors.accent }]}>%</Text>
+                  </>
+                ) : (
+                  <Text style={[styles.summaryPercent, { color: colors.textPrimary }]}>—</Text>
+                )}
               </View>
               <Text style={[styles.summarySub, { color: colors.textSecondary }]}>
-                {totalAttended} of {totalClasses} classes attended
+                {hasRecord
+                  ? `${totalAttended} of ${totalClasses} classes attended`
+                  : 'No classes recorded on this device yet'}
               </Text>
             </View>
 
@@ -79,6 +120,8 @@ export default function GoalScreen() {
                 ]}
                 onPress={() => setTargetGoal(opt.target)}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={`${opt.label} target. ${opt.desc}`}
               >
                 <View style={styles.goalOptionTop}>
                   <Text style={[styles.goalOptionNum, { color: isSelected ? colors.accent : colors.textPrimary }]}>
@@ -93,9 +136,9 @@ export default function GoalScreen() {
         </View>
 
         {/* Milestone Requirement Diagnosis */}
-        <GlassCard style={styles.diagnosisCard} accentBorder={overallStatus.isShortage}>
+        <GlassCard style={styles.diagnosisCard} accentBorder={hasRecord && overallStatus.isShortage}>
           <View style={styles.diagnosisRow}>
-            {overallStatus.isShortage ? (
+            {hasRecord && overallStatus.isShortage ? (
               <AlertCircle size={22} color={colors.danger} />
             ) : (
               <ShieldCheck size={22} color={colors.success} />
@@ -105,9 +148,11 @@ export default function GoalScreen() {
                 Target: {targetGoal}% Milestone
               </Text>
               <Text style={[styles.diagnosisBody, { color: colors.textSecondary }]}>
-                {overallStatus.isShortage
-                  ? `You need to attend the next ${overallStatus.classesNeededFor75} classes consecutively without missing any lecture to attain ${targetGoal}%.`
-                  : `You have achieved your ${targetGoal}% milestone with a comfortable safety cushion of ${overallStatus.canBunkMargin} missable classes.`}
+                {!hasRecord
+                  ? 'Record your classes first - the planner can only work out a milestone from classes that have actually happened.'
+                  : overallStatus.isShortage
+                    ? `To reach ${targetGoal}% you would need to attend the next ${overallStatus.classesNeededFor75} classes without missing any lecture.`
+                    : `At ${currentPercentage}% you have a cushion of about ${overallStatus.canBunkMargin} classes you could miss and still be at ${targetGoal}%.`}
               </Text>
             </View>
           </View>
@@ -115,33 +160,41 @@ export default function GoalScreen() {
 
         {/* Subject-Wise Goal Impact */}
         <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Subject-Wise Status</Text>
-        {subjects.map((sub) => {
-          const subStatus = calculateAttendanceStatus(sub.attended, sub.total, targetGoal);
-          const isSubSafe = subStatus.percentage >= targetGoal;
-          return (
-            <GlassCard key={sub.subjectCode} style={styles.subjectCard}>
-              <View style={styles.subjectHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.subjectCode, { color: colors.textPrimary }]}>{sub.subjectCode}</Text>
-                  <Text style={[styles.subjectName, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {sub.subjectName}
-                  </Text>
+        {subjects.length === 0 ? (
+          <GlassCard style={styles.subjectCard}>
+            <Text style={[styles.subjectAdvice, { color: colors.textSecondary }]}>
+              No subject has any attendance recorded yet, so there is nothing to plan against.
+            </Text>
+          </GlassCard>
+        ) : (
+          subjects.map((sub) => {
+            const subStatus = calculateAttendanceStatus(sub.attended, sub.total, targetGoal);
+            const isSubSafe = subStatus.percentage >= targetGoal;
+            return (
+              <GlassCard key={sub.subjectCode} style={styles.subjectCard}>
+                <View style={styles.subjectHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.subjectCode, { color: colors.textPrimary }]}>{sub.subjectCode}</Text>
+                    <Text style={[styles.subjectName, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {sub.subjectName}
+                    </Text>
+                  </View>
+                  <View style={[styles.subjectBadge, { backgroundColor: isSubSafe ? colors.successSoft : colors.dangerSoft }]}>
+                    <Text style={[styles.subjectBadgeText, { color: isSubSafe ? colors.success : colors.danger }]}>
+                      {Math.round(subStatus.percentage)}%
+                    </Text>
+                  </View>
                 </View>
-                <View style={[styles.subjectBadge, { backgroundColor: isSubSafe ? colors.successSoft : colors.dangerSoft }]}>
-                  <Text style={[styles.subjectBadgeText, { color: isSubSafe ? colors.success : colors.danger }]}>
-                    {Math.round(subStatus.percentage)}%
-                  </Text>
-                </View>
-              </View>
 
-              <Text style={[styles.subjectAdvice, { color: colors.textSecondary }]}>
-                {subStatus.isShortage
-                  ? `Attend next ${subStatus.classesNeededFor75} classes to hit ${targetGoal}%`
-                  : `Can safely skip ${subStatus.canBunkMargin} classes`}
-              </Text>
-            </GlassCard>
-          );
-        })}
+                <Text style={[styles.subjectAdvice, { color: colors.textSecondary }]}>
+                  {subStatus.isShortage
+                    ? `Attend next ${subStatus.classesNeededFor75} classes to hit ${targetGoal}%`
+                    : `About ${subStatus.canBunkMargin} classes could be missed and still stay at ${targetGoal}%`}
+                </Text>
+              </GlassCard>
+            );
+          })
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -160,11 +213,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  previewBanner: {
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    marginBottom: theme.spacing.md,
+  },
+  previewBannerTitle: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 11,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  previewBannerText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
   },
   headerTitle: {
     fontFamily: 'Poppins-Bold',

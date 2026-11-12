@@ -1,6 +1,12 @@
 /**
  * GBU One — S2 Auth State Machine
  *
+ * INTEGRATION STATUS: **WIRED IN.**
+ *
+ * `src/store/useAuthStore.ts` drives this machine and derives
+ * `isGuest` / `isAuthenticated` from it, so the flags and the machine can
+ * never disagree.
+ *
  * Implements the deterministic S2 Authentication lifecycle:
  *   'uninitialized' -> 'onboarding' | 'guest' | 'authenticated' | 'locked'
  *
@@ -16,6 +22,7 @@ export type AuthMachineStateValue =
   | 'uninitialized'
   | 'onboarding'
   | 'guest'
+  | 'unverified'
   | 'authenticated'
   | 'locked';
 
@@ -42,6 +49,19 @@ export interface AuthMachineState {
 export type AuthMachineEvent =
   | { type: 'BOOT_FIRST_LAUNCH' }
   | { type: 'BOOT_EXISTING_GUEST'; payload?: { guestId?: string; name?: string } }
+  | {
+      /**
+       * A stored profile was found but the server could not confirm a live
+       * session (the device is offline, or the session was revoked).
+       *
+       * This is NOT a sign-in. The app keeps the profile so the student is
+       * not logged out by a lost connection, but it must never be presented
+       * as a verified account - which is why it has its own state instead of
+       * being folded into 'guest' or 'authenticated'.
+       */
+      type: 'BOOT_OFFLINE_SESSION';
+      payload?: { userId?: string; rollNo?: string; email?: string; name?: string };
+    }
   | {
       type: 'BOOT_EXISTING_USER';
       payload: { userId: string; rollNo?: string; email?: string; name?: string };
@@ -128,10 +148,21 @@ export function canTransitionAuth(
         'BOOT_FIRST_LAUNCH',
         'BOOT_EXISTING_GUEST',
         'BOOT_EXISTING_USER',
+        'BOOT_OFFLINE_SESSION',
         'BOOT_LOCKED',
         'START_ONBOARDING',
         'CONTINUE_AS_GUEST',
         'LOGIN_SUCCESS',
+        // A failed sign-in attempt is legitimate from any unlocked state. It
+        // used to be reachable only from 'guest', which meant the very first
+        // wrong password on a fresh install could not be counted - so the
+        // brute-force lockout would never start until after a successful
+        // sign-in had already happened once.
+        'LOGIN_FAILURE',
+        'LOCK_SESSION',
+        // Signing out is always allowed, even before the app has finished
+        // hydrating: the student pressed "Log out", so it must take effect.
+        'LOGOUT',
       ].includes(eventType);
 
     case 'onboarding':
@@ -139,6 +170,9 @@ export function canTransitionAuth(
         'COMPLETE_ONBOARDING_AS_GUEST',
         'CONTINUE_AS_GUEST',
         'LOGIN_SUCCESS',
+        'LOGIN_FAILURE',
+        'LOCK_SESSION',
+        'LOGOUT',
         'RESET_ACCOUNT',
         'CLEAR_ERROR',
       ].includes(eventType);
@@ -150,6 +184,19 @@ export function canTransitionAuth(
         'LOCK_SESSION',
         'RESET_ACCOUNT',
         'CONTINUE_AS_GUEST',
+        'LOGOUT',
+        'CLEAR_ERROR',
+      ].includes(eventType);
+
+    case 'unverified':
+      return [
+        'LOGIN_SUCCESS',
+        'LOGIN_FAILURE',
+        'LOCK_SESSION',
+        'RESET_ACCOUNT',
+        'CONTINUE_AS_GUEST',
+        'BOOT_OFFLINE_SESSION',
+        'LOGOUT',
         'CLEAR_ERROR',
       ].includes(eventType);
 
@@ -168,6 +215,69 @@ export function canTransitionAuth(
     default:
       return false;
   }
+}
+
+/**
+ * A successful sign-in, from any unlocked state.
+ *
+ * Shared by the 'guest', 'onboarding' and 'unverified' states so the three
+ * paths cannot drift apart.
+ */
+function applyLoginSuccess(
+  context: AuthMachineContext,
+  payload: { userId: string; rollNo?: string; email?: string; name?: string },
+): AuthMachineState {
+  return {
+    value: 'authenticated',
+    context: {
+      ...context,
+      userId: payload.userId,
+      rollNo: payload.rollNo ?? null,
+      name: payload.name ?? null,
+      email: payload.email ?? null,
+      isGuest: false,
+      failedAttempts: 0,
+      errorMessage: null,
+    },
+  };
+}
+
+/**
+ * A failed sign-in attempt. Counts towards the brute-force lockout and locks
+ * the account once the limit is reached.
+ *
+ * Shared by the 'guest', 'onboarding' and 'unverified' states: a failed
+ * attempt must be counted no matter where the student started from.
+ */
+function applyLoginFailure(
+  context: AuthMachineContext,
+  event: Extract<AuthMachineEvent, { type: 'LOGIN_FAILURE' }>,
+  previousState: 'guest' | 'authenticated',
+): AuthMachineState {
+  const nextAttempts = context.failedAttempts + 1;
+  const now = event.payload?.now ?? Date.now();
+  if (nextAttempts >= context.maxFailedAttempts) {
+    const duration = event.payload?.lockoutDurationMs ?? DEFAULT_LOCKOUT_MS;
+    return {
+      value: 'locked',
+      context: {
+        ...context,
+        failedAttempts: nextAttempts,
+        lockoutUntil: now + duration,
+        lockReason: event.payload?.reason ?? 'Too many invalid login attempts',
+        previousState,
+        errorMessage: 'Account locked due to multiple failed login attempts',
+      },
+    };
+  }
+  return {
+    value: previousState === 'guest' ? 'guest' : 'unverified',
+    context: {
+      ...context,
+      failedAttempts: nextAttempts,
+      errorMessage: event.payload?.reason ?? 'Invalid credentials',
+    },
+  };
 }
 
 /**
@@ -203,6 +313,18 @@ export function authMachineReducer(
             },
           };
 
+        case 'LOGIN_FAILURE':
+          // A wrong password on a fresh install still counts towards the
+          // lockout. Without this the counter stayed at zero until the
+          // student had signed in successfully once.
+          return applyLoginFailure(context, event, 'guest');
+
+        case 'LOGOUT':
+          return {
+            value: 'uninitialized',
+            context: createInitialAuthContext(),
+          };
+
         case 'BOOT_EXISTING_GUEST':
         case 'CONTINUE_AS_GUEST': {
           const guestId = event.payload?.guestId ?? 'guest';
@@ -229,6 +351,23 @@ export function authMachineReducer(
               email: event.payload.email ?? null,
               isGuest: false,
               failedAttempts: 0,
+              errorMessage: null,
+            },
+          };
+
+        case 'BOOT_OFFLINE_SESSION':
+          // The profile is kept, but the session is NOT verified: the server
+          // could not confirm it. `isGuest` stays false because the student
+          // did not choose guest mode - they simply could not be reached.
+          return {
+            value: 'unverified',
+            context: {
+              ...context,
+              userId: event.payload?.userId ?? null,
+              rollNo: event.payload?.rollNo ?? null,
+              name: event.payload?.name ?? null,
+              email: event.payload?.email ?? null,
+              isGuest: false,
               errorMessage: null,
             },
           };
@@ -278,16 +417,19 @@ export function authMachineReducer(
           };
 
         case 'LOGIN_SUCCESS':
+          return applyLoginSuccess(context, event.payload);
+
+        case 'LOGIN_FAILURE':
+          return applyLoginFailure(context, event, 'guest');
+
+        case 'LOCK_SESSION':
           return {
-            value: 'authenticated',
+            value: 'locked',
             context: {
               ...context,
-              userId: event.payload.userId,
-              rollNo: event.payload.rollNo ?? null,
-              name: event.payload.name ?? null,
-              email: event.payload.email ?? null,
-              isGuest: false,
-              failedAttempts: 0,
+              lockoutUntil: event.payload?.lockoutUntil ?? null,
+              lockReason: event.payload?.reason ?? 'Session locked by user or security policy',
+              previousState: 'guest',
               errorMessage: null,
             },
           };
@@ -295,6 +437,12 @@ export function authMachineReducer(
         case 'RESET_ACCOUNT':
           return {
             value: 'onboarding',
+            context: createInitialAuthContext(),
+          };
+
+        case 'LOGOUT':
+          return {
+            value: 'uninitialized',
             context: createInitialAuthContext(),
           };
 
@@ -310,46 +458,10 @@ export function authMachineReducer(
     case 'guest': {
       switch (event.type) {
         case 'LOGIN_SUCCESS':
-          return {
-            value: 'authenticated',
-            context: {
-              ...context,
-              userId: event.payload.userId,
-              rollNo: event.payload.rollNo ?? null,
-              name: event.payload.name ?? null,
-              email: event.payload.email ?? null,
-              isGuest: false,
-              failedAttempts: 0,
-              errorMessage: null,
-            },
-          };
+          return applyLoginSuccess(context, event.payload);
 
-        case 'LOGIN_FAILURE': {
-          const nextAttempts = context.failedAttempts + 1;
-          const now = event.payload?.now ?? Date.now();
-          if (nextAttempts >= context.maxFailedAttempts) {
-            const duration = event.payload?.lockoutDurationMs ?? DEFAULT_LOCKOUT_MS;
-            return {
-              value: 'locked',
-              context: {
-                ...context,
-                failedAttempts: nextAttempts,
-                lockoutUntil: now + duration,
-                lockReason: event.payload?.reason ?? 'Too many invalid login attempts',
-                previousState: 'guest',
-                errorMessage: 'Account locked due to multiple failed login attempts',
-              },
-            };
-          }
-          return {
-            value: 'guest',
-            context: {
-              ...context,
-              failedAttempts: nextAttempts,
-              errorMessage: event.payload?.reason ?? 'Invalid credentials',
-            },
-          };
-        }
+        case 'LOGIN_FAILURE':
+          return applyLoginFailure(context, event, 'guest');
 
         case 'LOCK_SESSION':
           return {
@@ -379,9 +491,87 @@ export function authMachineReducer(
             context: createInitialAuthContext(),
           };
 
+        case 'LOGOUT':
+          // Signing out of a guest session is legitimate: the device simply
+          // returns to a clean, unidentified state.
+          return {
+            value: 'uninitialized',
+            context: createInitialAuthContext(),
+          };
+
         case 'CLEAR_ERROR':
           return {
             value: 'guest',
+            context: { ...context, errorMessage: null },
+          };
+      }
+      break;
+    }
+
+    case 'unverified': {
+      // A stored profile the server could not confirm. The student is not a
+      // guest (they did not choose that) and not authenticated (the server
+      // did not say so). Everything else behaves like a signed-out student
+      // with a remembered profile.
+      switch (event.type) {
+        case 'LOGIN_SUCCESS':
+          return applyLoginSuccess(context, event.payload);
+
+        case 'LOGIN_FAILURE':
+          return applyLoginFailure(context, event, 'authenticated');
+
+        case 'LOCK_SESSION':
+          return {
+            value: 'locked',
+            context: {
+              ...context,
+              lockoutUntil: event.payload?.lockoutUntil ?? null,
+              lockReason: event.payload?.reason ?? 'Session locked by user or security policy',
+              previousState: 'authenticated',
+              errorMessage: null,
+            },
+          };
+
+        case 'CONTINUE_AS_GUEST':
+          return {
+            value: 'guest',
+            context: {
+              ...context,
+              name: event.payload?.name ?? context.name,
+              userId: event.payload?.guestId ?? context.userId,
+              isGuest: true,
+            },
+          };
+
+        case 'BOOT_OFFLINE_SESSION':
+          return {
+            value: 'unverified',
+            context: {
+              ...context,
+              userId: event.payload?.userId ?? context.userId,
+              rollNo: event.payload?.rollNo ?? context.rollNo,
+              name: event.payload?.name ?? context.name,
+              email: event.payload?.email ?? context.email,
+              isGuest: false,
+              errorMessage: null,
+            },
+          };
+
+        case 'RESET_ACCOUNT':
+          return {
+            value: 'onboarding',
+            context: createInitialAuthContext(),
+          };
+
+        case 'LOGOUT':
+          return {
+            value: 'uninitialized',
+            context: createInitialAuthContext(),
+          };
+
+        case 'CLEAR_ERROR':
+          return {
+            value: 'unverified',
             context: { ...context, errorMessage: null },
           };
       }
@@ -522,6 +712,14 @@ export function validateAuthInvariants(state: AuthMachineState): InvariantValida
   if (value === 'guest') {
     if (!context.isGuest) {
       violations.push("State is 'guest' but isGuest is false");
+    }
+  }
+
+  if (value === 'unverified') {
+    // A remembered-but-unconfirmed profile: neither a guest (the student did
+    // not choose guest mode) nor authenticated (the server did not say so).
+    if (context.isGuest) {
+      violations.push("State is 'unverified' but isGuest is true");
     }
   }
 

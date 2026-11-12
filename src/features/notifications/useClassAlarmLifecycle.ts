@@ -35,6 +35,7 @@ import {
   cancelAlarmsThatHavePassed,
   cancelClassAlarmsForSlot,
   dismissNotification,
+  getExactAlarmCapability,
   getScheduledClassAlarmsForSlot,
   scheduleRepeatingClassAlarm,
   snoozeClassAlarm,
@@ -43,6 +44,7 @@ import {
   SNOOZE_MINUTES,
   CLASS_ALARM_DATA_TYPE,
   type ClassAlarmData,
+  type ExactAlarmCapability,
 } from './classAlarm';
 import {
   RINGED_WINDOW_MINUTES,
@@ -79,6 +81,13 @@ export interface ClassAlarmLifecycle {
   missedAlarms: MissedAlarm[];
   /** The last thing that went wrong, e.g. a snooze that could not be armed. */
   error: string | null;
+  /**
+   * Whether the OS still lets the app ring at the exact minute.
+   *
+   * `denied` means the alarm will be inexact (it may ring late, or the OS
+   * may batch it), so the student is told rather than left guessing.
+   */
+  exactAlarm: ExactAlarmCapability;
   /** Pushes the alarm back ten minutes. */
   snooze: () => Promise<void>;
   /** Clears the alarm. */
@@ -138,20 +147,21 @@ export async function handleSnoozeAction(
   now: Date = new Date(),
 ): Promise<AlarmActionResult> {
   const slotId = (data.slotId ?? '').trim();
-  const reminder = slotId ? await store.getReminder(slotId) : undefined;
-
-  const title =
-    data.title?.trim() ||
-    reminder?.title ||
-    reminderTitle(data.subject || reminder?.subject || 'Your class', Number(data.leadMinutes ?? reminder?.leadMinutes ?? 0));
-  const body =
-    data.body?.trim() ||
-    reminder?.body ||
-    reminderBody(data.start || reminder?.start || '', undefined, Number(data.leadMinutes ?? reminder?.leadMinutes ?? 0));
-
-  const fireAt = new Date(now.getTime() + SNOOZE_MINUTES * 60 * 1000);
 
   try {
+    const reminder = slotId ? await store.getReminder(slotId) : undefined;
+
+    const title =
+      data.title?.trim() ||
+      reminder?.title ||
+      reminderTitle(data.subject || reminder?.subject || 'Your class', Number(data.leadMinutes ?? reminder?.leadMinutes ?? 0));
+    const body =
+      data.body?.trim() ||
+      reminder?.body ||
+      reminderBody(data.start || reminder?.start || '', undefined, Number(data.leadMinutes ?? reminder?.leadMinutes ?? 0));
+
+    const fireAt = new Date(now.getTime() + SNOOZE_MINUTES * 60 * 1000);
+
     // The snooze that is already pending is cancelled first, so tapping
     // snooze twice does not leave two alarms behind.
     const pending = reminder?.notificationId;
@@ -202,8 +212,8 @@ export async function handleDismissAction(
   store: AlarmActionStore = alarmStore,
 ): Promise<AlarmActionResult> {
   const slotId = (data.slotId ?? '').trim();
-  const reminder = slotId ? await store.getReminder(slotId) : undefined;
   try {
+    const reminder = slotId ? await store.getReminder(slotId) : undefined;
     if (slotId) {
       await cancelClassAlarmsForSlot(slotId);
       await store.removeReminder(slotId);
@@ -269,6 +279,19 @@ function responseKey(response: Notifications.NotificationResponse): string {
 }
 
 /**
+ * What happened when the weekly alarms were re-armed.
+ *
+ * The report is what lets the app say "this alarm could not be armed"
+ * instead of silently doing nothing.
+ */
+export interface RepeatingAlarmReport {
+  /** The slots that now have a weekly OS alarm. */
+  armed: string[];
+  /** The slots that could not be re-armed, and why. */
+  skipped: { slotId: string; reason: string }[];
+}
+
+/**
  * Makes sure every stored alarm has an OS alarm that repeats.
  *
  * The timetable arms a single alarm for the next class; this replaces it
@@ -277,39 +300,50 @@ function responseKey(response: Notifications.NotificationResponse): string {
 export async function ensureRepeatingAlarms(
   list: ClassReminder[],
   now: Date = new Date(),
-): Promise<void> {
+): Promise<RepeatingAlarmReport> {
+  const report: RepeatingAlarmReport = { armed: [], skipped: [] };
   for (const reminder of list) {
     if (!reminder.repeatsWeekly) continue;
-    const scheduled = await getScheduledClassAlarmsForSlot(reminder.slotId);
-    if (scheduled.some((alarm) => alarm.mode === 'weekly' && !alarm.snoozed)) {
-      continue;
-    }
+    try {
+      const scheduled = await getScheduledClassAlarmsForSlot(reminder.slotId);
+      if (scheduled.some((alarm) => alarm.mode === 'weekly' && !alarm.snoozed)) {
+        continue;
+      }
 
-    // The one-off alarm is replaced, but a pending snooze is left alone.
-    for (const alarm of scheduled) {
-      if (alarm.snoozed) continue;
-      await cancelScheduledNotification(alarm.identifier);
-    }
+      // The one-off alarm is replaced, but a pending snooze is left alone.
+      for (const alarm of scheduled) {
+        if (alarm.snoozed) continue;
+        await cancelScheduledNotification(alarm.identifier);
+      }
 
-    const fireAt =
-      nextWeeklyFireAt(reminder, now) ?? new Date(reminder.fireAt);
-    const schedule = await scheduleRepeatingClassAlarm({
-      title:
-        reminder.title ||
-        reminderTitle(reminder.subject, reminder.leadMinutes),
-      body:
-        reminder.body ||
-        reminderBody(reminder.start, undefined, reminder.leadMinutes),
-      fireAt,
-      data: {
+      const fireAt =
+        nextWeeklyFireAt(reminder, now) ?? new Date(reminder.fireAt);
+      const schedule = await scheduleRepeatingClassAlarm({
+        title:
+          reminder.title ||
+          reminderTitle(reminder.subject, reminder.leadMinutes),
+        body:
+          reminder.body ||
+          reminderBody(reminder.start, undefined, reminder.leadMinutes),
+        fireAt,
+        data: {
+          slotId: reminder.slotId,
+          subject: reminder.subject,
+          start: reminder.start,
+          leadMinutes: String(reminder.leadMinutes),
+        },
+      });
+      await updateReminder(reminder.slotId, { notificationId: schedule.identifier });
+      report.armed.push(reminder.slotId);
+    } catch (error) {
+      // One alarm that cannot be armed must not stop the others.
+      report.skipped.push({
         slotId: reminder.slotId,
-        subject: reminder.subject,
-        start: reminder.start,
-        leadMinutes: String(reminder.leadMinutes),
-      },
-    });
-    await updateReminder(reminder.slotId, { notificationId: schedule.identifier });
+        reason: errorMessage(error, 'The alarm could not be armed'),
+      });
+    }
   }
+  return report;
 }
 
 export function useClassAlarmLifecycle(): ClassAlarmLifecycle {
@@ -317,6 +351,7 @@ export function useClassAlarmLifecycle(): ClassAlarmLifecycle {
   const [queue, setQueue] = useState<RingedAlarm[]>([]);
   const [missedAlarms, setMissedAlarms] = useState<MissedAlarm[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [exactAlarm, setExactAlarm] = useState<ExactAlarmCapability>('unknown');
 
   // The queue is read from a ref inside the effect, so answering an alarm
   // never re-runs the effect that put it on screen.
@@ -335,6 +370,13 @@ export function useClassAlarmLifecycle(): ClassAlarmLifecycle {
         // The sweep runs even when nothing is stored: an alarm whose record
         // was lost would otherwise ring the moment the app opens.
         await cancelAlarmsThatHavePassed();
+
+        // The exact-alarm permission is asked once per check: on Android 12+
+        // the student can revoke it, and on Android 14 it is not granted to
+        // an app that is not an alarm clock, so an alarm can quietly become
+        // an inexact one.
+        const capability = await getExactAlarmCapability();
+        if (!cancelled) setExactAlarm(capability);
 
         const now = new Date();
         const ringing: RingedAlarm[] = [];
@@ -398,7 +440,12 @@ export function useClassAlarmLifecycle(): ClassAlarmLifecycle {
         }
 
         if (!cancelled) {
-          await ensureRepeatingAlarms(reminders, now);
+          const report = await ensureRepeatingAlarms(reminders, now);
+          if (!cancelled && report.skipped.length > 0) {
+            setError(
+              `A class alarm could not be armed: ${report.skipped[0].reason}`,
+            );
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -475,52 +522,74 @@ export function useClassAlarmLifecycle(): ClassAlarmLifecycle {
     };
   }, []);
 
+  /**
+   * Pushes the alarm back ten minutes.
+   *
+   * The handler never rejects: a failed `scheduleNotificationAsync` (the
+   * exact alarm was refused, the channel is gone) must not escape as an
+   * unhandled rejection, and the prompt must not stay on screen for ever
+   * with no way out.
+   */
   const snooze = useCallback(async () => {
     const alarm = queueRef.current[0] ?? null;
     if (!alarm) return;
     const reminder = alarm.reminder;
-    const result = await handleSnoozeAction(
-      {
-        slotId: reminder.slotId,
-        subject: reminder.subject,
-        start: reminder.start,
-        leadMinutes: String(reminder.leadMinutes),
-        title: reminder.title,
-        body: reminder.body,
-      },
-      alarmStore,
-    );
-    if (!result.ok) {
-      setError(result.error ?? 'The alarm could not be snoozed');
-      return;
+    try {
+      const result = await handleSnoozeAction(
+        {
+          slotId: reminder.slotId,
+          subject: reminder.subject,
+          start: reminder.start,
+          leadMinutes: String(reminder.leadMinutes),
+          title: reminder.title,
+          body: reminder.body,
+        },
+        alarmStore,
+      );
+      if (!result.ok) {
+        setError(result.error ?? 'The alarm could not be snoozed');
+      }
+    } catch (err) {
+      setError(errorMessage(err, 'The alarm could not be snoozed'));
+    } finally {
+      // The prompt is always released: the stored record keeps the alarm
+      // visible in "Active Class Alarms" either way.
+      setQueue((current) =>
+        current.filter((entry) => entry.reminder.slotId !== reminder.slotId),
+      );
     }
-    setQueue((current) =>
-      current.filter((entry) => entry.reminder.slotId !== reminder.slotId),
-    );
   }, []);
 
+  /**
+   * Clears the alarm. Like the snooze, it never rejects and always releases
+   * the prompt.
+   */
   const dismiss = useCallback(async () => {
     const alarm = queueRef.current[0] ?? null;
     if (!alarm) return;
     const reminder = alarm.reminder;
-    const result = await handleDismissAction(
-      {
-        slotId: reminder.slotId,
-        subject: reminder.subject,
-        start: reminder.start,
-        leadMinutes: String(reminder.leadMinutes),
-        title: reminder.title,
-        body: reminder.body,
-      },
-      alarmStore,
-    );
-    if (!result.ok) {
-      setError(result.error ?? 'The alarm could not be cleared');
-      return;
+    try {
+      const result = await handleDismissAction(
+        {
+          slotId: reminder.slotId,
+          subject: reminder.subject,
+          start: reminder.start,
+          leadMinutes: String(reminder.leadMinutes),
+          title: reminder.title,
+          body: reminder.body,
+        },
+        alarmStore,
+      );
+      if (!result.ok) {
+        setError(result.error ?? 'The alarm could not be cleared');
+      }
+    } catch (err) {
+      setError(errorMessage(err, 'The alarm could not be cleared'));
+    } finally {
+      setQueue((current) =>
+        current.filter((entry) => entry.reminder.slotId !== reminder.slotId),
+      );
     }
-    setQueue((current) =>
-      current.filter((entry) => entry.reminder.slotId !== reminder.slotId),
-    );
   }, []);
 
   const acknowledgeMissed = useCallback(async (slotId: string) => {
@@ -536,12 +605,22 @@ export function useClassAlarmLifecycle(): ClassAlarmLifecycle {
       ringedAlarm,
       missedAlarms,
       error,
+      exactAlarm,
       snooze,
       dismiss,
       acknowledgeMissed,
       clearError,
     }),
-    [ringedAlarm, missedAlarms, error, snooze, dismiss, acknowledgeMissed, clearError],
+    [
+      ringedAlarm,
+      missedAlarms,
+      error,
+      exactAlarm,
+      snooze,
+      dismiss,
+      acknowledgeMissed,
+      clearError,
+    ],
   );
 }
 

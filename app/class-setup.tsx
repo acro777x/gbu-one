@@ -251,7 +251,14 @@ export default function ClassSetupScreen() {
   }, [sections, selectedSection, selectedProgramme, selectedYear, codes]);
 
   const handleFinish = () => {
-    if (!storedSection) return;
+    // A school that publishes no timetable at all (the School of Law and the
+    // School of Basic Science) has no year and no section to pick. The
+    // student still completes the setup - otherwise they are stuck on a
+    // step that can never be finished and cannot use the app at all, even
+    // though the examination portal publishes a result sheet for them.
+    const publishesNoTimetable = selectedProgramme !== '' && years.length === 0;
+
+    if (!storedSection && !publishesNoTimetable) return;
 
     const programme =
       currentProgramme ??
@@ -361,6 +368,9 @@ export default function ClassSetupScreen() {
                   {schoolProgrammes.length > 0
                     ? `The ${selectedSchool} programmes the university is running.`
                     : 'No programme is running in this school right now.'}
+                  {selectedProgramme !== '' && years.length === 0
+                    ? ' The university publishes no timetable for this programme, so there is no year or section to pick - your results will still be watched for you.'
+                    : ''}
                 </Text>
 
                 <View style={styles.chipsWrap}>
@@ -376,8 +386,16 @@ export default function ClassSetupScreen() {
                 </View>
 
                 <PillButton
-                  label="Continue to Year"
-                  onPress={() => setStep(3)}
+                  label={years.length > 0 ? 'Continue to Year' : 'Finish setup'}
+                  onPress={() => {
+                    // A programme that publishes no timetable has no year to
+                    // pick. Say so plainly and let the student finish.
+                    if (years.length === 0) {
+                      handleFinish();
+                      return;
+                    }
+                    setStep(3);
+                  }}
                   variant="primary"
                   size="md"
                   disabled={!selectedProgramme}

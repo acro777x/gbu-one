@@ -193,8 +193,12 @@ describe('Admin Broadcast History & Revert Service', () => {
     const pgDeleteCalls = fetchCalls.filter((c) => c.init?.method === 'DELETE');
     expect(pgDeleteCalls.length).toBeGreaterThanOrEqual(1);
 
-    // 4. Verify Realtime notice_deleted broadcast was dispatched to connected students
-    expect(supabase.channel).toHaveBeenCalledWith(NOTICES_REALTIME_CHANNEL);
+    // 4. Verify Realtime notice_deleted broadcast was dispatched to connected students.
+    //    The channel is private: only a signed-in moderator may join it and
+    //    broadcast on it, so the client has to ask for it that way.
+    expect(supabase.channel).toHaveBeenCalledWith(NOTICES_REALTIME_CHANNEL, {
+      config: { private: true },
+    });
     expect(mockSend).toHaveBeenCalledWith({
       type: 'broadcast',
       event: 'notice_deleted',
@@ -287,7 +291,11 @@ describe('PYQ Moderation Queue Student Attribution', () => {
     const row = buildPaperRow(SAMPLE_META, 'paper_uuid_101', 'pyq-pending/sample.pdf', 'user_id_auth', profile);
 
     expect(row.uploader_name).toBe('Ashish Khola');
-    expect(row.uploader_id).toBe('GBU-2026-CS88');
+    // `uploader_id` is a real foreign key to auth.users(id): a device id
+    // (or any string that is not a uuid) must never be written into it.
+    expect(row.uploader_id).toBeNull();
+    // The device identity has its own column.
+    expect(row.uploader_student_id).toBe('GBU-2026-CS88');
     expect(row.uploader_avatar).toBe('avatar_student_3');
     expect(row.subject_code).toBe('CSE201');
     expect(row.status).toBe('pending');
@@ -314,27 +322,28 @@ describe('PYQ Moderation Queue Student Attribution', () => {
     // Verify row passed to Postgres includes student attribution metadata
     expect(lastInsertedRow).toBeDefined();
     expect(lastInsertedRow?.uploader_name).toBe('Aarav Sharma');
-    expect(lastInsertedRow?.uploader_id).toBe('GBU-SOICT-9921');
+    expect(lastInsertedRow?.uploader_student_id).toBe('GBU-SOICT-9921');
     expect(lastInsertedRow?.uploader_avatar).toBe('avatar_cat_5');
+    // The auth foreign key stays empty for an id that is not a uuid.
+    expect(lastInsertedRow?.uploader_id).toBeNull();
   });
 
-  it('uploadPendingPaper retries with base row if table columns are unmigrated in Postgres', async () => {
+  it('uploadPendingPaper does not retry with a thinner row when the insert is refused', async () => {
     const profile: UploaderProfile = {
       name: 'Ananya Verma',
       uniqueStudentId: 'GBU-SOICT-7733',
       avatarId: 'avatar_student_2',
     };
 
-    // First insert call (with rich metadata) fails due to missing columns
-    // Second insert call (with base row) succeeds
+    // The insert fails once. There is NO second, thinner insert any more:
+    // the columns exist in the schema, and the old fallback wrote a row
+    // without them, which turned every contributor into an anonymous
+    // "GBU Contributor".
     let callCount = 0;
     mockInsert.mockImplementation((row: Record<string, unknown>) => {
       callCount += 1;
       lastInsertedRow = row;
-      if (callCount === 1) {
-        return Promise.resolve({ data: null, error: { message: 'column "uploader_name" does not exist' } });
-      }
-      return Promise.resolve({ data: row, error: null });
+      return Promise.resolve({ data: null, error: { message: 'column "uploader_name" does not exist' } });
     });
 
     const res = await uploadPendingPaper(
@@ -344,15 +353,21 @@ describe('PYQ Moderation Queue Student Attribution', () => {
       profile,
     );
 
-    expect(res.ok).toBe(true);
-    expect(callCount).toBe(2);
-    // Verified fallback to base row
+    expect(res.ok).toBe(false);
+    expect(callCount).toBe(1);
     expect(lastInsertedRow).toBeDefined();
-    expect(lastInsertedRow?.uploader_id).toBe('auth_user_ananya');
-    expect(lastInsertedRow?.uploader_name).toBeUndefined();
+    // The attribution is still on the row that was attempted.
+    expect(lastInsertedRow?.uploader_name).toBe('Ananya Verma');
+    expect(lastInsertedRow?.uploader_student_id).toBe('GBU-SOICT-7733');
+
+    // Put the default insert behaviour back for the tests that follow.
+    mockInsert.mockImplementation((row: Record<string, unknown>) => {
+      lastInsertedRow = row;
+      return Promise.resolve({ data: row, error: null });
+    });
   });
 
-  it('uploadPendingPaper falls back safely when profile is not provided (guest / legacy)', async () => {
+  it('uploadPendingPaper writes a guest upload without an auth owner', async () => {
     const res = await uploadPendingPaper(
       SAMPLE_FILE,
       SAMPLE_META,
@@ -361,9 +376,10 @@ describe('PYQ Moderation Queue Student Attribution', () => {
 
     expect(res.ok).toBe(true);
     expect(lastInsertedRow).toBeDefined();
-    expect(lastInsertedRow?.uploader_id).toBe('auth_user_guest');
-    expect(lastInsertedRow?.uploader_name).toBeUndefined();
-    expect(lastInsertedRow?.uploader_avatar).toBeUndefined();
+    // A guest has no auth user: the foreign key must be NULL.
+    expect(lastInsertedRow?.uploader_id).toBeNull();
+    expect(lastInsertedRow?.uploader_name).toBe('');
+    expect(lastInsertedRow?.uploader_avatar).toBe('');
   });
 
   it('rowToPaper properly parses and maps student attribution fields from database rows', () => {

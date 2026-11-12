@@ -3,7 +3,7 @@
  * Per docs/ROADMAP.md Phase 5, docs/DATA_SOURCES.md, docs/ARCHITECTURE.md
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -35,9 +35,10 @@ import { GlassCard, PillButton, Toast } from '../src/components/ui';
 import { CountUp } from '../src/components/motion/CountUp';
 import {
   calculateExamCountdown,
+  examCountdownState,
   getClassDatesheet,
 } from '../src/features/exams/examService';
-import { buildClassKey } from '../src/features/exams/examDateSheetParser';
+import { buildCanonicalClassKey } from '../src/features/exams/examDateSheetParser';
 import {
   PUBLIC_RESULT_SHEETS,
   resultSheetForSchool,
@@ -57,6 +58,10 @@ import {
   loadSchoolWatchPreference,
   schedulePeriodicResultsCheck,
   stopPeriodicResultsCheck,
+  scheduleAdmitCardReminder,
+  cancelAdmitCardReminder,
+  loadSeenDeclaredResultIds,
+  saveSeenDeclaredResultIds,
 } from '../src/features/exams/resultAlerts';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { registerDocument } from '../src/components/pdf/pdfRegistry';
@@ -77,18 +82,23 @@ export default function ExamsScreen() {
 
   const programmeCode = classSelection?.programmeCode || 'BCS';
   const semester = classSelection?.semester || 'II';
-  const enrolledClassKey =
-    classSelection?.section ||
-    (classSelection?.programmeCode && classSelection?.semester
-      ? buildClassKey(classSelection.programmeCode, classSelection.semester)
-      : 'btech_cse_sem3');
+  // The class key the app uses names the programme, the semester and the
+  // section, so a B.Tech AI student is never shown a B.Tech CSE schedule.
+  const enrolledClassKey = classSelection?.section
+    ? buildCanonicalClassKey(classSelection.section)
+    : buildCanonicalClassKey(`${programmeCode} ${semester}`, semester);
 
-  // The date sheet comes from the backend; the bundled seed is the fallback.
+  // The date sheet comes from the backend; the bundled sample is the fallback.
   const { data: datesheet } = useDatesheetQuery(programmeCode, semester, enrolledClassKey, examPhase);
   const activeDatesheet =
     datesheet && datesheet.length > 0
       ? datesheet
       : getClassDatesheet(enrolledClassKey, examPhase);
+
+  // The bundled rows are labelled, so a sample schedule is never read as the
+  // university's official one.
+  const isSampleDatesheet =
+    activeDatesheet.length > 0 && activeDatesheet.every((entry) => entry.isSample === true);
 
   // Calculate upcoming exam and countdown dynamically
   const upcomingExams = activeDatesheet
@@ -96,31 +106,23 @@ export default function ExamsScreen() {
     .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
   const nextExam = upcomingExams[0];
 
-  const countdownDays =
-    nextExam
-      ? calculateExamCountdown(nextExam.examDate)
-      : examPhase === 'end'
-        ? calculateExamCountdown('2026-12-14T04:00:00.000Z')
-        : examPhase === 'practicals'
-          ? calculateExamCountdown('2026-11-30T04:00:00.000Z')
-          : examPhase === 'back'
-            ? calculateExamCountdown('2026-12-07T04:00:00.000Z')
-            : 0;
+  const countdownDays = nextExam ? calculateExamCountdown(nextExam.examDate) : 0;
+  const countdownState = nextExam ? examCountdownState(nextExam.examDate) : null;
 
   const getDaysBadge = (examDateStr: string) => {
-    const diff = calculateExamCountdown(examDateStr);
+    const state = examCountdownState(examDateStr);
     const examDay = new Date(examDateStr).setHours(0, 0, 0, 0);
     const today = new Date().setHours(0, 0, 0, 0);
-    if (examDay < today) {
+    if (examDay < today || state.state === 'past') {
       return { text: 'COMPLETED', color: colors.textTertiary, bg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' };
     }
     if (examDay === today) {
       return { text: 'TODAY', color: colors.danger, bg: colors.dangerSoft };
     }
-    if (diff === 1) {
+    if (state.state === 'tomorrow') {
       return { text: 'TOMORROW', color: colors.warning, bg: colors.warningSoft };
     }
-    return { text: `IN ${diff} DAYS`, color: colors.accent, bg: colors.accentSoft };
+    return { text: `IN ${state.days} DAYS`, color: colors.accent, bg: colors.accentSoft };
   };
 
   const [selectedSession, setSelectedSession] = useState(COMMON_RESULT_SESSIONS[0]);
@@ -139,12 +141,39 @@ export default function ExamsScreen() {
   // Live declared results from backend
   const { data: declaredResults } = useResultsQuery();
 
+  const school = classSelection?.school ?? user?.classSelection?.school ?? '';
+
+  /**
+   * The result that belongs to this student.
+   *
+   * A declaration the university made comes first. The bundled sample is
+   * only shown when there is no real declaration, and it is then labelled.
+   */
+  const matchingResult = useMemo(() => {
+    const list = declaredResults || [];
+    const student = {
+      programmeCode,
+      programmeName: classSelection?.programme,
+      school,
+      semester,
+      selectedSession,
+    };
+    const live = list.find((r) => r.isSample !== true && matchesStudentBatch(r, student));
+    if (live) return live;
+    const sample = list.find((r) => r.isSample === true && matchesStudentBatch(r, student));
+    return sample ?? undefined;
+  }, [declaredResults, programmeCode, classSelection?.programme, school, semester, selectedSession]);
+
+  const isMatchingResultLive = matchingResult?.isSample !== true;
+
   const handleOpenResultSheet = (sheet?: ResultSheet) => {
-    const target =
-      sheet ??
-      resultSheetForSchool(user?.classSelection?.school ?? null);
+    const target = sheet ?? resultSheetForSchool(school);
     if (!target) {
-      setToastMessage('Pick your school from the list below to open your result sheet.');
+      setToastMessage(
+        school
+          ? `The examination portal has no published sheet for ${school} yet.`
+          : 'Choose your school in class setup to open your result sheet.',
+      );
       setToastVisible(true);
       return;
     }
@@ -196,23 +225,32 @@ export default function ExamsScreen() {
     }
   };
 
-  const handleToggleReminder = (val: boolean) => {
+  const handleToggleReminder = async (val: boolean) => {
     setAdmitCardReminder(val);
-    setToastMessage(val ? 'Admit card reminder set for 48h before exams' : 'Reminder turned off');
+    if (!val) {
+      await cancelAdmitCardReminder();
+      setToastMessage('Admit card reminder turned off');
+      setToastVisible(true);
+      return;
+    }
+    // The copy promises a notification 48 hours before the exam, so the
+    // reminder has to be scheduled - not just remembered in a switch.
+    if (!nextExam) {
+      setToastMessage('There is no exam in your date sheet to remind you about yet.');
+      setToastVisible(true);
+      return;
+    }
+    const scheduled = await scheduleAdmitCardReminder(
+      nextExam.examDate,
+      nextExam.subjectCode,
+    );
+    setToastMessage(
+      scheduled
+        ? `Admit card reminder set for 48 hours before ${new Date(nextExam.examDate).toLocaleDateString('en-IN')}`
+        : 'The admit card reminder could not be scheduled. Allow notifications and try again.',
+    );
     setToastVisible(true);
   };
-
-  const school = classSelection?.school ?? user?.classSelection?.school ?? '';
-
-  const matchingResult = (declaredResults || []).find((r) =>
-    matchesStudentBatch(r, {
-      programmeCode,
-      programmeName: classSelection?.programme,
-      school,
-      semester,
-      selectedSession,
-    }),
-  );
 
   const handleQueryPortal = () => {
     setPortalGatewayVisible(true);
@@ -232,7 +270,7 @@ export default function ExamsScreen() {
       setToastVisible(true);
       return;
     }
-    if (matchingResult) {
+    if (matchingResult && isMatchingResultLive) {
       const notified = await notifyBatchResultDeclared(matchingResult);
       setToastMessage(
         notified
@@ -240,10 +278,57 @@ export default function ExamsScreen() {
           : `Result for ${matchingResult.programme} Sem ${matchingResult.semester || semester} is declared! View below.`,
       );
     } else {
-      setToastMessage(`Watching ${programmeCode} Sem ${semester}. You will receive an instant notification when declared.`);
+      // The bundled sample is not a declaration, so it never raises a
+      // notification.
+      setToastMessage(
+        `Watching ${programmeCode} Sem ${semester}. You will receive a notification when the university declares the result.`,
+      );
     }
     setToastVisible(true);
   };
+
+  /**
+   * The batch watch: a declaration the university publishes for this
+   * student's batch raises exactly one notification.
+   *
+   * The first run only records the baseline, so the student is not notified
+   * about everything that was published before the watch was switched on.
+   * A bundled sample row is never a declaration and never notifies.
+   */
+  const batchBaselineTaken = useRef(false);
+  useEffect(() => {
+    if (!batchWatch || !school) return;
+    const list = (declaredResults || []).filter((r) => r.isSample !== true);
+    if (list.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      const seen = await loadSeenDeclaredResultIds();
+      if (cancelled) return;
+      const ids = list.map((r) => r.id);
+      if (!batchBaselineTaken.current) {
+        batchBaselineTaken.current = true;
+        await saveSeenDeclaredResultIds([...seen, ...ids]);
+        return;
+      }
+      const student = {
+        programmeCode,
+        programmeName: classSelection?.programme,
+        school,
+        semester,
+        selectedSession,
+      };
+      const fresh = list.filter((r) => !seen.includes(r.id) && matchesStudentBatch(r, student));
+      for (const item of fresh) {
+        await notifyBatchResultDeclared(item);
+      }
+      await saveSeenDeclaredResultIds([...seen, ...ids]);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [batchWatch, school, declaredResults, programmeCode, classSelection?.programme, semester, selectedSession]);
 
 
   // Load persisted results watch preference for the student's school
@@ -263,13 +348,16 @@ export default function ExamsScreen() {
     };
   }, [school]);
 
-  // Schedule periodic check when watch is enabled, stop on toggle off or unmount
+  // Schedule periodic check when watch is enabled, stop on toggle off or unmount.
+  // The first check runs straight away, so a sheet that was re-published while
+  // the app was closed is noticed without waiting a full interval.
   useEffect(() => {
     if (!resultsWatch || !school) {
       stopPeriodicResultsCheck();
       return;
     }
     const cancel = schedulePeriodicResultsCheck(school);
+    void checkSchoolResults(school, { notify: true });
     return () => {
       cancel();
     };
@@ -495,7 +583,12 @@ export default function ExamsScreen() {
                   ]}
                 >
                   {nextExam ? (
-                    countdownDays === 0 ? (
+                    countdownState && countdownState.state === 'past' ? (
+                      <>
+                        <Text style={[styles.countdownNumber, { color: colors.textTertiary, fontSize: 18 }]}>DONE</Text>
+                        <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>COMPLETED</Text>
+                      </>
+                    ) : countdownDays === 0 ? (
                       <>
                         <Text style={[styles.countdownNumber, { color: colors.danger, fontSize: 18 }]}>TODAY</Text>
                         <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>{nextExam.shift.toUpperCase()}</Text>
@@ -554,6 +647,18 @@ export default function ExamsScreen() {
               </Text>
             </View>
 
+            {/* The bundled schedule is labelled, so it is never read as the
+                university's official date sheet. */}
+            {isSampleDatesheet ? (
+              <View style={[styles.sampleBadgeRow, { backgroundColor: colors.warningSoft, borderColor: colors.warning }]}>
+                <AlertCircle size={14} color={colors.warning} style={{ marginRight: 8 }} />
+                <Text style={[styles.sampleBadgeText, { color: colors.textPrimary }]}>
+                  Sample schedule. The university&apos;s published date sheet for your class could
+                  not be fetched, so these example rows are shown instead.
+                </Text>
+              </View>
+            ) : null}
+
             {examPhase === 'end' && (
               <View style={[styles.practicalAlertBanner, { backgroundColor: colors.warningSoft }]}>
                 <Text style={[styles.practicalAlertText, { color: colors.warning }]}>
@@ -566,7 +671,20 @@ export default function ExamsScreen() {
               {activeDatesheet.map((entry, _idx) => {
                 const badge = getDaysBadge(entry.examDate);
                 return (
-                  <GlassCard key={entry.id} style={styles.examEntryCard}>
+                  <GlassCard
+                    key={entry.id}
+                    style={styles.examEntryCard}
+                    accessibilityLabel={`${entry.subjectCode} ${entry.subjectName}, ${
+                      new Date(entry.examDate).toLocaleDateString('en-IN', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                      })
+                    }, ${entry.shift} shift, ${entry.examTime}${
+                      entry.roomBlock ? `, ${entry.roomBlock}` : ''
+                    }${entry.isSample ? ', sample schedule' : ''}`}
+                  >
                     <View style={styles.examEntryTop}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <View style={[styles.examEntryCodeBadge, { backgroundColor: subtleBg }]}>
@@ -712,6 +830,11 @@ export default function ExamsScreen() {
                 variant="outline"
                 size="md"
                 style={{ marginTop: 8 }}
+                accessibilityLabel={
+                  school
+                    ? `Open the published ${school} result sheet as a PDF`
+                    : 'Open your school result sheet as a PDF. Choose your school in class setup first.'
+                }
               />
 
               <Text style={[styles.resultsHint, { color: colors.textTertiary }]}>
@@ -783,29 +906,48 @@ export default function ExamsScreen() {
               </GlassCard>
             )}
 
-            {/* Matching Batch Alert Banner if declared */}
+            {/* Matching Batch Alert Banner if declared. A bundled sample never
+                looks like a live announcement. */}
             {matchingResult && (
-              <GlassCard style={[styles.matchingBannerCard, { backgroundColor: colors.accentSoft }]}>
+              <GlassCard style={styles.matchingBannerCard}>
                 <View style={styles.matchingBannerRow}>
-                  <Sparkles size={20} color={colors.accent} />
+                  {isMatchingResultLive ? (
+                    <Sparkles size={20} color={colors.accent} />
+                  ) : (
+                    <AlertCircle size={20} color={colors.warning} />
+                  )}
                   <View style={{ flex: 1, marginLeft: 10 }}>
                     <View style={styles.matchingTagRow}>
-                      <Text style={[styles.matchingTag, { color: colors.accent }]}>BATCH RESULT DECLARED</Text>
+                      <Text
+                        style={[
+                          styles.matchingTag,
+                          { color: isMatchingResultLive ? colors.accent : colors.warning },
+                        ]}
+                      >
+                        {isMatchingResultLive ? 'BATCH RESULT DECLARED' : 'SAMPLE RESULT - NOT DECLARED'}
+                      </Text>
                     </View>
                     <Text style={[styles.matchingBannerTitle, { color: colors.textPrimary }]}>
                       {matchingResult.title}
                     </Text>
                     <Text style={[styles.matchingBannerDate, { color: colors.textSecondary }]}>
-                      Announced for {matchingResult.programme} • Sem {matchingResult.semester}
+                      {isMatchingResultLive
+                        ? `Announced for ${matchingResult.programme} • Sem ${matchingResult.semester}`
+                        : `Example row for ${matchingResult.programme} • Sem ${matchingResult.semester}. The university has not declared this.`}
                     </Text>
                   </View>
                 </View>
                 <PillButton
-                  label="View Official Batch Sheet"
+                  label={isMatchingResultLive ? 'View Official Batch Sheet' : 'Open the published sheet'}
                   onPress={() => handleOpenDeclaredResult(matchingResult)}
                   variant="primary"
                   size="sm"
                   style={{ marginTop: 10 }}
+                  accessibilityLabel={
+                    isMatchingResultLive
+                      ? `Open the official ${matchingResult.programme} semester ${matchingResult.semester} batch sheet`
+                      : `Open the published ${matchingResult.programme} result sheet`
+                  }
                 />
               </GlassCard>
             )}
@@ -888,7 +1030,9 @@ export default function ExamsScreen() {
                   style={[styles.declaredItemCard, { backgroundColor: colors.surface, borderColor: subtleBorder }]}
                   onPress={() => handleOpenDeclaredResult(item)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Open result for ${item.title}`}
+                  accessibilityLabel={`Open result for ${item.title}${
+                    item.isSample ? ' (sample data)' : ''
+                  }`}
                 >
                   <View style={styles.declaredItemTop}>
                     <View style={[styles.progBadge, { backgroundColor: colors.accentSoft }]}>
@@ -899,11 +1043,16 @@ export default function ExamsScreen() {
                         <Text style={[styles.semBadgeText, { color: colors.textSecondary }]}>Sem {item.semester}</Text>
                       </View>
                     ) : null}
-                    {isUserBatch && (
+                    {item.isSample ? (
+                      <View style={[styles.userBatchTag, { backgroundColor: colors.warningSoft }]}>
+                        <Text style={[styles.userBatchTagText, { color: colors.warning }]}>SAMPLE</Text>
+                      </View>
+                    ) : null}
+                    {isUserBatch && item.isSample !== true ? (
                       <View style={[styles.userBatchTag, { backgroundColor: colors.successSoft }]}>
                         <Text style={[styles.userBatchTagText, { color: colors.success }]}>YOUR BATCH</Text>
                       </View>
-                    )}
+                    ) : null}
                   </View>
 
                   <Text style={[styles.declaredItemTitle, { color: colors.textPrimary }]} numberOfLines={2}>
@@ -1059,6 +1208,21 @@ const styles = StyleSheet.create({
   practicalAlertText: {
     fontSize: 12,
     fontFamily: 'Inter-Medium',
+  },
+  sampleBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 8,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    marginBottom: theme.spacing.md,
+  },
+  sampleBadgeText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    lineHeight: 17,
   },
   countdownCard: {
     marginBottom: theme.spacing.md,

@@ -1,3 +1,14 @@
+/**
+ * GBU One - Attendance Booster (prototype).
+ *
+ * The booster is a SIMULATOR: it works out what the student's attendance
+ * would look like if they attended the next few classes. It is not the
+ * university speaking, and it cannot promise a hall ticket - only the
+ * university decides that.
+ *
+ * The banner below says so, in the same words as the other preview
+ * screens, and the outcome is stated as a projection rather than a promise.
+ */
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +27,8 @@ export default function BoostScreen() {
 
   const totalAttended = subjects.reduce((acc, s) => acc + s.attended, 0);
   const totalClasses = subjects.reduce((acc, s) => acc + s.total, 0);
+  // Nothing recorded means there is no percentage to project from.
+  const hasRecord = totalClasses > 0;
   const currentStatus = calculateAttendanceStatus(totalAttended, totalClasses, 75);
   const currentPercentage = Math.round(currentStatus.percentage);
 
@@ -33,14 +46,34 @@ export default function BoostScreen() {
           style={[styles.backBtn, { backgroundColor: colors.surfaceAlt }]}
           onPress={() => router.back()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
         >
           <ArrowLeft size={18} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Attendance Booster</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/*
+          The sample-data banner, the same one the other preview screens
+          carry. It is announced to a screen reader: a projection must never
+          be read as the student's own record.
+        */}
+        <View
+          style={[styles.previewBanner, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
+          <Text style={[styles.previewBannerTitle, { color: colors.accent }]}>PREVIEW MODE • SAMPLE DATA</Text>
+          <Text style={[styles.previewBannerText, { color: colors.textSecondary }]}>
+            This is a simulator. The percentages below are projections from the attendance recorded on
+            this device - they are not your university record, and the university alone decides whether
+            you may sit an exam.
+          </Text>
+        </View>
+
         {/* Boost Simulation Hero */}
         <GlassCard style={styles.heroCard} glow>
           <View style={styles.heroTop}>
@@ -53,19 +86,33 @@ export default function BoostScreen() {
           <View style={styles.comparisonRow}>
             <View style={styles.compBox}>
               <Text style={[styles.compLabel, { color: colors.textSecondary }]}>CURRENT</Text>
-              <Text style={[styles.compValue, { color: colors.textPrimary }]}>{currentPercentage}%</Text>
-              <Text style={[styles.compSub, { color: colors.textSecondary }]}>{totalAttended}/{totalClasses}</Text>
+              <Text style={[styles.compValue, { color: colors.textPrimary }]}>
+                {hasRecord ? `${currentPercentage}%` : '—'}
+              </Text>
+              <Text style={[styles.compSub, { color: colors.textSecondary }]}>
+                {hasRecord ? `${totalAttended}/${totalClasses}` : 'No record yet'}
+              </Text>
             </View>
 
             <TrendingUp size={28} color={colors.success} />
 
             <View style={styles.compBox}>
-              <Text style={[styles.compLabel, { color: colors.success }]}>BOOSTED (+{gain}%)</Text>
+              <Text style={[styles.compLabel, { color: colors.success }]}>
+                {hasRecord ? `BOOSTED (+${gain}%)` : 'PROJECTED'}
+              </Text>
               <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                <CountUp value={boostedPercentage} style={{ ...styles.compValueBoost, color: colors.success }} />
-                <Text style={[styles.compSign, { color: colors.success }]}>%</Text>
+                {hasRecord ? (
+                  <>
+                    <CountUp value={boostedPercentage} style={{ ...styles.compValueBoost, color: colors.success }} />
+                    <Text style={[styles.compSign, { color: colors.success }]}>%</Text>
+                  </>
+                ) : (
+                  <Text style={[styles.compValueBoost, { color: colors.success }]}>—</Text>
+                )}
               </View>
-              <Text style={[styles.compSub, { color: colors.textSecondary }]}>{boostedAttended}/{boostedTotal}</Text>
+              <Text style={[styles.compSub, { color: colors.textSecondary }]}>
+                {hasRecord ? `${boostedAttended}/${boostedTotal}` : 'No record yet'}
+              </Text>
             </View>
           </View>
         </GlassCard>
@@ -86,6 +133,8 @@ export default function BoostScreen() {
                   },
                 ]}
                 onPress={() => setBoostLectures(num)}
+                accessibilityRole="button"
+                accessibilityLabel={`Simulate attending ${num} more ${num === 1 ? 'class' : 'classes'}`}
               >
                 <Text style={[styles.boostChipText, { color: isSelected ? colors.onAccent : colors.textPrimary }]}>
                   +{num} {num === 1 ? 'Class' : 'Classes'}
@@ -103,10 +152,14 @@ export default function BoostScreen() {
             <CheckCircle size={18} color={colors.success} style={{ marginTop: 2 }} />
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={[styles.benefitTitle, { color: colors.textPrimary }]}>
-                {boostedPercentage >= 75 ? 'Guaranteed Exam Hall Ticket Clearance' : 'Recovering Deficit'}
+                {hasRecord && boostedPercentage >= 75
+                  ? 'On track for the 75% requirement'
+                  : 'Recovering Deficit'}
               </Text>
               <Text style={[styles.benefitDesc, { color: colors.textSecondary }]}>
-                Attending your next {boostLectures} scheduled classes raises your aggregate attendance to {boostedPercentage}%.
+                {hasRecord
+                  ? `Attending your next ${boostLectures} scheduled classes would take your recorded attendance to about ${boostedPercentage}%. Whether that satisfies the university is the university's decision, not this app's.`
+                  : 'Record your classes first - until then there is nothing to project from.'}
               </Text>
             </View>
           </View>
@@ -118,7 +171,9 @@ export default function BoostScreen() {
                 Safety Buffer Expansion
               </Text>
               <Text style={[styles.benefitDesc, { color: colors.textSecondary }]}>
-                Earns you {boostedStatus.canBunkMargin} emergency buffer classes that can be missed later in the semester without risk.
+                {hasRecord
+                  ? `On this projection it would leave you about ${boostedStatus.canBunkMargin} classes of cushion for later in the semester.`
+                  : 'No buffer can be worked out until some attendance has been recorded.'}
               </Text>
             </View>
           </View>
@@ -139,11 +194,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  previewBanner: {
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    marginBottom: theme.spacing.md,
+  },
+  previewBannerTitle: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 11,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  previewBannerText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
   },
   headerTitle: {
     fontFamily: 'Poppins-Bold',

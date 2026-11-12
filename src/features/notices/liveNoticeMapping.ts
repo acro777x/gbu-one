@@ -1,7 +1,7 @@
 /**
  * Maps a notice parsed from a live GBU page into the app's notice model.
  *
- * The live pages are the source of truth; the bundled sample is only a
+ * The live pages are the source of truth; the bundled archive is only a
  * fallback. Keeping the mapping here (and free of React) makes it testable.
  */
 import {
@@ -9,20 +9,16 @@ import {
   detectNoticeAudience,
   extractNoticeDeadline,
   calculateNoticeImportance,
+  fileTypeForUrl,
   generateCanonicalNoticeId,
+  labelForRelatedAttachment,
   type NoticeItem,
 } from './noticeService';
 import type { LiveNotice } from './liveNotices';
 
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-
 /** The file kind a notice points at, decided from the URL. */
 export function fileTypeFor(live: LiveNotice): NoticeItem['fileType'] {
-  const url = (live.fileUrl ?? '').toLowerCase();
-  if (!url) return 'html';
-  if (IMAGE_EXTENSIONS.some((extension) => url.includes(extension))) return 'image';
-  if (url.includes('.pdf')) return 'pdf';
-  return 'html';
+  return fileTypeForUrl(live.fileUrl);
 }
 
 /**
@@ -38,7 +34,11 @@ export function toNoticeItem(live: LiveNotice): NoticeItem {
     (live.attachmentKind === 'modal' ? live.sourceUrl : '') ??
     '';
 
-  const relatedUrlsStr = (live.relatedUrls ?? []).join(' ');
+  const relatedUrls = live.relatedUrls ?? [];
+  const relatedUrlsStr = relatedUrls.join(' ');
+  // The audience and the deadline are read from the title (and from the
+  // recovered attachments), so the school filter chips and the deadline badge
+  // work for a live notice exactly as they do for a worker notice.
   const audience = detectNoticeAudience(title, relatedUrlsStr);
   const deadlineAt = extractNoticeDeadline(title);
 
@@ -59,10 +59,18 @@ export function toNoticeItem(live: LiveNotice): NoticeItem {
     postedAt: live.postedAt,
   });
 
+  // The school-wise date sheets the exam portal hides inside a modal are
+  // documents the student can actually open, so they are carried over as
+  // attachments instead of being thrown away with `relatedUrls`.
+  const relatedAttachments =
+    relatedUrls.length > 0
+      ? relatedUrls.map((url) => ({ label: labelForRelatedAttachment(url), url }))
+      : undefined;
+
   return {
-    id: live.id || canonicalId,
+    id: canonicalId,
     source: live.source,
-    sourceId: live.id || canonicalId,
+    sourceId: canonicalId,
     title,
     cleanTitle: cleanNoticeTitle(title),
     postedAt: live.postedAt ?? new Date().toISOString(),
@@ -72,7 +80,8 @@ export function toNoticeItem(live: LiveNotice): NoticeItem {
     audience,
     importance,
     deadlineAt,
-    relatedUrls: live.relatedUrls && live.relatedUrls.length > 0 ? live.relatedUrls : undefined,
+    relatedUrls: relatedUrls.length > 0 ? relatedUrls : undefined,
+    relatedAttachments,
     threadId: null,
     threadUpdateCount: undefined,
     isSample: false,
@@ -87,7 +96,13 @@ export function toNoticeItems(live: LiveNotice[]): NoticeItem[] {
     .sort((a, b) => Date.parse(b.postedAt) - Date.parse(a.postedAt));
 }
 
-/** True when every notice in the list is the bundled sample. */
+/**
+ * True when every notice in the list is flagged as sample data.
+ *
+ * The screen does not rely on this flag to decide what it shows: the honest
+ * signal is the notices status store, which knows whether the list came from
+ * the university, from the cache or from the bundled archive.
+ */
 export function allNoticesAreSample(notices: NoticeItem[]): boolean {
   return notices.length > 0 && notices.every((notice) => notice.isSample === true);
 }

@@ -53,6 +53,10 @@ export function isAllowedAttachmentHost(hostname: string): boolean {
 /**
  * Turns a notice's stored link into an absolute, downloadable URL.
  * GBU notice links are often relative (`/Admissions/DownloadFile?nName=...`).
+ *
+ * Only HTTPS is accepted: a cleartext download of a university document can
+ * be tampered with on the way, and the notice would then carry an attacker
+ * controlled document text.
  */
 export function resolveAttachmentUrl(
   fileUrl: string,
@@ -70,7 +74,7 @@ export function resolveAttachmentUrl(
     return null;
   }
 
-  if (!/^https?:$/.test(new URL(resolved).protocol)) return null;
+  if (!/^https:$/.test(new URL(resolved).protocol)) return null;
   if (!isAllowedAttachmentHost(new URL(resolved).hostname)) return null;
   return resolved;
 }
@@ -150,8 +154,24 @@ export interface ExtractOptions {
    * before the download, so the university is fetched once per notice.
    */
   processedSourceIds?: Set<string>;
+  /**
+   * File URLs that were already downloaded and extracted in an earlier run.
+   *
+   * The content hash is only known after the download, so the hash check
+   * alone still downloaded the file again for every notice that links it.
+   * The URL check happens *before* the download, so a file that is attached
+   * to five notices is fetched once.
+   */
+  processedUrls?: Set<string>;
   /** Pause between two downloads, in ms. The university is scraped politely. */
   delayBetweenDownloadsMs?: number;
+  /**
+   * Called for every attachment that could not be processed.
+   *
+   * Without it a broken file would be downloaded and OCR'd again every
+   * fifteen minutes, forever.
+   */
+  onFailure?: (failure: { sourceId: string; fileUrl: string; reason: string }) => void;
 }
 
 /**
@@ -169,19 +189,30 @@ export async function extractAttachment(
   const url = resolveAttachmentUrl(fileUrl);
   if (!url) return null;
 
+  // The file was already downloaded and extracted for another notice. The
+  // content hash is only known after the download, so this URL check has to
+  // come first - otherwise a file that is attached to five notices is
+  // downloaded five times.
+  if (options.processedUrls?.has(url)) return null;
+
+  const fail = (reason: string): null => {
+    options.onFailure?.({ sourceId, fileUrl: url, reason });
+    return null;
+  };
+
   let downloaded: { bytes: Buffer; contentType: string | null };
   try {
     downloaded = await options.download(url);
-  } catch {
-    return null;
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : 'download-failed');
   }
 
   const bytes = downloaded.bytes;
-  if (!bytes || bytes.length === 0) return null;
-  if (bytes.length > MAX_ATTACHMENT_BYTES) return null;
+  if (!bytes || bytes.length === 0) return fail('empty-response');
+  if (bytes.length > MAX_ATTACHMENT_BYTES) return fail('too-large');
 
   const kind = detectAttachmentKind(url, downloaded.contentType);
-  if (!looksLikeBinaryDocument(bytes, kind)) return null;
+  if (!looksLikeBinaryDocument(bytes, kind)) return fail('not-a-document');
 
   const contentHash = hashContent(bytes);
   const fileName = attachmentFileName(url, sourceId);
@@ -208,7 +239,7 @@ export async function extractAttachment(
     // not PDF containers.
     if (!options.ocr) return null;
     const pages = extractPdfImages(bytes);
-    if (pages.length === 0) return null;
+    if (pages.length === 0) return fail('no-page-images');
     const texts: string[] = [];
     for (let index = 0; index < pages.length; index++) {
       try {
@@ -223,7 +254,7 @@ export async function extractAttachment(
       }
     }
     const scannedText = cleanOcrText(texts.join('\n'));
-    if (!scannedText) return null;
+    if (!scannedText) return fail('ocr-empty');
     return {
       rawText: scannedText,
       extractedDeadlines: extractDeadlinesFromText(scannedText),
@@ -241,12 +272,12 @@ export async function extractAttachment(
   let ocrText: string;
   try {
     ocrText = await options.ocr({ bytes, fileName, kind });
-  } catch {
-    return null;
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : 'ocr-failed');
   }
 
   const text = cleanOcrText(ocrText || '');
-  if (!text) return null;
+  if (!text) return fail('ocr-empty');
 
   return {
     rawText: text,
@@ -269,11 +300,30 @@ export async function extractAttachments(
   const results: Array<{ sourceId: string; outcome: ExtractionOutcome }> = [];
   let processed = 0;
 
+  // The files that were already downloaded in THIS run. A file that is
+  // attached to five notices is fetched once, and the four other notices get
+  // the text of the first one.
+  const downloadedInThisRun = new Map<string, ExtractionOutcome>();
+
   for (const item of items) {
     if (processed >= budget) break;
     if (!item.fileUrl) continue;
     if (options.processedSourceIds?.has(item.sourceId)) continue;
+
+    const resolved = resolveAttachmentUrl(item.fileUrl);
+    // A file that was already extracted in an EARLIER run must not spend the
+    // budget of this run either.
+    if (resolved && options.processedUrls?.has(resolved)) continue;
+
     processed++;
+
+    // The same file, a different notice: the text is the same, so it is
+    // stored again without downloading the file once more.
+    const alreadyExtracted = resolved ? downloadedInThisRun.get(resolved) : undefined;
+    if (alreadyExtracted) {
+      results.push({ sourceId: item.sourceId, outcome: alreadyExtracted });
+      continue;
+    }
 
     // A short pause between downloads: the university is scraped politely.
     if (options.delayBetweenDownloadsMs && results.length > 0) {
@@ -281,7 +331,10 @@ export async function extractAttachments(
     }
 
     const outcome = await extractAttachment(item.fileUrl, item.sourceId, options);
-    if (outcome) results.push({ sourceId: item.sourceId, outcome });
+    if (outcome) {
+      if (resolved) downloadedInThisRun.set(resolved, outcome);
+      results.push({ sourceId: item.sourceId, outcome });
+    }
   }
 
   return results;

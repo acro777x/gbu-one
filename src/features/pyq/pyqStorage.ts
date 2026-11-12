@@ -10,16 +10,23 @@
 export const PYQ_PENDING_BUCKET = 'pyq-pending';
 export const PYQ_APPROVED_BUCKET = 'pyq';
 
-/** Virus/size/type checks (docs/ARCHITECTURE.md). */
+/**
+ * Virus/size/type checks (docs/ARCHITECTURE.md).
+ *
+ * The list mirrors the bucket's `allowed_mime_types` in supabase/schema.ts
+ * EXACTLY (`application/pdf`, `image/jpeg`, `image/png`). DOC/DOCX used to
+ * pass the app's own validation and was then refused by the bucket with a
+ * raw error the student could not act on, so the two lists agree now.
+ */
 export const PYQ_MAX_BYTES = 20 * 1024 * 1024;
 export const PYQ_ALLOWED_MIME_TYPES = [
   'application/pdf',
   'image/jpeg',
-  'image/jpg',
   'image/png',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ] as const;
+
+/** The file extensions that are accepted, matching the bucket again. */
+export const PYQ_ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'] as const;
 
 export type PyqExamType = 'Mid Sem' | 'End Sem' | 'Back Paper';
 export type PyqStatus = 'pending' | 'approved' | 'rejected';
@@ -48,6 +55,18 @@ export function slugifySegment(value: string): string {
     .replace(/[^A-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
+}
+
+/**
+ * True when the value is a real UUID.
+ *
+ * `pyq_papers.uploader_id` is a foreign key to `auth.users(id)`, so it may
+ * only ever hold a genuine uuid. The device identity of a guest
+ * (`GBU-XXXXXX`) is NOT a uuid and must never be written into that column.
+ */
+export function isValidUuid(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
 }
 
 /** Normalises the exam type the app and the database agree on. */
@@ -103,7 +122,14 @@ export function resolveCanonicalMime(mimeType?: string | null, fileName?: string
   return cleanMime || 'application/pdf';
 }
 
-/** Validates the file itself (type and size). Supported formats: PDF, JPG, PNG, DOC, DOCX. */
+/**
+ * Validates the file itself (type and size). Supported formats: PDF, JPG, PNG.
+ *
+ * A cloud document provider may report `size: null` for a document it cannot
+ * measure. Such a file is NOT empty - it used to be rejected as "The selected
+ * file is empty", which lost real papers - so an unknown size is allowed and
+ * only a size that is known to be zero is refused.
+ */
 export function validateUploadFile(file: {
   mimeType?: string | null;
   size?: number | null;
@@ -113,14 +139,22 @@ export function validateUploadFile(file: {
   const name = (file.name || '').toLowerCase();
   const ext = name.split('.').pop() || '';
   const validByMime = (PYQ_ALLOWED_MIME_TYPES as readonly string[]).includes(canonicalMime);
-  const validByExt = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'].includes(ext);
+  const validByExt = (PYQ_ALLOWED_EXTENSIONS as readonly string[]).includes(ext);
 
   if (!file.mimeType && !name) return { ok: false, reason: 'File type could not be read.' };
   if (!validByMime && !validByExt) {
     return { ok: false, reason: 'Only PDF, JPG and PNG papers are accepted.' };
   }
-  const size = Number(file.size ?? 0);
-  if (!Number.isFinite(size) || size <= 0) {
+  if (file.size === null || file.size === undefined) {
+    // The size is unknown, not zero. Let the upload through; the bucket
+    // enforces the 20 MB cap anyway.
+    return { ok: true };
+  }
+  const size = Number(file.size);
+  if (!Number.isFinite(size) || size < 0) {
+    return { ok: false, reason: 'The selected file could not be read.' };
+  }
+  if (size === 0) {
     return { ok: false, reason: 'The selected file is empty.' };
   }
   if (size > PYQ_MAX_BYTES) {
@@ -170,19 +204,88 @@ export function buildStoragePath(
   return `${bucket}/${school}/${programme}/${semester}/${subject}/${year}-${exam}-${id}.${extension}`;
 }
 
-/** The row inserted into `pyq_papers` for a new upload. */
+/**
+ * Who is handing the paper in.
+ *
+ * `authUserId` is the Supabase Auth user id and may only be a real uuid;
+ * it is NULL for a guest (the insert policy allows that). `studentId` is the
+ * device identity (`GBU-XXXXXX`) that names the contributor on the
+ * leaderboard, and it is what `pyq_contributor_points` groups by.
+ */
+export interface PaperUploaderIdentity {
+  /** The signed-in Supabase user id, or null for a guest. */
+  authUserId: string | null;
+  /** The device identity (GBU-XXXXXX). */
+  studentId: string;
+  /** The display name shown next to the paper. */
+  name?: string;
+  /** The avatar pack id shown next to the paper. */
+  avatarId?: string;
+}
+
+/** The display details of a contributor (the legacy "uploader profile"). */
+export interface PaperUploaderProfile {
+  name?: string;
+  uniqueStudentId?: string;
+  avatarId?: string;
+}
+
+/**
+ * What the callers may hand in as "the uploader".
+ *
+ * A plain string is the legacy shape (the auth user id). It is still
+ * accepted so older call sites keep working, but it is validated: a string
+ * that is not a uuid is NOT written into the `uploader_id` foreign key.
+ */
+export type PaperUploaderInput = PaperUploaderIdentity | string | null | undefined;
+
+/**
+ * Resolves the uploader into one unambiguous shape.
+ */
+export function resolveUploaderIdentity(
+  uploader: PaperUploaderInput,
+  profile?: PaperUploaderProfile,
+): PaperUploaderIdentity {
+  if (uploader && typeof uploader === 'object') {
+    return {
+      authUserId: isValidUuid(uploader.authUserId) ? uploader.authUserId!.trim().toLowerCase() : null,
+      studentId: (uploader.studentId ?? '').trim(),
+      name: uploader.name ?? profile?.name,
+      avatarId: uploader.avatarId ?? profile?.avatarId,
+    };
+  }
+
+  return {
+    authUserId: isValidUuid(uploader) ? (uploader as string).trim().toLowerCase() : null,
+    studentId: (profile?.uniqueStudentId ?? '').trim(),
+    name: profile?.name,
+    avatarId: profile?.avatarId,
+  };
+}
+
+/**
+ * The row inserted into `pyq_papers` for a new upload.
+ *
+ * Every column of the rewritten schema is filled in on purpose:
+ * `uploader_id` is the real auth user id (null for a guest),
+ * `uploader_student_id` is the device identity, `uploader_name` /
+ * `uploader_avatar` keep the attribution, and `file_size_bytes` records the
+ * size of the picked asset. There is no "retry without the extra columns"
+ * fallback any more: the columns exist, and a row that drops them would
+ * turn every contributor into an anonymous entry.
+ */
 export function buildPaperRow(
   meta: PyqUploadMeta,
   paperId: string,
   filePath: string,
-  uploaderId: string | null,
-  uploaderProfile?: {
-    name?: string;
-    uniqueStudentId?: string;
-    avatarId?: string;
-  },
+  uploader: PaperUploaderInput,
+  profile?: PaperUploaderProfile,
+  fileSizeBytes?: number | null,
 ): Record<string, unknown> {
-  const row: Record<string, unknown> = {
+  const identity = resolveUploaderIdentity(uploader, profile);
+  const size = Number(fileSizeBytes);
+
+  return {
     id: paperId,
     school: meta.school.trim().toUpperCase(),
     programme_code: meta.programmeCode.trim().toUpperCase(),
@@ -192,24 +295,28 @@ export function buildPaperRow(
     year: Number(meta.year),
     exam_type: meta.examType,
     file_path: filePath,
-    uploader_id: uploaderProfile?.uniqueStudentId || uploaderId,
-    uploader_student_id: uploaderProfile?.uniqueStudentId || (uploaderId ?? ''),
+    // A guest has no auth user: the column must be NULL, never the device id.
+    uploader_id: identity.authUserId,
+    uploader_student_id: identity.studentId,
+    uploader_name: (identity.name ?? '').trim(),
+    uploader_avatar: (identity.avatarId ?? '').trim(),
+    file_size_bytes: Number.isFinite(size) && size > 0 ? Math.round(size) : 0,
     status: 'pending' as PyqStatus,
     downloads: 0,
   };
-  if (uploaderProfile?.name) {
-    row.uploader_name = uploaderProfile.name;
-  }
-  if (uploaderProfile?.avatarId) {
-    row.uploader_avatar = uploaderProfile.avatarId;
-  }
-  return row;
 }
 
 /** Moderation decision the queue can apply to a pending paper. */
-export type ModerationAction = 'approve' | 'reject' | 'request-changes';
+export type ModerationAction = 'approve' | 'reject';
 
-export const MODERATION_ACTIONS: ModerationAction[] = ['approve', 'reject', 'request-changes'];
+/**
+ * The decisions the queue offers.
+ *
+ * `request-changes` used to be in this list, but it mapped to `pending` -
+ * a no-op that changed nothing and told the uploader nothing. It was
+ * removed rather than left as a button that does nothing.
+ */
+export const MODERATION_ACTIONS: ModerationAction[] = ['approve', 'reject'];
 
 /** Human-readable label for a moderation action. */
 export function moderationActionLabel(action: ModerationAction): string {
@@ -218,8 +325,6 @@ export function moderationActionLabel(action: ModerationAction): string {
       return 'Approve';
     case 'reject':
       return 'Reject';
-    case 'request-changes':
-      return 'Request changes';
     default:
       return 'Review';
   }
@@ -242,4 +347,47 @@ export function publicPaperUrl(filePath: string, baseUrl: string): string {
   if (!baseUrl) return filePath;
   const clean = filePath.replace(/^pyq-pending\//, '').replace(/^pyq\//, '');
   return `${baseUrl.replace(/\/$/, '')}/storage/v1/object/public/${PYQ_APPROVED_BUCKET}/${clean}`;
+}
+
+/**
+ * Turns a raw Supabase/PostgREST error into something a student can act on.
+ *
+ * The screen used to show the raw string ("new row violates row-level
+ * security policy"), which means nothing to a first-year student.
+ */
+export function humaniseUploadError(raw: string | null | undefined): string {
+  const text = (raw ?? '').trim();
+  if (!text) return 'The upload could not be completed. Please try again.';
+
+  const lower = text.toLowerCase();
+  if (lower.includes('row-level security') || lower.includes('row level security')) {
+    return 'The library refused this upload. Please sign in and try again.';
+  }
+  if (lower.includes('duplicate key') || lower.includes('already exists')) {
+    return 'This paper is already in the library.';
+  }
+  if (lower.includes('mime') || lower.includes('content type') || lower.includes('not allowed')) {
+    return 'Only PDF, JPG and PNG papers are accepted.';
+  }
+  if (lower.includes('exceeds the maximum allowed size') || lower.includes('too large') || lower.includes('file size')) {
+    return 'Papers must be 20 MB or smaller.';
+  }
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('network request failed') ||
+    lower.includes('timeout') ||
+    lower.includes('econnrefused')
+  ) {
+    return 'No connection to the library. The paper was saved on this phone.';
+  }
+  if (lower.includes('jwt') || lower.includes('token')) {
+    return 'Your session expired. Please sign in again and retry.';
+  }
+  if (lower.includes('permission') || lower.includes('not authorized') || lower.includes('forbidden')) {
+    return 'The library refused the upload. Please sign in and try again.';
+  }
+  if (lower.includes('storage') && lower.includes('not found')) {
+    return 'The library could not be reached. Please try again.';
+  }
+  return 'The upload could not be completed. Please try again.';
 }

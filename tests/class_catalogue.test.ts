@@ -211,11 +211,33 @@ describe('class catalogue: the offline fallback', () => {
       'B.Tech (CS)',
     );
     expect(programmes.find((programme) => programme.code === 'BCS')?.school).toBe('SOICT');
+
+    // The School of Law and the School of Basic Science publish NO
+    // timetable at all - the live timetable API returns sections for only
+    // six schools. They are still offered, because the examination portal
+    // publishes a result sheet for each of them, and a student who cannot
+    // pick their school cannot watch for their own result. Their section
+    // list is deliberately empty: there is nothing to read it from, and an
+    // invented section would put the student in the wrong class.
+    const NO_TIMETABLE_SCHOOLS = new Set(['SOL', 'SOBSC']);
+
+    const withSections = programmes.filter(
+      (programme) => !NO_TIMETABLE_SCHOOLS.has(programme.school),
+    );
     expect(
-      programmes.every(
+      withSections.every(
         (programme) => sectionsForProgramme(codes, programme.code).length > 0,
       ),
     ).toBe(true);
+
+    // The two schools must be offered, and must not carry a fake section.
+    for (const school of NO_TIMETABLE_SCHOOLS) {
+      const offered = programmes.filter((p) => p.school === school);
+      expect(offered.length).toBeGreaterThan(0);
+      expect(
+        offered.every((p) => sectionsForProgramme(codes, p.code).length === 0),
+      ).toBe(true);
+    }
   });
 
   it('keeps the fallback codes usable as stored class keys', () => {

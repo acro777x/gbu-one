@@ -14,13 +14,22 @@
  * Everything is written with an idempotent key, so a run can be repeated
  * safely.
  */
-import { fetchAcademicCalendar } from './academicCalendar';
+import { fetchAcademicCalendar, type AcademicEvent } from './academicCalendar';
 import {
   fetchDateSheet,
   DATE_SHEET_SCHOOL_CODES,
   buildClassKey,
+  resolveRunningDateSheetSession,
 } from './examDateSheet';
 import { fetchHolidays2026 } from './holidayList';
+import { SOURCE_KEYS, WORKER_CONFIG } from './sources.config';
+import { ALWAYS_FETCH, type SourceScheduler } from './sourceScheduler';
+
+/** The month abbreviations the published date-sheet files use. */
+const MONTH_ABBREVIATIONS = [
+  'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+  'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+];
 
 export interface CalendarEventRow {
   event_key: string;
@@ -55,6 +64,46 @@ export interface CalendarJobResult {
   slots: DateSlotRow[];
   /** Every reason a source could not be read, so a run is never silently partial. */
   reasons: string[];
+  /** The date-sheet session the run looked for, for the log. */
+  dateSheetSession: { month: string; year: number } | null;
+}
+
+/**
+ * The session the end-semester date sheet belongs to.
+ *
+ * The academic calendar states when the end-semester examination is. That
+ * date is the name of the published file (`<school>-end-sem-dec-2025.pdf`),
+ * so the calendar is the authority. When the calendar cannot be read, the
+ * running session is used, and an env var can override both.
+ */
+export function resolveDateSheetSession(
+  events: AcademicEvent[],
+  env: Record<string, string | undefined> = process.env,
+): { month: string; year: number } {
+  const envMonth = env.EXAM_DATE_SHEET_MONTH?.trim().toLowerCase();
+  const envYear = Number(env.EXAM_DATE_SHEET_YEAR);
+  if (envMonth && Number.isFinite(envYear) && envYear > 2000) {
+    return { month: envMonth, year: envYear };
+  }
+
+  // The end-semester examination of the calendar names the session.
+  const endSemester = events
+    .filter((event) => /end\s*semester\s*examination/i.test(event.name))
+    .filter((event) => Boolean(event.startDate))
+    .sort((a, b) => (a.startDate ?? '').localeCompare(b.startDate ?? ''));
+
+  for (const event of endSemester) {
+    const start = event.startDate;
+    if (!start) continue;
+    const [yearText, monthText] = start.split('-');
+    const year = Number(yearText);
+    const monthIndex = Number(monthText) - 1;
+    if (!Number.isFinite(year) || !Number.isFinite(monthIndex)) continue;
+    if (monthIndex < 0 || monthIndex > 11) continue;
+    return { month: MONTH_ABBREVIATIONS[monthIndex], year };
+  }
+
+  return resolveRunningDateSheetSession();
 }
 
 /** The key an event is stored under, so a re-run updates instead of duplicating. */
@@ -104,14 +153,38 @@ function categoryFor(name: string): CalendarEventRow['type'] {
  * a source that cannot be read is reported in `reasons`.
  */
 export async function collectCalendarRows(
-  options: { includeHolidays?: boolean; dateSheetMonth?: string; dateSheetYear?: number } = {},
+  options: {
+    includeHolidays?: boolean;
+    dateSheetMonth?: string;
+    dateSheetYear?: number;
+    /** Environment used for the session override. */
+    env?: Record<string, string | undefined>;
+    /** Decides whether a source may be fetched now. */
+    scheduler?: SourceScheduler;
+  } = {},
 ): Promise<CalendarJobResult> {
   const reasons: string[] = [];
   const events: CalendarEventRow[] = [];
   const slots: DateSlotRow[] = [];
+  const scheduler = options.scheduler ?? ALWAYS_FETCH;
 
-  const calendar = await fetchAcademicCalendar();
-  if (!calendar.ok) {
+  // The academic calendar and the holiday list change twice a year, so they
+  // are only fetched when their interval has elapsed. The Hindi holiday list
+  // is a scan that needs OCR - it must not be OCR'd 96 times a day.
+  const calendarDue = await scheduler.shouldFetch(
+    SOURCE_KEYS.academicCalendar,
+    WORKER_CONFIG.sources.academicCalendar.intervalMinutes,
+  );
+  const calendar = calendarDue.skip
+    ? { ok: false as const, events: [] as AcademicEvent[], source: '', reason: calendarDue.reason }
+    : await fetchAcademicCalendar();
+  if (calendarDue.skip) {
+    console.log(JSON.stringify({
+      event: 'worker_source_skipped',
+      source: SOURCE_KEYS.academicCalendar,
+      reason: calendarDue.reason,
+    }));
+  } else if (!calendar.ok) {
     reasons.push(`academic-calendar: ${calendar.reason ?? 'unavailable'}`);
   } else {
     for (const event of calendar.events) {
@@ -129,34 +202,53 @@ export async function collectCalendarRows(
         source: 'academic-calendar',
       });
     }
+    await scheduler.markFetched(SOURCE_KEYS.academicCalendar, calendar.events.length);
   }
 
   if (options.includeHolidays !== false) {
-    const holidays = await fetchHolidays2026();
-    if (!holidays.ok) {
-      reasons.push(`holidays: ${holidays.reason ?? 'unavailable'}`);
+    const holidaysDue = await scheduler.shouldFetch(
+      SOURCE_KEYS.holidays,
+      WORKER_CONFIG.sources.holidays.intervalMinutes,
+    );
+    if (holidaysDue.skip) {
+      console.log(JSON.stringify({
+        event: 'worker_source_skipped',
+        source: SOURCE_KEYS.holidays,
+        reason: holidaysDue.reason,
+      }));
     } else {
-      for (const holiday of holidays.holidays) {
-        const start = holiday.startDate;
-        if (!start) continue;
-        events.push({
-          event_key: calendarEventKey(holiday.name, start, 'holiday'),
-          title: holiday.name,
-          date_from: start,
-          date_to: holiday.endDate ?? start,
-          type: 'holiday',
-          semester: 'holiday',
-          source_url: 'https://www.gbu.ac.in/Content/gbudata/General/List%20of%20Vacation-2026.pdf',
-          source: 'holiday-list',
-        });
+      const holidays = await fetchHolidays2026();
+      if (!holidays.ok) {
+        reasons.push(`holidays: ${holidays.reason ?? 'unavailable'}`);
+      } else {
+        for (const holiday of holidays.holidays) {
+          const start = holiday.startDate;
+          if (!start) continue;
+          events.push({
+            event_key: calendarEventKey(holiday.name, start, 'holiday'),
+            title: holiday.name,
+            date_from: start,
+            date_to: holiday.endDate ?? start,
+            type: 'holiday',
+            semester: 'holiday',
+            source_url: WORKER_CONFIG.sources.holidays.url,
+            source: 'holiday-list',
+          });
+        }
+        await scheduler.markFetched(SOURCE_KEYS.holidays, holidays.holidays.length);
       }
     }
   }
 
   // The date sheet for the running session is published towards the end of
   // the semester; until then the portal has nothing and this is reported.
-  const month = options.dateSheetMonth;
-  const year = options.dateSheetYear;
+  //
+  // The session is taken from the academic calendar (the end-semester
+  // examination names the published file) and can be overridden with the
+  // EXAM_DATE_SHEET_MONTH / EXAM_DATE_SHEET_YEAR environment variables.
+  const session = resolveDateSheetSession(calendar.ok ? calendar.events : [], options.env);
+  const month = options.dateSheetMonth ?? session.month;
+  const year = options.dateSheetYear ?? session.year;
   if (month && year) {
     let published = 0;
     for (const schoolCode of DATE_SHEET_SCHOOL_CODES) {
@@ -198,5 +290,11 @@ export async function collectCalendarRows(
     }
   }
 
-  return { ok: events.length > 0 || slots.length > 0, events, slots, reasons };
+  return {
+    ok: events.length > 0 || slots.length > 0,
+    events,
+    slots,
+    reasons,
+    dateSheetSession: { month, year },
+  };
 }

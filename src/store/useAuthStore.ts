@@ -9,6 +9,12 @@ import {
   ADMIN_REPORTS_STORAGE_KEY,
   LOCAL_REPORTS_STORAGE_KEY,
 } from '../features/reports/reportsService';
+import {
+  createInitialAuthState,
+  transitionAuth,
+  type AuthMachineEvent,
+  type AuthMachineState,
+} from '../state/authMachine';
 
 export const CLASS_SELECTION_STORAGE_KEY = '@gbu_one_class_selection';
 export const USER_PROFILE_STORAGE_KEY = '@gbu_one_user_profile';
@@ -123,6 +129,21 @@ export interface AuthState {
   isAuthenticated: boolean;
   /** True when there is no account at all - the app runs in guest mode. */
   isGuest: boolean;
+  /**
+   * The typed S2 auth state machine (`src/state/authMachine.ts`).
+   *
+   * This is the SINGLE source of truth for the authentication lifecycle:
+   * `isGuest` and `isAuthenticated` are derived from it, never set
+   * independently. The machine states are:
+   *
+   *   uninitialized -> onboarding | guest | unverified | authenticated | locked
+   *
+   * `unverified` is the "a profile was stored but the server could not
+   * confirm the session" state. It is deliberately distinct from `guest`
+   * (the student did not choose guest mode) and from `authenticated` (the
+   * server did not say so).
+   */
+  authState: AuthMachineState;
   /** True once `initAuth` has read the device and asked the server who we are. */
   hydrated: boolean;
   hasCompletedOnboarding: boolean;
@@ -286,18 +307,69 @@ const PERSONAL_STORAGE_KEYS = [
 ];
 
 /**
+ * The guest / authenticated flags are DERIVED from the auth state machine.
+ *
+ * They used to be set independently at nine different places, which is how
+ * "signed out" and "signed in" could disagree. The machine is now the only
+ * place that decides.
+ */
+function flagsFromAuthState(state: AuthMachineState): {
+  isGuest: boolean;
+  isAuthenticated: boolean;
+} {
+  switch (state.value) {
+    case 'authenticated':
+      return { isGuest: false, isAuthenticated: true };
+    case 'unverified':
+      // A remembered profile the server could not confirm. Not a guest (the
+      // student did not choose that) and not authenticated (the server did
+      // not say so).
+      return { isGuest: false, isAuthenticated: false };
+    case 'locked':
+      return { isGuest: false, isAuthenticated: false };
+    case 'guest':
+    case 'onboarding':
+    case 'uninitialized':
+    default:
+      return { isGuest: true, isAuthenticated: false };
+  }
+}
+
+/**
+ * Applies one event to the auth state machine and returns the new machine
+ * state together with the derived flags.
+ *
+ * If the machine REJECTS the event the current state is kept and the reason
+ * is logged. A modelling gap must never be able to leave a student stuck in
+ * a screen they cannot leave, so the caller still receives a usable state.
+ */
+function applyAuthEvent(
+  current: AuthMachineState,
+  event: AuthMachineEvent,
+): { authState: AuthMachineState; isGuest: boolean; isAuthenticated: boolean } {
+  const result = transitionAuth(current, event);
+  if (!result.ok) {
+    console.warn(
+      `[gbu-one] the auth state machine rejected '${event.type}' from '${current.value}': ${result.error}`,
+    );
+    return { authState: current, ...flagsFromAuthState(current) };
+  }
+  return { authState: result.state, ...flagsFromAuthState(result.state) };
+}
+
+/**
  * Wipes the previous user from the device.
  *
  * The storage calls are issued straight away (they are not awaited inside),
  * so the data is gone even if the network sign-out never returns.
  */
 function clearPersonalData(): Promise<void> {
+  const next = applyAuthEvent(useAuthStore.getState().authState, { type: 'LOGOUT' });
   useAuthStore.setState({
     user: null,
-    isGuest: true,
-    isAuthenticated: false,
     hasClassSetup: false,
     classSelection: null,
+    ...next,
   });
 
   // Cached server data and the local stores hold the previous student's
@@ -409,12 +481,26 @@ function applySessionToProfile(user: SessionLike['user']): void {
     authSource: 'supabase',
     isOfflineSession: false,
   };
-  useAuthStore.setState({ user: updated, isGuest: false, isAuthenticated: true });
+  useAuthStore.setState({
+    user: updated,
+    ...applyAuthEvent(useAuthStore.getState().authState, {
+      type: 'LOGIN_SUCCESS',
+      payload: {
+        userId: updated.id ?? 'user',
+        rollNo: updated.rollNo,
+        email: updated.email,
+        name: updated.name,
+      },
+    }),
+  });
   AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
+  // The auth state machine owns the lifecycle; the two flags are derived
+  // from it (see flagsFromAuthState).
+  authState: createInitialAuthState(),
   isGuest: true, // Guest mode until the store knows better.
   isAuthenticated: false,
   hydrated: false,
@@ -501,6 +587,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         updates.user = profile;
         updates.isGuest = false;
         updates.isAuthenticated = true;
+        Object.assign(updates, applyAuthEvent(get().authState, {
+          type: 'BOOT_EXISTING_USER',
+          payload: {
+            userId: profile.id ?? 'user',
+            rollNo: profile.rollNo,
+            email: profile.email,
+            name: profile.name,
+          },
+        }));
       } else if (storedProfile) {
         // No live session. The stored profile is kept, but only as an
         // unverified offline state - never as a signed-in account.
@@ -526,6 +621,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         updates.user = profile;
         updates.isGuest = profile.authSource === 'guest';
         updates.isAuthenticated = false;
+        // A stored profile the server could not confirm is its own state:
+        // the student is not a guest and not signed in.
+        Object.assign(
+          updates,
+          profile.authSource === 'guest'
+            ? applyAuthEvent(get().authState, {
+                type: 'BOOT_EXISTING_GUEST',
+                payload: { guestId: profile.uniqueStudentId ?? 'guest', name: profile.name },
+              })
+            : applyAuthEvent(get().authState, {
+                type: 'BOOT_OFFLINE_SESSION',
+                payload: {
+                  userId: profile.id ?? undefined,
+                  rollNo: profile.rollNo,
+                  email: profile.email,
+                  name: profile.name,
+                },
+              }),
+        );
       } else {
         // Nothing stored: a fresh guest profile for this device.
         if (!cachedDeviceId) {
@@ -550,6 +664,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         updates.user = guestProfile;
         updates.isGuest = true;
         updates.isAuthenticated = false;
+        Object.assign(
+          updates,
+          applyAuthEvent(get().authState, {
+            type: 'BOOT_FIRST_LAUNCH',
+          }),
+        );
         AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(guestProfile)).catch(() => {});
       }
 
@@ -631,9 +751,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
         set({
           user: userProfile,
-          isGuest: false,
-          isAuthenticated: true,
           hydrated: true,
+          ...applyAuthEvent(get().authState, {
+            type: 'LOGIN_SUCCESS',
+            payload: {
+              userId: userProfile.id ?? 'user',
+              rollNo: userProfile.rollNo,
+              email: userProfile.email,
+              name: userProfile.name,
+            },
+          }),
         });
 
         await AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(userProfile)).catch(() => {});
@@ -745,9 +872,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
         set({
           user: newUser,
-          isGuest: false,
-          isAuthenticated: true,
           hydrated: true,
+          ...applyAuthEvent(get().authState, {
+            type: 'LOGIN_SUCCESS',
+            payload: {
+              userId: newUser.id ?? 'user',
+              rollNo: newUser.rollNo,
+              email: newUser.email,
+              name: newUser.name,
+            },
+          }),
         });
 
         await AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(newUser)).catch(() => {});
@@ -772,9 +906,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     set({
       user: localUser,
-      isGuest: false,
-      isAuthenticated: true,
       hydrated: true,
+      // An offline session is NOT a verified sign-in. `isAuthenticated` means
+      // "the server confirmed this", so it must stay false here - otherwise
+      // a local-only session is indistinguishable from a real account and a
+      // student believes they are signed in when they are not.
+      ...applyAuthEvent(get().authState, {
+        type: 'BOOT_OFFLINE_SESSION',
+        payload: {
+          userId: localUser.id ?? undefined,
+          rollNo: localUser.rollNo,
+          email: localUser.email,
+          name: localUser.name,
+        },
+      }),
     });
 
     await AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(localUser)).catch(() => {});
@@ -845,9 +990,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     set({
       user: guestUser,
-      isGuest: true,
-      isAuthenticated: false,
       hydrated: true,
+      ...applyAuthEvent(get().authState, {
+        type: 'CONTINUE_AS_GUEST',
+        payload: { guestId: guestUser.uniqueStudentId ?? 'guest', name: guestUser.name },
+      }),
     });
 
     AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(guestUser)).catch(() => {});
@@ -914,8 +1061,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // never leave the previous student's data on screen.
     set({
       user: null,
-      isGuest: true,
-      isAuthenticated: false,
+      ...applyAuthEvent(get().authState, { type: 'LOGOUT' }),
     });
 
     // The wipe is started now, not after the network call, so the personal

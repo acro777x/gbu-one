@@ -4,3 +4,4 @@ export * from './LetterRise';
 export * from './ShimmerText';
 export * from './CountUp';
 export * from './ScrambleText';
+export * from './FadeSlideIn';

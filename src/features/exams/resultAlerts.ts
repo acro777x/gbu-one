@@ -12,7 +12,7 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { kvStorage } from '../../lib/storage';
-import { PUBLIC_RESULT_SHEETS } from './resultPortals';
+import { PUBLIC_RESULT_SHEETS, normaliseSchoolCode } from './resultPortals';
 import {
   RESULTS_WATCH_STORAGE_KEY,
   RESULTS_WATCH_PREFS_KEY,
@@ -97,11 +97,11 @@ export async function checkSchoolResults(
   school: string | undefined | null,
   options: { notify?: boolean } = {},
 ): Promise<ResultsWatchResult> {
-  const wanted = (school ?? '').trim().toUpperCase();
+  const wanted = normaliseSchoolCode(school);
   if (!wanted) return { changes: [], checked: 0, notified: false };
 
   const sheets = PUBLIC_RESULT_SHEETS.filter(
-    (sheet) => sheet.school === wanted && !sheet.special,
+    (sheet) => normaliseSchoolCode(sheet.school) === wanted && !sheet.special,
   );
   if (sheets.length === 0) return { changes: [], checked: 0, notified: false };
 
@@ -272,7 +272,98 @@ async function notifyChanges(changes: SheetChange[]): Promise<boolean> {
 /** Storage key for batch result alerts toggle */
 export const BATCH_WATCH_STORAGE_KEY = '@gbu_one_batch_result_watch';
 
-/** Raises an instant local notification for a declared batch result */
+/** Where the id of the scheduled admit-card reminder is kept. */
+export const ADMIT_CARD_REMINDER_STORAGE_KEY = '@gbu_one_admit_card_reminder';
+
+/** Where the declarations the student has already been told about are kept. */
+export const SEEN_DECLARED_RESULTS_STORAGE_KEY = '@gbu_one_seen_declared_results';
+
+/**
+ * Schedules the reminder the screen promises: a notification 48 hours before
+ * the exam, so the student can collect the admit card.
+ *
+ * Returns false when there is nothing to schedule (no permission, no exam
+ * date, or the exam is less than 48 hours away), so the screen can say what
+ * actually happened instead of claiming a reminder was set.
+ */
+export async function scheduleAdmitCardReminder(
+  examDateIso: string,
+  examLabel?: string,
+): Promise<boolean> {
+  try {
+    const permission = await Notifications.getPermissionsAsync();
+    if (!permission.granted) return false;
+    await ensureResultsChannel();
+    await cancelAdmitCardReminder();
+
+    const examTime = new Date(examDateIso).getTime();
+    if (!Number.isFinite(examTime)) return false;
+    const fireAt = examTime - 48 * 60 * 60 * 1000;
+    if (fireAt <= Date.now()) return false;
+
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Admit card reminder',
+        body: `Your exam${examLabel ? ` (${examLabel})` : ''} starts in 48 hours. Collect your admit card from the examination office.`,
+        data: { type: 'admit-card' },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(fireAt),
+        channelId: RESULTS_CHANNEL_ID,
+      },
+    });
+    kvStorage.set(ADMIT_CARD_REMINDER_STORAGE_KEY, id);
+    await AsyncStorage.setItem(ADMIT_CARD_REMINDER_STORAGE_KEY, id).catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Cancels a scheduled admit-card reminder. */
+export async function cancelAdmitCardReminder(): Promise<void> {
+  try {
+    const stored =
+      (await kvStorage.getAsync(ADMIT_CARD_REMINDER_STORAGE_KEY)) ||
+      (await AsyncStorage.getItem(ADMIT_CARD_REMINDER_STORAGE_KEY).catch(() => null));
+    if (stored) {
+      await Notifications.cancelScheduledNotificationAsync(stored).catch(() => undefined);
+    }
+  } catch {
+    // ignore
+  }
+  kvStorage.remove(ADMIT_CARD_REMINDER_STORAGE_KEY);
+  await AsyncStorage.removeItem(ADMIT_CARD_REMINDER_STORAGE_KEY).catch(() => {});
+}
+
+/** The declarations the student has already been told about. */
+export async function loadSeenDeclaredResultIds(): Promise<string[]> {
+  try {
+    const raw =
+      (await kvStorage.getAsync(SEEN_DECLARED_RESULTS_STORAGE_KEY)) ||
+      (await AsyncStorage.getItem(SEEN_DECLARED_RESULTS_STORAGE_KEY).catch(() => null));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Remembers the declarations the student has already been told about. */
+export async function saveSeenDeclaredResultIds(ids: string[]): Promise<void> {
+  const serialized = JSON.stringify(Array.from(new Set(ids)));
+  kvStorage.set(SEEN_DECLARED_RESULTS_STORAGE_KEY, serialized);
+  await AsyncStorage.setItem(SEEN_DECLARED_RESULTS_STORAGE_KEY, serialized).catch(() => {});
+}
+
+/**
+ * Raises an instant local notification for a declared batch result.
+ *
+ * Only a declaration the university actually published may be notified about:
+ * the caller never passes a sample row here.
+ */
 export async function notifyBatchResultDeclared(item: {
   programme: string;
   semester?: string;

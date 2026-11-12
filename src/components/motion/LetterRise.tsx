@@ -1,5 +1,13 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TextStyle, ViewStyle, StyleProp } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextStyle,
+  ViewStyle,
+  StyleProp,
+  LayoutChangeEvent,
+} from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -71,12 +79,27 @@ const AnimatedLetter: React.FC<AnimatedLetterProps> = ({
     transform: [{ translateY: translateY.value }],
   }));
 
+  /**
+   * The clip box has to be as tall as the glyph is actually drawn.
+   *
+   * The base font size is not enough: at an OS font scale of 130% and above
+   * the glyph grows past the box and the letters overlap each other. The
+   * height is therefore measured from the rendered text itself, and the
+   * computed value is only the fallback for the very first frame.
+   */
+  const [renderedHeight, setRenderedHeight] = useState<number | null>(null);
   const textStyle = StyleSheet.flatten(style);
-  const clipHeight = textStyle?.lineHeight ?? (textStyle?.fontSize ?? 22) * 1.35;
+  const fallbackClipHeight = textStyle?.lineHeight ?? (textStyle?.fontSize ?? 22) * 1.35;
+  const clipHeight = renderedHeight ?? fallbackClipHeight;
+
+  const handleLayout = (event: LayoutChangeEvent) => {
+    const height = event.nativeEvent.layout.height;
+    if (height > 0) setRenderedHeight((current) => (current === height ? current : height));
+  };
 
   return (
     <View style={[styles.charContainer, { height: clipHeight }]}>
-      <Animated.Text style={[styles.char, style, animStyle]}>
+      <Animated.Text onLayout={handleLayout} style={[styles.char, style, animStyle]}>
         {char === ' ' ? '\u00A0' : char}
       </Animated.Text>
     </View>

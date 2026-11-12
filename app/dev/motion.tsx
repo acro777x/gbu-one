@@ -1,3 +1,17 @@
+/**
+ * A development screen that shows every motion component side by side, so a
+ * change to the motion system can be checked on a device in one place.
+ *
+ * WHY THIS SCREEN IS GUARDED
+ *
+ * The route is reachable in the shipped student APK. A screen that exists
+ * only for the team must not be part of the release build, so it renders
+ * nothing at all outside a development build: there is no screen to find,
+ * no way in, and nothing to explain. The owner wants the screen kept for
+ * now, so it is guarded rather than deleted.
+ *
+ * Reach it at /dev/motion in a development build.
+ */
 import React, { useState } from 'react';
 import {
   StyleSheet,
@@ -33,6 +47,9 @@ export default function MotionPlayground() {
   const handleReplay = () => {
     setReplayKey((k) => k + 1);
   };
+
+  // Not a development build: this screen does not exist.
+  if (!__DEV__) return null;
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>

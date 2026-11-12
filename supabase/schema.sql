@@ -116,6 +116,24 @@ create table if not exists public.results (
 );
 create index if not exists results_programme_idx on public.results (programme, posted_at desc);
 
+-- Push dedupe for result sheets.
+--
+-- The worker must know whether a result sheet has been ANNOUNCED or merely
+-- SEEN. The public.results table alone cannot tell the two apart: a sheet
+-- that was found but whose push failed would look "known" on the next run
+-- and would never be announced. This table is the marker: pushed_at is set
+-- only after a confirmed send, so a failed push is retried.
+create table if not exists public.results_push_log (
+  file_url text primary key,
+  programme text not null default '',
+  first_seen_at timestamptz not null default now(),
+  pushed_at timestamptz,
+  recipients integer not null default 0,
+  last_error text
+);
+create index if not exists results_push_log_pushed_idx
+  on public.results_push_log (pushed_at);
+
 -- The official academic calendar and the holiday list, as read from the
 -- university's own documents. The event_key keeps the upsert idempotent.
 create table if not exists public.calendar_events (
@@ -335,20 +353,32 @@ create index if not exists worker_runs_source_idx
 -- Contributor points, derived from approved papers.
 --
 -- security_invoker makes the view honour the RLS of pyq_papers, so an
--- anonymous caller sees approved rows only — exactly the rows the browse
--- screen shows. Points are server-derived so two devices cannot disagree.
+-- anonymous caller sees approved rows only - exactly the rows the browse
+-- screen shows.
+--
+-- The points are grouped by uploader_id, the Supabase Auth uuid, and NOT
+-- by the device identity. uploader_student_id is self-asserted by the
+-- client - a guest can write any device id it likes - so grouping by it
+-- would let one device claim another student's points. A row without a
+-- real uuid therefore earns nothing: contributor points are only ever
+-- awarded for a signed-in account.
+--
+-- uploader_student_id is still exposed, so the leaderboard can show the
+-- student the contributor recognised them by.
 -- ---------------------------------------------------------------------------
 create or replace view public.pyq_contributor_points
 with (security_invoker = true) as
 select
+  uploader_id,
   uploader_student_id,
   count(*) filter (where status = 'approved') as approved_uploads,
   coalesce(sum(downloads), 0) as total_downloads,
   (count(*) filter (where status = 'approved')) * 50
     + coalesce(sum(downloads), 0) as points
 from public.pyq_papers
-where uploader_student_id is not null and uploader_student_id <> ''
-group by uploader_student_id;
+where uploader_id is not null
+  and uploader_student_id is not null and uploader_student_id <> ''
+group by uploader_id, uploader_student_id;
 grant select on public.pyq_contributor_points to anon, authenticated;
 
 -- ===========================================================================
@@ -671,6 +701,19 @@ create policy "results moderator write" on public.results
   using (public.is_moderator())
   with check (public.is_moderator());
 
+-- The push ledger is the worker's bookkeeping. It is not the public
+-- result list, so it is readable by moderators only.
+alter table public.results_push_log enable row level security;
+drop policy if exists "results push log moderator read" on public.results_push_log;
+create policy "results push log moderator read" on public.results_push_log
+  for select to authenticated using (public.is_moderator());
+
+drop policy if exists "results push log moderator write" on public.results_push_log;
+create policy "results push log moderator write" on public.results_push_log
+  for all to authenticated
+  using (public.is_moderator())
+  with check (public.is_moderator());
+
 -- The worker's own tables. These had NO row level security at all, so the
 -- anon key could read every class's timetable snapshot, the push history and
 -- the worker error log, and could write into them.
@@ -706,6 +749,18 @@ drop policy if exists "pyq papers moderator read" on public.pyq_papers;
 create policy "pyq papers moderator read" on public.pyq_papers
   for select to authenticated
   using (public.is_moderator());
+
+-- A signed-in student can see the papers THEY filed, whatever the moderation
+-- state. Without this there is no "My uploads" screen at all: the
+-- approved-read policy exposes only status = 'approved', so a student
+-- whose upload is still pending or was rejected cannot tell what happened
+-- to it.
+--
+-- The check is on the real auth uuid, never on the self-asserted device id.
+drop policy if exists "pyq papers own read" on public.pyq_papers;
+create policy "pyq papers own read" on public.pyq_papers
+  for select to authenticated
+  using (uploader_id = auth.uid());
 
 -- A signed-in student queues their own upload; it can only ever be pending,
 -- and it may only ever be attributed to themselves. The old policy was
@@ -749,6 +804,21 @@ create policy "device tokens own" on public.device_tokens
 drop policy if exists "device tokens guest insert" on public.device_tokens;
 create policy "device tokens guest insert" on public.device_tokens
   for insert to anon
+  with check (user_id is null);
+
+-- A guest registers its token with no owner, and the app then UPDATES the
+-- same row when the student picks a class (that is how the class key is
+-- attached) or when the timetable-push toggle is changed. The insert-only
+-- policy above refused that update, so a guest who changed their section
+-- kept the OLD class key and the worker kept pushing the previous class's
+-- timetable changes to their phone.
+--
+-- The row must still be an unowned guest row: the update may not take a
+-- token over, and it may not attach an owner.
+drop policy if exists "device tokens guest update" on public.device_tokens;
+create policy "device tokens guest update" on public.device_tokens
+  for update to anon
+  using (user_id is null)
   with check (user_id is null);
 
 -- Reporting a paper: anyone signed in may report, only moderators may read

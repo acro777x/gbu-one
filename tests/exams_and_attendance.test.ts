@@ -8,7 +8,9 @@ import path from 'path';
 import {
   searchRollNumberResult,
   calculateExamCountdown,
+  examCountdownState,
   MOCK_DATESHEET,
+  MOCK_STUDENT_RESULTS,
 } from '../src/features/exams/examService';
 import {
   MOCK_CALENDAR_EVENTS,
@@ -25,6 +27,8 @@ import {
   parseExcelDateSheet,
   parseSubjectCell,
   buildClassKey,
+  buildCanonicalClassKey,
+  baseClassKeyOf,
   matchClassKey,
   filterSlotsForStudent,
   examSlotToRow,
@@ -39,7 +43,9 @@ import { upsertExamDateSlots } from '../worker/supabaseClient';
 describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
   describe('Exam Service & On-Device Result Finder', () => {
     it('finds student results by exact and normalised roll number on-device', () => {
-      const res1 = searchRollNumberResult('22/ICS/042');
+      // The records are passed in on purpose: the search must never answer
+      // from a bundled list the caller did not ask for.
+      const res1 = searchRollNumberResult('22/ICS/042', MOCK_STUDENT_RESULTS);
       expect(res1).not.toBeNull();
       expect(res1?.studentName).toBe('Aarav Sharma');
       expect(res1?.sgpa).toBe(8.45);
@@ -47,33 +53,42 @@ describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
       expect(res1?.grades).toHaveLength(4);
 
       // Case-insensitive & normalized hyphens/dots
-      const res2 = searchRollNumberResult('22-ics-015');
+      const res2 = searchRollNumberResult('22-ics-015', MOCK_STUDENT_RESULTS);
       expect(res2).not.toBeNull();
       expect(res2?.studentName).toBe('Priya Verma');
       expect(res2?.sgpa).toBe(9.1);
 
       // Malformed roll numbers with spaces around delimiters
-      const resSpaced = searchRollNumberResult('22 / ICS / 042');
+      const resSpaced = searchRollNumberResult('22 / ICS / 042', MOCK_STUDENT_RESULTS);
       expect(resSpaced).not.toBeNull();
       expect(resSpaced?.studentName).toBe('Aarav Sharma');
 
-      const resHyphenSpaced = searchRollNumberResult('22 - ics - 015');
+      const resHyphenSpaced = searchRollNumberResult('22 - ics - 015', MOCK_STUDENT_RESULTS);
       expect(resHyphenSpaced).not.toBeNull();
       expect(resHyphenSpaced?.studentName).toBe('Priya Verma');
 
-      const resMultiSpace = searchRollNumberResult('  22   ICS   042  ');
+      const resMultiSpace = searchRollNumberResult('  22   ICS   042  ', MOCK_STUDENT_RESULTS);
       expect(resMultiSpace).not.toBeNull();
       expect(resMultiSpace?.studentName).toBe('Aarav Sharma');
 
       // Non-existent roll number
-      const res3 = searchRollNumberResult('99/UNKNOWN/999');
+      const res3 = searchRollNumberResult('99/UNKNOWN/999', MOCK_STUDENT_RESULTS);
       expect(res3).toBeNull();
+
+      // Without a record set there is nothing to find, and nothing is invented.
+      expect(searchRollNumberResult('22/ICS/042')).toBeNull();
     });
 
-    it('calculates non-negative countdown days until exams', () => {
-      const countdown = calculateExamCountdown('2026-11-03T04:00:00.000Z');
-      expect(typeof countdown).toBe('number');
-      expect(countdown).toBeGreaterThanOrEqual(0);
+    it('counts the days to an exam and keeps a past exam in the past', () => {
+      const inTenDays = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+
+      expect(calculateExamCountdown(inTenDays)).toBeGreaterThan(0);
+      // A weeks-past exam must not be clamped to 0, or the screen renders it
+      // as "TODAY" in the danger colour.
+      expect(calculateExamCountdown(tenDaysAgo)).toBeLessThan(0);
+      expect(examCountdownState(tenDaysAgo).state).toBe('past');
+      expect(examCountdownState(inTenDays).state).toBe('future');
     });
 
     it('contains datesheet entries with subject codes and shifts', () => {
@@ -317,6 +332,53 @@ describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
       expect(matchClassKey('btech_ai_sem3', 'btech_cse_sem3')).toBe(false);
     });
 
+    it('reads the published section codes into the canonical class key', () => {
+      // The app knows the student by the published code (`BAI-III-B`), the
+      // worker knows the class by the programme slug (`btech_ai_sem3`).
+      expect(buildClassKey('BAI-III-B')).toBe('btech_ai_sem3');
+      expect(buildClassKey('BCS-III-B')).toBe('btech_cse_sem3');
+      expect(buildClassKey('BEC-IV-A')).toBe('btech_ece_sem4');
+      expect(buildClassKey('BCA-II-B')).toBe('bca_sem2');
+      expect(buildClassKey('MBA II')).toBe('mba_sem2');
+
+      // The canonical key adds the batch and the section.
+      expect(buildCanonicalClassKey('BAI-III-B')).toBe('btech_ai_sem3_b');
+      expect(buildCanonicalClassKey('B. Tech. (CSE) Batch (2025-2029) 3rd Semester')).toBe(
+        'btech_cse_sem3_2025_2029',
+      );
+      expect(baseClassKeyOf('btech_cse_sem3_2025_2029_b')).toBe('btech_cse_sem3');
+    });
+
+    it('keeps two cohorts and two sections of one programme apart', () => {
+      // A slot that only knows the programme still matches a student who
+      // also knows their section: the date sheet is published per programme.
+      expect(matchClassKey('btech_cse_sem3_b', 'btech_cse_sem3')).toBe(true);
+      // Two keys that both name a section have to agree on it.
+      expect(matchClassKey('btech_cse_sem3_a', 'btech_cse_sem3_b')).toBe(false);
+      // The same for the batch: two cohorts are two classes.
+      expect(matchClassKey('btech_cse_sem3_2022_2026', 'btech_cse_sem3_2025_2029')).toBe(false);
+      expect(matchClassKey('btech_cse_sem3_2025_2029', 'btech_cse_sem3_2025_2029')).toBe(true);
+
+      // Two cohorts of the same programme must not share a slot key.
+      const cohortA = dateSlotKey(
+        'soict',
+        '2026-12-14',
+        'morning',
+        'CSE201',
+        'Scientific Computing',
+        'btech_cse_sem3_2022_2026',
+      );
+      const cohortB = dateSlotKey(
+        'soict',
+        '2026-12-14',
+        'morning',
+        'CSE201',
+        'Scientific Computing',
+        'btech_cse_sem3_2025_2029',
+      );
+      expect(cohortA).not.toBe(cohortB);
+    });
+
     it('parses tabular/flat format date sheet Excel and CSV files', () => {
       const flatCsv = [
         'Date,Shift,Programme,Semester,Course Code,Course Name,Paper ID',
@@ -389,8 +451,8 @@ describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
     });
 
     it('verifies deterministic dateSlotKey and batch deduplication in upsertExamDateSlots', async () => {
-      const key1 = dateSlotKey('soict', '2026-12-14', 'morning', 'CSE201', 'Scientific Computing');
-      const key2 = dateSlotKey('soict', '2026-12-14', 'morning', 'CSE201', 'Scientific Computing');
+      const key1 = dateSlotKey('soict', '2026-12-14', 'morning', 'CSE201', 'Scientific Computing', 'btech_cse_sem3');
+      const key2 = dateSlotKey('soict', '2026-12-14', 'morning', 'CSE201', 'Scientific Computing', 'btech_cse_sem3');
       expect(key1).toBe(key2);
 
       // Verify upsertExamDateSlots handles duplicate slotKeys safely without throwing
@@ -407,9 +469,13 @@ describe('Phase 5 — Exams, Results, Deadlines, Calendar & Attendance', () => {
         isBackPaper: false,
       };
 
-      // Calling with duplicates (without Supabase configured in test env returns 0 safely)
-      const count = await upsertExamDateSlots([mockSlot, mockSlot]);
-      expect(typeof count).toBe('number');
+      // Calling with duplicates (without Supabase configured in test env returns
+      // 0 written rows safely). The worker now reports how many rows the
+      // database accepted and how many it refused, so a failed write can
+      // never be mistaken for a successful one.
+      const result = await upsertExamDateSlots([mockSlot, mockSlot]);
+      expect(result.written).toBe(0);
+      expect(result.failed).toBe(0);
     });
 
     it('generates collision-free keys across different classes for shared exams and preserves all 48 slots', () => {

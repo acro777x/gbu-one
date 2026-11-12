@@ -523,7 +523,10 @@ export function buildCataloguePapers(): PYQItem[] {
       subjectName: sub.name.trim(),
       year: 2025,
       examType: 'End Sem',
-      downloads: (sub.code.length * 13) % 40 + 15,
+      // A subject with no uploaded paper has no downloads. The old build
+      // invented a number from the length of the subject code and showed it
+      // to the student as a real download count.
+      downloads: 0,
       status: 'approved',
       hasFile: false,
     });

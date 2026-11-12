@@ -9,6 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { motion } from '../../lib/motion';
 import { theme } from '../../lib/theme';
+import { useReduceMotion } from '../../lib/useReduceMotion';
 
 export interface WordRevealProps {
   text: string;
@@ -17,6 +18,10 @@ export interface WordRevealProps {
   duration?: number;
   style?: StyleProp<TextStyle>;
   containerStyle?: StyleProp<ViewStyle>;
+  /**
+   * Forces the motion off (or on). Left out, the OS "reduce motion" setting
+   * decides - the prop always wins, the OS setting is the default.
+   */
   reduceMotion?: boolean;
   onDone?: () => void;
 }
@@ -86,9 +91,11 @@ export const WordReveal: React.FC<WordRevealProps> = ({
   duration = motion.duration.md,
   style,
   containerStyle,
-  reduceMotion = false,
+  reduceMotion,
   onDone,
 }) => {
+  const systemReduce = useReduceMotion();
+  const effectiveReduce = reduceMotion ?? systemReduce;
   const words = text.split(/\s+/).filter(Boolean);
 
   return (
@@ -102,7 +109,7 @@ export const WordReveal: React.FC<WordRevealProps> = ({
           stagger={stagger}
           duration={duration}
           style={style}
-          reduceMotion={reduceMotion}
+          reduceMotion={effectiveReduce}
           isLast={idx === words.length - 1}
           onDone={onDone}
         />

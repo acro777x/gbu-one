@@ -13,16 +13,14 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
-  ShieldCheck,
-  Award,
 } from 'lucide-react-native';
 import { useAppTheme } from '../../lib/ThemeContext';
+import { useReduceMotion } from '../../lib/useReduceMotion';
 import { Avatar } from '../ui/Avatar';
 import { GlassCard } from '../ui/GlassCard';
 import {
   getLeaderboard,
   shareLeaderboard,
-  DEFAULT_LEADERBOARD_SEED,
   type LeaderboardEntry,
   type CurrentUserParam,
 } from '../../features/pyq/pyqLeaderboard';
@@ -42,10 +40,13 @@ export const PyqLeaderboardPodium: React.FC<PyqLeaderboardPodiumProps> = ({
   hideActionRow = false,
   entries: propEntries,
 }) => {
-  const { colors, isDark } = useAppTheme();
-  const [internalEntries, setInternalEntries] = useState<LeaderboardEntry[]>(() =>
-    DEFAULT_LEADERBOARD_SEED.map((item) => ({ ...item })),
-  );
+  const { colors } = useAppTheme();
+  // The crown pulse is an infinite animation. A student who asked the OS
+  // for less motion must not get one, so the loop only runs when the
+  // system says it is fine.
+  const reduceMotion = useReduceMotion();
+  // There is no invented leaderboard any more: an empty board is honest.
+  const [internalEntries, setInternalEntries] = useState<LeaderboardEntry[]>([]);
   const entries = propEntries || internalEntries;
   const [isExpanded, setIsExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -55,6 +56,8 @@ export const PyqLeaderboardPodium: React.FC<PyqLeaderboardPodiumProps> = ({
   const glowAnim = useRef(new Animated.Value(0.4)).current;
 
   useEffect(() => {
+    if (reduceMotion) return;
+
     const pulseLoop = Animated.loop(
       Animated.sequence([
         Animated.parallel([
@@ -85,10 +88,12 @@ export const PyqLeaderboardPodium: React.FC<PyqLeaderboardPodiumProps> = ({
     );
     pulseLoop.start();
     return () => pulseLoop.stop();
-  }, [pulseAnim, glowAnim]);
+  }, [pulseAnim, glowAnim, reduceMotion]);
 
   const loadData = useCallback(async () => {
     if (propEntries) return;
+    // The loading flag was never set, so its guard was dead code.
+    setLoading(true);
     try {
       const data = await getLeaderboard(currentUser);
       setInternalEntries(data);
@@ -107,8 +112,6 @@ export const PyqLeaderboardPodium: React.FC<PyqLeaderboardPodiumProps> = ({
     currentUser?.avatarId,
     currentUser?.uniqueStudentId,
     currentUser?.school,
-    currentUser?.points,
-    currentUser?.uploadsCount,
     onLeaderboardLoaded,
   ]);
 
@@ -126,8 +129,10 @@ export const PyqLeaderboardPodium: React.FC<PyqLeaderboardPodiumProps> = ({
   const top2 = entries.find((e) => e.rank === 2);
   const top3 = entries.find((e) => e.rank === 3);
 
-  const myRank = currentUser?.id
-    ? entries.find((e) => e.id === currentUser.id)?.rank
+  // The entries are keyed by the DEVICE identity (GBU-XXXXXX), which is
+  // what the server groups by - not by the auth user id.
+  const myRank = currentUser?.uniqueStudentId
+    ? entries.find((e) => e.id === currentUser.uniqueStudentId)?.rank
     : undefined;
 
   const handleShare = async () => {
@@ -142,12 +147,10 @@ export const PyqLeaderboardPodium: React.FC<PyqLeaderboardPodiumProps> = ({
 
     const isRank1 = rank === 1;
     const isRank2 = rank === 2;
-    const isRank3 = rank === 3;
 
     // Crown colors and metadata
     const crownColor = isRank1 ? '#F59E0B' : isRank2 ? '#94A3B8' : '#D97706';
     const crownEmoji = isRank1 ? '👑' : isRank2 ? '🥈' : '🥉';
-    const rankLabel = isRank1 ? 'Gold #1' : isRank2 ? 'Silver #2' : 'Bronze #3';
 
     return (
       <View
@@ -222,11 +225,6 @@ export const PyqLeaderboardPodium: React.FC<PyqLeaderboardPodiumProps> = ({
             avatarId={entry.avatarId}
             size={isRank1 ? 46 : 38}
           />
-          {entry.isOfficialAdmin && (
-            <View style={[styles.adminShieldPill, { backgroundColor: colors.accent }]}>
-              <ShieldCheck size={10} color="#FFFFFF" />
-            </View>
-          )}
         </View>
 
         {/* Name */}
@@ -269,7 +267,7 @@ export const PyqLeaderboardPodium: React.FC<PyqLeaderboardPodiumProps> = ({
 
         {/* Uploads Tag */}
         <Text style={[styles.podiumUploadsTag, { color: colors.textTertiary }]}>
-          {entry.isOfficialAdmin ? 'Central Admin' : `${entry.uploadsCount} papers`}
+          {`${entry.uploadsCount} papers`}
         </Text>
       </View>
     );
@@ -346,7 +344,7 @@ export const PyqLeaderboardPodium: React.FC<PyqLeaderboardPodiumProps> = ({
             All Contributors ({entries.length})
           </Text>
           {entries.map((item) => {
-            const isCurrent = currentUser?.id === item.id;
+            const isCurrent = currentUser?.uniqueStudentId === item.id;
             const rankEmoji =
               item.rank === 1 ? '👑' : item.rank === 2 ? '🥈' : item.rank === 3 ? '🥉' : `#${item.rank}`;
 
@@ -389,11 +387,6 @@ export const PyqLeaderboardPodium: React.FC<PyqLeaderboardPodiumProps> = ({
                     >
                       {item.name}
                     </Text>
-                    {item.isOfficialAdmin && (
-                      <View style={[styles.adminTag, { backgroundColor: colors.accent }]}>
-                        <Text style={styles.adminTagText}>Admin</Text>
-                      </View>
-                    )}
                     {isCurrent && (
                       <View style={[styles.adminTag, { backgroundColor: colors.accentSoft }]}>
                         <Text style={[styles.adminTagText, { color: colors.accent }]}>You</Text>
@@ -537,14 +530,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginBottom: 2,
-    maxWidth: 96,
+    // The old 96pt width cut a name like "Aarav Sharma" in half.
+    maxWidth: 128,
   },
   podiumStudentId: {
     fontSize: 10,
     textAlign: 'center',
     marginBottom: 5,
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
-    maxWidth: 96,
+    maxWidth: 128,
   },
   podiumPointsPill: {
     paddingHorizontal: 8,

@@ -16,6 +16,12 @@ export interface DatesheetEntry {
   paperId?: string;
   examType?: 'mid_sem' | 'end_sem' | 'practical';
   isBackPaper?: boolean;
+  /**
+   * True when the row comes from the bundled sample instead of the
+   * university's published date sheet. The screen labels those rows, so a
+   * sample is never mistaken for an official schedule.
+   */
+  isSample?: boolean;
 }
 
 export interface StudentResultRecord {
@@ -270,13 +276,17 @@ export function normalizeRollNumber(val: string): string {
  * On-device roll number search engine
  * Per docs/ARCHITECTURE.md section 5:
  * Searching happens entirely on-device; roll number is NEVER sent to server
+ *
+ * The records are always passed in by the caller. There is no default: a
+ * search that silently falls back to a bundled list would answer "here is
+ * your result" for a roll number nobody ever looked up.
  */
 export function searchRollNumberResult(
   rollNo: string,
-  records: StudentResultRecord[] = MOCK_STUDENT_RESULTS,
+  records?: StudentResultRecord[],
 ): StudentResultRecord | null {
   const cleanRoll = normalizeRollNumber(rollNo);
-  if (!cleanRoll) return null;
+  if (!cleanRoll || !records || records.length === 0) return null;
   const match = records.find(
     (r) => normalizeRollNumber(r.rollNo) === cleanRoll,
   );
@@ -284,13 +294,35 @@ export function searchRollNumberResult(
 }
 
 /**
- * Calculates countdown days until exam date
+ * Calculates countdown days until exam date.
+ *
+ * The value is signed: a date in the past gives a negative number, so the
+ * screen can say "completed" instead of showing a past exam as "today".
  */
 export function calculateExamCountdown(targetDateStr: string): number {
   const target = new Date(targetDateStr).getTime();
   const now = Date.now();
-  const diffDays = Math.ceil((target - now) / (1000 * 60 * 60 * 24));
-  return Math.max(0, diffDays);
+  if (!Number.isFinite(target)) return 0;
+  return Math.ceil((target - now) / (1000 * 60 * 60 * 24));
+}
+
+/** Where an exam stands in time. */
+export type ExamCountdownState = 'past' | 'today' | 'tomorrow' | 'future';
+
+/**
+ * The countdown of one exam, with the state spelled out.
+ *
+ * `days` is negative for a date in the past, so a week-old exam can never be
+ * rendered as "TODAY".
+ */
+export function examCountdownState(
+  targetDateStr: string,
+): { state: ExamCountdownState; days: number } {
+  const days = calculateExamCountdown(targetDateStr);
+  if (days < 0) return { state: 'past', days };
+  if (days === 0) return { state: 'today', days };
+  if (days === 1) return { state: 'tomorrow', days };
+  return { state: 'future', days };
 }
 
 /** Authentic B.Tech CSE 3rd Semester Mid-Semester Schedule (from GBU sample date sheet) */
@@ -470,12 +502,24 @@ export const AUTHENTIC_CSE3_PRACTICALS_DATESHEET: DatesheetEntry[] = [
   },
 ];
 
+/**
+ * The bundled date sheets.
+ *
+ * These are the sample schedules the app ships with. They are only ever a
+ * fallback, and every row is flagged as a sample so the screen can say so:
+ * a student must never read another programme's schedule as the official
+ * one.
+ */
+function asSample(entries: DatesheetEntry[]): DatesheetEntry[] {
+  return entries.map((entry) => ({ ...entry, isSample: true }));
+}
+
 /** Returns the class-wise date sheet filtered by enrolledClassKey and exam phase */
 export function getClassDatesheet(
   classKey: string = 'btech_cse_sem3',
   phase: 'end' | 'practicals' | 'back' | 'mid' = 'end',
 ): DatesheetEntry[] {
-  const norm = classKey.toLowerCase();
+  const norm = (classKey || '').toLowerCase();
   const isCse3 =
     norm.includes('btech_cse_sem3') ||
     norm.includes('cse_sem3') ||
@@ -486,17 +530,17 @@ export function getClassDatesheet(
     norm.includes('3rd');
 
   if (isCse3) {
-    if (phase === 'mid') return AUTHENTIC_CSE3_MID_SEM_DATESHEET;
-    if (phase === 'end') return AUTHENTIC_CSE3_END_SEM_DATESHEET;
-    if (phase === 'practicals') return AUTHENTIC_CSE3_PRACTICALS_DATESHEET;
-    if (phase === 'back') return MOCK_BACK_PAPER_DATESHEET;
+    if (phase === 'mid') return asSample(AUTHENTIC_CSE3_MID_SEM_DATESHEET);
+    if (phase === 'end') return asSample(AUTHENTIC_CSE3_END_SEM_DATESHEET);
+    if (phase === 'practicals') return asSample(AUTHENTIC_CSE3_PRACTICALS_DATESHEET);
+    if (phase === 'back') return asSample(MOCK_BACK_PAPER_DATESHEET);
   }
 
-  // Fallback to default mock date sheets for semester 2 / general
-  if (phase === 'mid') return MOCK_MID_SEM_DATESHEET;
-  if (phase === 'end') return MOCK_END_SEM_DATESHEET;
-  if (phase === 'practicals') return MOCK_PRACTICALS_DATESHEET;
-  if (phase === 'back') return MOCK_BACK_PAPER_DATESHEET;
-  return MOCK_DATESHEET;
+  // Fallback to the default sample date sheets for semester 2 / general
+  if (phase === 'mid') return asSample(MOCK_MID_SEM_DATESHEET);
+  if (phase === 'end') return asSample(MOCK_END_SEM_DATESHEET);
+  if (phase === 'practicals') return asSample(MOCK_PRACTICALS_DATESHEET);
+  if (phase === 'back') return asSample(MOCK_BACK_PAPER_DATESHEET);
+  return asSample(MOCK_DATESHEET);
 }
 

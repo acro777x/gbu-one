@@ -1,9 +1,17 @@
 /**
  * GBU One — Admin Notices Service & Cloud Sync Pipeline
  *
- * Provides authoritative dual-write (Supabase Postgres + Supabase Storage CDN)
- * with instant tombstone deletion tracking, offline caching, and guaranteed delivery
- * to all student devices without RLS or session authorization blockage.
+ * Dual write (Supabase Postgres + Supabase Storage) with tombstone deletion
+ * tracking, offline caching and instant delivery to every student device.
+ *
+ * HOW THE WRITES ARE AUTHORISED
+ *
+ * Every write goes out with the SIGNED-IN moderator's session token, never
+ * with a service-role key. The database policies only let a moderator write
+ * to `notices` and to the `campus-events` bucket, and the client must never
+ * hold a secret that could bypass them. A write that the server refuses is
+ * reported as a failure - the admin console must never claim that a notice
+ * was published when it was not.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NoticeItem, cleanNoticeTitle } from './noticeService';
@@ -24,7 +32,12 @@ export function broadcastNoticeEvent(
 ): void {
   if (!isSupabaseConfigured) return;
   try {
-    const channel = supabase.channel(NOTICES_REALTIME_CHANNEL);
+    // The channel is private: only a signed-in moderator may join it. The
+    // realtime client carries that moderator's own token, so the broadcast is
+    // authorised as the moderator and not as the public anon key.
+    const channel = supabase.channel(NOTICES_REALTIME_CHANNEL, {
+      config: { private: true },
+    });
     channel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         void channel
@@ -33,7 +46,10 @@ export function broadcastNoticeEvent(
             event,
             payload,
           })
-          .then(() => {
+          .catch((err) => {
+            console.warn('Realtime notice broadcast warning:', err);
+          })
+          .finally(() => {
             setTimeout(() => {
               void supabase.removeChannel(channel);
             }, 1000);
@@ -48,11 +64,65 @@ export function broadcastNoticeEvent(
 const SUPABASE_REST_NOTICES_URL =
   'https://pjnxllnncsoroevgfbmt.supabase.co/rest/v1/notices';
 
-function getServiceKey(): string {
-  return (
-    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-    ''
-  );
+/**
+ * The public (read-only) key of the project. It identifies the project; it
+ * does not authorise a write.
+ */
+function getAnonKey(): string {
+  return process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+}
+
+/**
+ * The headers every cloud write uses.
+ *
+ * The bearer token is the signed-in moderator's own access token, so the
+ * database's moderator-only policies decide whether the write is allowed.
+ * The client never reads a service-role key.
+ */
+async function getWriteAuthHeaders(): Promise<Record<string, string>> {
+  const anonKey = getAnonKey();
+  let accessToken = '';
+  try {
+    const { data } = await supabase.auth.getSession();
+    accessToken = data?.session?.access_token ?? '';
+  } catch {
+    // No session: the write will be refused by the server, which is the
+    // correct answer for a moderator-only table.
+  }
+  return {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken || anonKey}`,
+    'Content-Type': 'application/json',
+  };
+}
+
+/**
+ * Only safe characters may appear in a PostgREST filter value. Anything else
+ * could change the meaning of the filter, so it is rejected outright.
+ */
+export function sanitisePostgrestValue(raw: string): string | null {
+  const value = (raw ?? '').trim();
+  if (!value || value.length > 128) return null;
+  return /^[A-Za-z0-9_-]+$/.test(value) ? value : null;
+}
+
+/** The reason a failed response gives, in a form the admin console can show. */
+async function describeFailure(res: Response, what: string): Promise<string> {
+  let detail = '';
+  try {
+    const body = await res.text();
+    if (body) {
+      try {
+        const parsed = JSON.parse(body) as { message?: string; error?: string };
+        detail = parsed.message || parsed.error || body.slice(0, 200);
+      } catch {
+        detail = body.slice(0, 200);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return `${what} failed (HTTP ${res.status})${detail ? `: ${detail}` : ''}`;
 }
 
 export interface CloudNoticesPayload {
@@ -132,15 +202,12 @@ export async function fetchCloudNotices(): Promise<{
     // ignore network error
   }
 
-  // 2. Fetch from Supabase Postgres notices table using direct service key
+  // 2. Fetch from Supabase Postgres notices table with the project key.
+  //    Reads are allowed for everybody; a signed-in moderator simply sees the
+  //    same rows.
   let pgNotices: NoticeItem[] = [];
   try {
-    const serviceKey = getServiceKey();
-    const headers: Record<string, string> = {};
-    if (serviceKey) {
-      headers.apikey = serviceKey;
-      headers.Authorization = `Bearer ${serviceKey}`;
-    }
+    const headers = await getWriteAuthHeaders();
     // Match either source=admin or source_id like admin_notice_* so custom portal sources pushed by admin are not excluded
     const pgRes = await fetch(
       `${SUPABASE_REST_NOTICES_URL}?or=(source.eq.admin,source_id.like.admin_notice_*)&select=*&order=posted_at.desc&limit=50`,
@@ -245,6 +312,10 @@ export async function fetchCloudNotices(): Promise<{
 /**
  * Publishes an official notice to both Supabase Storage and Supabase Postgres,
  * writing to local SQLite and AsyncStorage.
+ *
+ * The result reports the truth: a notice is only "published" when at least
+ * one cloud sink accepted it. A local-only write (the copy on the publishing
+ * device) is NOT a publication, and the function says so.
  */
 export async function publishNoticeToCampus(params: {
   title: string;
@@ -289,8 +360,11 @@ export async function publishNoticeToCampus(params: {
     await setLocalDeletedNoticeIds(updatedDeleted);
   }
 
+  const authHeaders = await getWriteAuthHeaders();
+  const failures: string[] = [];
+  let storageWritten = false;
+
   // 2. Dual Write to Cloud Storage CDN (campus-events/notices.json)
-  const serviceKey = getServiceKey();
   try {
     let existingNotices: NoticeItem[] = [];
     let existingDeleted: string[] = [];
@@ -316,30 +390,33 @@ export async function publishNoticeToCampus(params: {
 
     const putRes = await fetch(ADMIN_NOTICES_STORAGE_URL, {
       method: 'PUT',
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders,
       body: JSON.stringify(payload),
     });
 
-    if (!putRes.ok && putRes.status === 404) {
-      await fetch(ADMIN_NOTICES_STORAGE_URL, {
+    if (putRes.ok) {
+      storageWritten = true;
+    } else if (putRes.status === 404) {
+      // The object does not exist yet, so it has to be created.
+      const postRes = await fetch(ADMIN_NOTICES_STORAGE_URL, {
         method: 'POST',
-        headers: {
-          apikey: serviceKey,
-          Authorization: `Bearer ${serviceKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders,
         body: JSON.stringify(payload),
       });
+      if (postRes.ok) {
+        storageWritten = true;
+      } else {
+        failures.push(await describeFailure(postRes, 'Storage upload'));
+      }
+    } else {
+      failures.push(await describeFailure(putRes, 'Storage upload'));
     }
   } catch (err) {
-    console.warn('Storage CDN notice sync warning:', err);
+    failures.push(`Storage upload failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // 3. Write to Supabase Postgres notices table via REST
+  let postgresWritten = false;
   try {
     const pgPayload = {
       source: 'admin',
@@ -355,18 +432,18 @@ export async function publishNoticeToCampus(params: {
       deadline_at: newNotice.deadlineAt,
     };
 
-    await fetch(SUPABASE_REST_NOTICES_URL, {
+    const pgRes = await fetch(SUPABASE_REST_NOTICES_URL, {
       method: 'POST',
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-      },
+      headers: { ...authHeaders, Prefer: 'return=minimal' },
       body: JSON.stringify(pgPayload),
     });
+    if (pgRes.ok) {
+      postgresWritten = true;
+    } else {
+      failures.push(await describeFailure(pgRes, 'Database insert'));
+    }
   } catch (err) {
-    console.warn('Postgres notice insert warning:', err);
+    failures.push(`Database insert failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // 4. Save to local AsyncStorage and SQLite
@@ -380,7 +457,30 @@ export async function publishNoticeToCampus(params: {
   }
 
   // 5. Broadcast instant creation to all student devices
-  broadcastNoticeEvent('notice_published', newNotice);
+  if (storageWritten || postgresWritten) {
+    broadcastNoticeEvent('notice_published', newNotice);
+  }
+
+  if (!storageWritten && !postgresWritten) {
+    return {
+      ok: false,
+      notice: newNotice,
+      error:
+        failures.length > 0
+          ? `The notice was not published. ${failures.join(' ')}`
+          : 'The notice was not published: no cloud sink accepted it.',
+    };
+  }
+
+  if (failures.length > 0) {
+    // One sink worked, so the notice IS out there, but the admin console has
+    // to know that the other one did not.
+    return {
+      ok: true,
+      notice: newNotice,
+      error: `Published with warnings. ${failures.join(' ')}`,
+    };
+  }
 
   return { ok: true, notice: newNotice };
 }
@@ -401,8 +501,14 @@ export async function updateNoticeOnCampus(
   id: string,
   params: UpdateNoticeParams,
 ): Promise<{ ok: boolean; notice?: NoticeItem; error?: string }> {
+  const safeId = sanitisePostgrestValue(id);
+  if (!safeId) {
+    return { ok: false, error: 'That notice id is not a valid notice identifier.' };
+  }
   try {
-    const serviceKey = getServiceKey();
+    const authHeaders = await getWriteAuthHeaders();
+    const failures: string[] = [];
+    let written = false;
     let existingNotices: NoticeItem[] = [];
     let existingDeleted: string[] = [];
 
@@ -475,17 +581,20 @@ export async function updateNoticeOnCampus(
       updatedAt: new Date().toISOString(),
     };
 
-    await fetch(ADMIN_NOTICES_STORAGE_URL, {
+    const putRes = await fetch(ADMIN_NOTICES_STORAGE_URL, {
       method: 'PUT',
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders,
       body: JSON.stringify(payload),
     });
+    if (putRes.ok) {
+      written = true;
+    } else {
+      failures.push(await describeFailure(putRes, 'Storage upload'));
+    }
 
-    // 3. Update in Supabase Postgres notices table via REST
+    // 3. Update in Supabase Postgres notices table via REST.
+    //    The admin notice is addressed by `source_id`, which IS the admin id
+    //    (the uuid primary key is the database's own).
     try {
       const pgPayload = {
         title: updatedNotice.title,
@@ -496,28 +605,18 @@ export async function updateNoticeOnCampus(
         file_type: updatedNotice.fileType,
         deadline_at: updatedNotice.deadlineAt,
       };
-      await fetch(`${SUPABASE_REST_NOTICES_URL}?source_id=eq.${encodeURIComponent(id)}`, {
+      const pgRes = await fetch(`${SUPABASE_REST_NOTICES_URL}?source_id=eq.${safeId}`, {
         method: 'PATCH',
-        headers: {
-          apikey: serviceKey,
-          Authorization: `Bearer ${serviceKey}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
+        headers: { ...authHeaders, Prefer: 'return=minimal' },
         body: JSON.stringify(pgPayload),
       });
-      await fetch(`${SUPABASE_REST_NOTICES_URL}?id=eq.${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: serviceKey,
-          Authorization: `Bearer ${serviceKey}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify(pgPayload),
-      });
+      if (pgRes.ok) {
+        written = true;
+      } else {
+        failures.push(await describeFailure(pgRes, 'Database update'));
+      }
     } catch (err) {
-      console.warn('Postgres notice update warning:', err);
+      failures.push(`Database update failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // 4. Update local storage and cache
@@ -530,10 +629,22 @@ export async function updateNoticeOnCampus(
       // ignore
     }
 
+    if (!written) {
+      return {
+        ok: false,
+        notice: updatedNotice,
+        error: `The notice was not updated. ${failures.join(' ')}`.trim(),
+      };
+    }
+
     // 5. Instant Realtime broadcast to all student devices
     broadcastNoticeEvent('notice_updated', updatedNotice);
 
-    return { ok: true, notice: updatedNotice };
+    return {
+      ok: true,
+      notice: updatedNotice,
+      error: failures.length > 0 ? `Updated with warnings. ${failures.join(' ')}` : undefined,
+    };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
@@ -543,6 +654,11 @@ export async function updateNoticeOnCampus(
  * Permanently deletes a notice from all cloud and local stores with tombstone tracking.
  */
 export async function deleteNoticeFromCampus(id: string): Promise<{ ok: boolean; error?: string }> {
+  const safeId = sanitisePostgrestValue(id);
+  if (!safeId) {
+    return { ok: false, error: 'That notice id is not a valid notice identifier.' };
+  }
+
   // 1. Add to local tombstones
   const localDeleted = await getLocalDeletedNoticeIds();
   if (!localDeleted.includes(id)) {
@@ -562,8 +678,11 @@ export async function deleteNoticeFromCampus(id: string): Promise<{ ok: boolean;
     // ignore
   }
 
+  const authHeaders = await getWriteAuthHeaders();
+  const failures: string[] = [];
+  let deleted = false;
+
   // 3. Update Cloud Storage CDN tombstones
-  const serviceKey = getServiceKey();
   try {
     let existingNotices: NoticeItem[] = [];
     let existingDeleted: string[] = [];
@@ -586,52 +705,64 @@ export async function deleteNoticeFromCampus(id: string): Promise<{ ok: boolean;
       updatedAt: new Date().toISOString(),
     };
 
-    await fetch(ADMIN_NOTICES_STORAGE_URL, {
+    const putRes = await fetch(ADMIN_NOTICES_STORAGE_URL, {
       method: 'PUT',
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders,
       body: JSON.stringify(payload),
     });
+    if (putRes.ok) {
+      deleted = true;
+    } else {
+      failures.push(await describeFailure(putRes, 'Storage upload'));
+    }
   } catch (err) {
-    console.warn('Storage notice deletion warning:', err);
+    failures.push(`Storage upload failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // 4. Delete from Supabase Postgres notices table via REST
+  // 4. Delete from Supabase Postgres notices table via REST.
+  //    The admin notice lives under `source_id`; filtering on the uuid
+  //    primary key would never match, because the admin id is not a uuid.
   try {
-    await fetch(`${SUPABASE_REST_NOTICES_URL}?source_id=eq.${encodeURIComponent(id)}`, {
+    const delRes = await fetch(`${SUPABASE_REST_NOTICES_URL}?source_id=eq.${safeId}`, {
       method: 'DELETE',
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-      },
+      headers: authHeaders,
     });
-    await fetch(`${SUPABASE_REST_NOTICES_URL}?id=eq.${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-      },
-    });
+    if (delRes.ok) {
+      deleted = true;
+    } else {
+      failures.push(await describeFailure(delRes, 'Database delete'));
+    }
   } catch (err) {
-    console.warn('Postgres notice deletion warning:', err);
+    failures.push(`Database delete failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // 4b. Purge via Supabase JS client if available
+  // 4b. Purge via the Supabase JS client, using the sanitised id.
   if (isSupabaseConfigured) {
     try {
-      await supabase.from('notices').delete().or(`id.eq.${id},source_id.eq.${id}`);
-    } catch {
-      // ignore
+      const { error } = await supabase.from('notices').delete().eq('source_id', safeId);
+      if (!error) {
+        deleted = true;
+      } else {
+        failures.push(`Database delete failed: ${error.message}`);
+      }
+    } catch (err) {
+      failures.push(`Database delete failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   // 5. Broadcast instant deletion to all connected devices
-  broadcastNoticeEvent('notice_deleted', { id });
+  if (deleted) {
+    broadcastNoticeEvent('notice_deleted', { id });
+  }
 
-  return { ok: true };
+  if (!deleted) {
+    return {
+      ok: false,
+      error: `The notice was not deleted. ${failures.join(' ')}`.trim(),
+    };
+  }
+
+  return { ok: true, error: failures.length > 0 ? `Deleted with warnings. ${failures.join(' ')}` : undefined };
 }
 
 /**

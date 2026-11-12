@@ -59,6 +59,36 @@ export {
   type DateSheetParseOptions,
 };
 
+/** The session a date sheet belongs to. */
+export interface DateSheetSession {
+  /** The exam month, e.g. `dec`. */
+  month: string;
+  /** The exam year, e.g. 2026. */
+  year: number;
+}
+
+/**
+ * The end-semester session that is running right now.
+ *
+ * The university runs two sessions: the monsoon semester (July to December)
+ * and the winter semester (January to June). The end-semester examination of
+ * the monsoon session is in December, the one of the winter session in June.
+ *
+ * The old default was "December of the current year", which fetched the
+ * December sheet of the current year even when the running session was the
+ * winter one.
+ */
+export function resolveRunningDateSheetSession(now: Date = new Date()): DateSheetSession {
+  const year = now.getFullYear();
+  const monthIndex = now.getMonth(); // 0 = January
+  // July (index 6) starts the monsoon semester.
+  if (monthIndex >= 6) {
+    return { month: 'dec', year };
+  }
+  // January to June: the winter session of this year ends in June.
+  return { month: 'jun', year };
+}
+
 /** One exam slot of a date sheet. */
 export interface DateSheetSlot {
   /** School the date sheet belongs to, e.g. `soe`. */
@@ -1165,8 +1195,12 @@ export async function fetchDateSheet(
   options: DateSheetOptions = {},
 ): Promise<DateSheetResult> {
   const code = schoolCode.trim().toLowerCase();
-  const month = options.month ?? 'dec';
-  const year = options.year ?? new Date().getFullYear();
+  // The running session, not "December of the current year": the December
+  // sheet of the current year is only the right file while the monsoon
+  // session is running.
+  const session = resolveRunningDateSheetSession();
+  const month = options.month ?? session.month;
+  const year = options.year ?? session.year;
   const url = buildDateSheetUrl(code, month, year);
 
   const fetchImpl = options.fetchImpl ?? fetchWithTlsTolerance;

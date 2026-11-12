@@ -16,16 +16,6 @@ export function resolveOcrProvider(
   return env.OCR_PROVIDER === 'vision' && env.VISION_API_KEY ? 'vision' : 'tesseract';
 }
 
-export interface OcrResult {
-  fileUrl: string;
-  rawText: string;
-  confidence: number;
-  extractedDeadlines: string[];
-  isScanned: boolean;
-  provider: OcrProvider;
-  contentHash?: string;
-}
-
 export function hashContent(buf: Buffer | string): string {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
@@ -66,45 +56,4 @@ export function extractDeadlinesFromText(rawText: string): string[] {
   }
 
   return matches;
-}
-
-/**
- * Runs attachment OCR extraction via the configured provider.
- * Tesseract path is local; vision path calls the configured endpoint.
- * Callers pass bytes so the content hash gate applies before any OCR work.
- */
-export async function processAttachmentOcr(
-  fileUrl: string,
-  mockTextFallback?: string,
-  contentBytes?: Buffer,
-): Promise<OcrResult> {
-  const isImage = /\.(jpe?g|png)$/i.test(fileUrl);
-  const isPdf = /\.pdf$/i.test(fileUrl);
-  const provider = resolveOcrProvider();
-
-  let contentHash: string | undefined;
-  if (contentBytes) {
-    contentHash = hashContent(contentBytes);
-    if (isAlreadyProcessed(contentHash)) {
-      return {
-        fileUrl, rawText: '', confidence: 0, extractedDeadlines: [],
-        isScanned: isImage, provider, contentHash,
-      };
-    }
-    markProcessed(contentHash);
-  }
-
-  const text = mockTextFallback || (isPdf ? 'GBU Examination Notice Text' : 'GBU Scanned Circular Text');
-  const cleaned = cleanOcrText(text);
-  const deadlines = extractDeadlinesFromText(cleaned);
-
-  return {
-    fileUrl,
-    rawText: cleaned,
-    confidence: isPdf ? 0.95 : 0.85,
-    extractedDeadlines: deadlines,
-    isScanned: isImage,
-    provider,
-    contentHash,
-  };
 }

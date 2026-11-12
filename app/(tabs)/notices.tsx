@@ -9,44 +9,44 @@ import {
   TouchableOpacity,
   Pressable,
   RefreshControl,
-  Share,
-  Linking,
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Search, Share2, BellRing, X, ExternalLink, Info } from 'lucide-react-native';
-import { NoticeCard, Chip, BottomSheet, PillButton, EmptyState } from '../../src/components/ui';
+import { Search, X, Info, AlertCircle, RefreshCw } from 'lucide-react-native';
+import { NoticeCard, Chip, PillButton, EmptyState } from '../../src/components/ui';
 import { NoticeItem, filterNotices } from '../../src/features/notices/noticeService';
 import { useNoticesQuery } from '../../src/features/notices/useNoticesQuery';
-import { allNoticesAreSample } from '../../src/features/notices/liveNoticeMapping';
 import { useNoticesStatusStore } from '../../src/features/notices/noticesStatus';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 
 // "For me" is a separate chip (it is not a category), so it is not listed here.
-const CATEGORIES = ['datesheet', 'fees', 'scholarship', 'hostel', 'exam', 'event'];
+const CATEGORIES = ['datesheet', 'fees', 'scholarship', 'hostel', 'exam', 'result', 'event', 'placement'];
 
 export default function NoticesScreen() {
-  const { colors, isDark } = useAppTheme();
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   // N99-style removable filters: several can be active at once.
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedSchools, setSelectedSchools] = useState<string[]>([]);
   const [forMeOnly, setForMeOnly] = useState(false);
-  const [activeNotice, setActiveNotice] = useState<NoticeItem | null>(null);
-  const [sheetVisible, setSheetVisible] = useState(false);
 
-  // Offline-first: renders instantly from SQLite cache (or bundled seed on
-  // first launch), then refreshes from Supabase in the background.
-  const { data: notices = [], isFetching, refetch } = useNoticesQuery();
+  // Offline-first: renders instantly from SQLite cache (or bundled archive on
+  // first launch), then refreshes from the university in the background.
+  const {
+    data: notices = [],
+    isFetching,
+    isError,
+    error,
+    refetch,
+  } = useNoticesQuery();
 
-  // The bundled sample is only ever shown when the university's own pages
-  // could not be reached, and the app says so rather than passing it off as
-  // the real thing.
-  const isSampleData = useMemo(() => allNoticesAreSample(notices), [notices]);
+  // Where the list on screen came from. The app says so out loud rather than
+  // passing the bundled archive off as the university's live notices.
   const noticeStatus = useNoticesStatusStore((state) => state);
+  const isLive = noticeStatus.source === 'live';
 
   const availableSchools = useMemo(() => {
     const schools = new Set<string>();
@@ -78,7 +78,6 @@ export default function NoticesScreen() {
   };
 
   const handleOpenNotice = useCallback((notice: NoticeItem) => {
-    setActiveNotice(notice);
     router.push({ pathname: '/notice/[id]', params: { id: notice.id } });
   }, []);
 
@@ -92,6 +91,9 @@ export default function NoticesScreen() {
         date={new Date(n.postedAt).toLocaleDateString('en-IN', {
           day: 'numeric',
           month: 'short',
+          // The bundled archive spans more than one year, so the year has to
+          // be on the card or the list is ambiguous.
+          year: 'numeric',
         })}
         importance={n.importance}
         deadlineBadge={n.deadlineAt ? 'Deadline' : undefined}
@@ -102,40 +104,54 @@ export default function NoticesScreen() {
     [handleOpenNotice],
   );
 
-  const handleShare = async () => {
-    if (activeNotice) {
-      try {
-        await Share.share({
-          message: `[GBU One] ${activeNotice.cleanTitle}\nLink: ${activeNotice.fileUrl}`,
-        });
-      } catch {
-        // ignore
-      }
+  const headerSubtitle = useMemo(() => {
+    if (isFetching) return 'Syncing official GBU sources…';
+    if (noticeStatus.source === 'live') {
+      return 'Live from gbu.ac.in and exams.gbu.ac.in • auto-updated every 15 min';
     }
-  };
+    if (noticeStatus.source === 'cache') {
+      return 'Showing the copy saved on this phone • pull to refresh';
+    }
+    return 'Bundled archive — the university pages could not be reached';
+  }, [isFetching, noticeStatus.source]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Top Header */}
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Notices</Text>
-        <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
-          {isFetching
-            ? 'Syncing official GBU sources…'
-            : isSampleData
-              ? 'Sample data — the university pages could not be reached'
-              : 'Live from gbu.ac.in and exams.gbu.ac.in • auto-updated every 15 min'}
-        </Text>
+        <Text style={[styles.headerSub, { color: colors.textSecondary }]}>{headerSubtitle}</Text>
       </View>
 
-      {isSampleData ? (
+      {/* The banner appears once the refresh has finished, so it never
+          flashes while the screen is still painting the saved copy. */}
+      {!isLive && !isFetching ? (
         <View style={[styles.sampleBanner, { backgroundColor: colors.warningSoft, borderColor: colors.warning }]}>
           <Info size={15} color={colors.warning} style={{ marginRight: 8 }} />
           <Text style={[styles.sampleBannerText, { color: colors.textPrimary }]}>
-            These are example notices, not real university notices. Pull to refresh once you are
-            online.
+            {noticeStatus.source === 'sample'
+              ? 'These notices come from the archive bundled with the app. They were captured earlier and were not fetched from the university just now. Pull to refresh once you are online.'
+              : 'These notices come from the copy saved on this phone. Pull to refresh to fetch the latest from the university.'}
             {noticeStatus.reason ? ` (${noticeStatus.reason})` : ''}
           </Text>
+        </View>
+      ) : null}
+
+      {/* A failed refresh must not look like a normal screen. */}
+      {isError ? (
+        <View style={[styles.errorBanner, { backgroundColor: colors.dangerSoft, borderColor: colors.danger }]}>
+          <AlertCircle size={15} color={colors.danger} style={{ marginRight: 8 }} />
+          <Text style={[styles.errorBannerText, { color: colors.textPrimary }]}>
+            {`Could not reach the university: ${error instanceof Error ? error.message : String(error)}`}
+          </Text>
+          <PillButton
+            label="Retry"
+            onPress={onRefresh}
+            variant="outline"
+            size="sm"
+            style={styles.retryButton}
+            icon={<RefreshCw size={14} color={colors.accent} style={{ marginRight: 4 }} />}
+          />
         </View>
       ) : null}
 
@@ -253,64 +269,6 @@ export default function NoticesScreen() {
         }
         renderItem={renderNoticeItem}
       />
-
-      {/* Notice Detail Bottom Sheet */}
-      <BottomSheet
-        visible={sheetVisible}
-        onClose={() => setSheetVisible(false)}
-        title={activeNotice?.category?.toUpperCase()}
-      >
-        {activeNotice && (
-          <View style={styles.sheetBody}>
-            <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>{activeNotice.cleanTitle}</Text>
-            <Text style={[styles.sheetMeta, { color: colors.textSecondary }]}>
-              Posted by {activeNotice.source.toUpperCase()} • {new Date(activeNotice.postedAt).toLocaleDateString()}
-            </Text>
-
-            <View style={[styles.sheetSummaryCard, { backgroundColor: colors.surfaceMuted, borderColor: colors.borderGlass }]}>
-              <Text style={[styles.sheetSummaryHeader, { color: colors.accent }]}>ORIGINAL NOTICE DETAILS</Text>
-              <Text style={[styles.sheetRawTitle, { color: colors.textPrimary }]}>{activeNotice.title}</Text>
-              {activeNotice.threadUpdateCount ? (
-                <Text style={[styles.sheetThreadNote, { color: colors.warning }]}>
-                  • This notice has been extended or updated {activeNotice.threadUpdateCount} times.
-                </Text>
-              ) : null}
-            </View>
-
-            {/* Non-overlapping Actions Bar */}
-            <View style={styles.sheetActions}>
-              <PillButton
-                label="Original"
-                onPress={() => {
-                  if (activeNotice?.fileUrl) {
-                    Linking.openURL(activeNotice.fileUrl).catch(() => {});
-                  }
-                }}
-                variant={isDark ? 'dark' : 'white'}
-                size="sm"
-                icon={<ExternalLink size={14} color={colors.textPrimary} style={{ marginRight: 4 }} />}
-                style={styles.sheetActionButton}
-              />
-              <PillButton
-                label="Share"
-                onPress={handleShare}
-                variant="outline"
-                size="sm"
-                icon={<Share2 size={14} color={colors.accent} style={{ marginRight: 4 }} />}
-                style={styles.sheetActionButton}
-              />
-              <PillButton
-                label="Remind"
-                onPress={() => setSheetVisible(false)}
-                variant="primary"
-                size="sm"
-                icon={<BellRing size={14} color={colors.onAccent} style={{ marginRight: 4 }} />}
-                style={styles.sheetActionButton}
-              />
-            </View>
-          </View>
-        )}
-      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -348,6 +306,25 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 12,
     lineHeight: 17,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radius.card,
+    borderWidth: 1,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  retryButton: {
+    marginLeft: 8,
   },
   searchSection: {
     paddingHorizontal: theme.spacing.lg,
@@ -393,51 +370,5 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: theme.spacing.lg,
     paddingBottom: 110,
-  },
-  sheetBody: {
-    paddingVertical: 8,
-  },
-  sheetTitle: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 18,
-    lineHeight: 24,
-    marginBottom: 4,
-  },
-  sheetMeta: {
-    fontFamily: 'Inter-Regular',
-    fontSize: 12,
-    marginBottom: 16,
-  },
-  sheetSummaryCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    marginBottom: 20,
-  },
-  sheetSummaryHeader: {
-    fontFamily: 'Inter-SemiBold',
-    fontSize: 10,
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  sheetRawTitle: {
-    fontFamily: 'Inter-Regular',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  sheetThreadNote: {
-    fontFamily: 'Inter-Medium',
-    fontSize: 12,
-    marginTop: 8,
-  },
-  sheetActions: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sheetActionButton: {
-    flex: 1,
-    minWidth: 90,
   },
 });

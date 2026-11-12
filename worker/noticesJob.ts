@@ -14,13 +14,34 @@ import {
   extractNoticeDeadline,
   groupNoticeThreads,
 } from '../src/features/notices/noticeService';
-import { WORKER_CONFIG } from './sources.config';
+import { SOURCE_KEYS, WORKER_CONFIG } from './sources.config';
+import { fetchWithRetry, politeWait } from './http';
+import { ALWAYS_FETCH, type SourceScheduler } from './sourceScheduler';
 
 export interface ScrapedRawNotice {
   source: 'main' | 'exams' | 'hostel' | 'ohms' | 'csms' | 'digiforms' | 'other';
   rawTitle: string;
   url: string;
   dateStr: string;
+}
+
+/** How one source fared during a run. */
+export interface SourceParseResult {
+  /** The source key, e.g. `main` or `exams`. */
+  source: string;
+  /** How many notices the source yielded. */
+  count: number;
+  /** True when the source could not be read at all. */
+  failed: boolean;
+  /** True when the source answered but yielded nothing (layout change?). */
+  suspicious: boolean;
+  /**
+   * True when the source was not read at all because its interval had not
+   * elapsed. Such a source is NOT suspicious: it was never asked.
+   */
+  skipped: boolean;
+  /** The reason the source failed, when it did. */
+  reason?: string;
 }
 
 export interface NoticesWorkerResult {
@@ -32,16 +53,22 @@ export interface NoticesWorkerResult {
   /** sourceIds first seen this run (safe to push; never old items). */
   newSourceIds: string[];
   timestamp: string;
+  /** One entry per source that was read, so the caller can guard per source. */
+  sourceResults: SourceParseResult[];
 }
 
 /**
- * Generates deterministic sourceId hash from source, url, and date using SHA-256 stable hashing
+ * Generates the deterministic sourceId of a notice.
+ *
+ * The hash is a full SHA-256 digest. A 32-bit hash collides at about 2 000
+ * notices (p ~ 0.4 %), and a collision silently overwrites an unrelated
+ * notice, so the full digest is used.
  */
 export function generateSourceId(source: string, url: string, dateStr: string): string {
   // Normalize test.gbu.ac.in mirror to www.gbu.ac.in (they are byte-identical)
   const normalizedUrl = url.replace(/test\.gbu\.ac\.in/gi, 'www.gbu.ac.in');
   const input = `${source}_${normalizedUrl.trim().toLowerCase()}_${dateStr.trim()}`;
-  const sha = crypto.createHash('sha256').update(input).digest('hex').slice(0, 16);
+  const sha = crypto.createHash('sha256').update(input).digest('hex');
   return `src_${sha}`;
 }
 
@@ -160,6 +187,34 @@ export function parseMainNoticesHtml(html: string): ScrapedRawNotice[] {
 }
 
 /**
+ * Reads the publication date of an exams-portal notice.
+ *
+ * The date has to be read from the date paragraph only. The old regex
+ * searched the whole notice block, so a date inside an attachment file name
+ * (`.../Sheet_25-08-2026.pdf`) became the publication date of the notice.
+ */
+export function extractExamsNoticeDate(block: string): string | null {
+  // The paragraphs (or spans) that carry a date, and only those.
+  const dateBlockRe =
+    /<(?:p|span|div|time|small)\b[^>]*\bclass\s*=\s*["'][^"']*\b(?:date|posted|publish\w*)\b[^"']*["'][^>]*>([\s\S]{0,200}?)<\/(?:p|span|div|time|small)>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = dateBlockRe.exec(block)) !== null) {
+    const found = match[1].match(
+      /([0-3]?[0-9][/.-][0-1]?[0-9][/.-][2-9][0-9]{3}|[0-3]?[0-9]\s+[A-Za-z]{3,9}\s+[2-9][0-9]{3})/,
+    );
+    if (found) return found[1].trim();
+  }
+
+  // "Posted on: 01-7-2026" and "Date: 10-10-2026" inside a short paragraph.
+  const labelledRe =
+    /(?:Posted\s+on|Date|Published(?:\s+on)?)\s*:?\s*([0-3]?[0-9][/.-][0-1]?[0-9][/.-][2-9][0-9]{3}|[0-3]?[0-9]\s+[A-Za-z]{3,9}\s+[2-9][0-9]{3})/i;
+  const labelled = labelledRe.exec(block);
+  if (labelled) return labelled[1].trim();
+
+  return null;
+}
+
+/**
  * Parses HTML from Exams portal (exams.gbu.ac.in)
  */
 export function parseExamsNoticesHtml(html: string): ScrapedRawNotice[] {
@@ -174,9 +229,7 @@ export function parseExamsNoticesHtml(html: string): ScrapedRawNotice[] {
     const block = blockMatch[1];
     const hMatch = block.match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/i);
     const linkMatch = block.match(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
-    const dateMatch = block.match(
-      /(?:Posted on:|Date:)?\s*([0-3]?[0-9][/.-][0-1]?[0-9][/.-][2-9][0-9]{3})/i
-    );
+    const dateStr = extractExamsNoticeDate(block);
 
     if (hMatch && linkMatch) {
       const title = decodeHtmlEntities(hMatch[1].replace(/<[^>]+>/g, '').trim());
@@ -184,13 +237,14 @@ export function parseExamsNoticesHtml(html: string): ScrapedRawNotice[] {
       if (!href.startsWith('http')) {
         href = `https://exams.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
       }
-      const dateStr = dateMatch ? dateMatch[1].trim() : new Date().toISOString().split('T')[0];
       if (title.length > 2 && !/^view\s+attachment$/i.test(title)) {
         results.push({
           source: 'exams',
           rawTitle: title,
           url: href,
-          dateStr,
+          // A notice without a readable date keeps the "undated" marker, so
+          // it is not re-dated to today on every run.
+          dateStr: dateStr ?? 'undated',
         });
       }
     }
@@ -233,7 +287,8 @@ export function parseHostelNoticesHtml(html: string): ScrapedRawNotice[] {
   while ((match = linkRegex.exec(html)) !== null) {
     let href = match[1].trim();
     if (!href.startsWith('http')) {
-      href = `http://hostels.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
+      // HTTPS only: the attachment pipeline refuses cleartext downloads.
+      href = `https://hostels.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
     }
     const rawTitle = match[2].replace(/<[^>]+>/g, '').trim();
     if (rawTitle.length > 3) {
@@ -255,7 +310,7 @@ export function parseHostelNoticesHtml(html: string): ScrapedRawNotice[] {
     if (link && !results.some((r) => r.url.includes(link[1]))) {
       let href = link[1].trim();
       if (!href.startsWith('http')) {
-        href = `http://hostels.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
+        href = `https://hostels.gbu.ac.in${href.startsWith('/') ? '' : '/'}${href}`;
       }
       const rawTitle = link[2].replace(/<[^>]+>/g, '').trim();
       if (rawTitle.length > 3) {
@@ -442,11 +497,36 @@ export function enrichScrapedNotice(raw: ScrapedRawNotice): NoticeItem {
   };
 }
 
+/** One source the job reads, with the config that governs it. */
+interface JobSource {
+  /** The key used in `worker_runs.source`. */
+  key: string;
+  /** The name of the source, for the logs. */
+  name: string;
+  /** The primary URL. */
+  url: string;
+  /** The fallback URL, when there is one. */
+  fallbackUrl?: string;
+  /** How often the source may be fetched, in minutes. */
+  intervalMinutes: number;
+  /** The pause between two requests to the same host, in ms. */
+  rateLimitMs: number;
+  /** The timeout of one request, in ms. */
+  timeoutMs: number;
+}
+
 export class NoticesWorkerJob {
   private knownSourceIds: Set<string> = new Set();
+  private readonly scheduler: SourceScheduler;
+  /** The sources that were skipped because their interval had not elapsed. */
+  readonly skippedSources: Array<{ source: string; reason: string }> = [];
 
-  constructor(existingSourceIds: string[] = []) {
+  constructor(
+    existingSourceIds: string[] = [],
+    options: { scheduler?: SourceScheduler } = {},
+  ) {
     this.knownSourceIds = new Set(existingSourceIds);
+    this.scheduler = options.scheduler ?? ALWAYS_FETCH;
   }
 
   /** Seeds the dedupe set from Supabase-stored source_ids (idempotent reruns). */
@@ -454,33 +534,91 @@ export class NoticesWorkerJob {
     for (const id of ids) this.knownSourceIds.add(id);
   }
 
+  /**
+   * Fetches a page of the university.
+   *
+   * The request is polite (a pause before the call), bounded (a timeout) and
+   * retried with a backoff, as docs/DATA_SOURCES.md requires.
+   */
   async fetchHtml(url: string, timeoutMs: number = 15000): Promise<string> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    await politeWait(url, this.currentRateLimitMs);
 
+    const response = await fetchWithRetry(
+      url,
+      { headers: { 'User-Agent': WORKER_CONFIG.userAgent } },
+      {
+        attempts: 3,
+        baseDelayMs: 1000,
+        timeoutMs,
+        fetchImpl: (target, init) => fetchWithTlsTolerance(target, init),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${url}: ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    // GBU soft-404 trap: unknown paths return HTTP 200 with a ~38,725-byte
+    // "404 - Page not found" page. Never treat that as data.
+    if (isSoft404(html)) {
+      throw new Error(`Soft-404 body for ${url}`);
+    }
+
+    return html;
+  }
+
+  /** The pause that applies to the request that is currently running. */
+  private currentRateLimitMs = 1000;
+
+  /**
+   * Reads one source.
+   *
+   * @param mockHtmlMap The fixture map of a test run. When it is given, the
+   *   source is read from it and never from the network - a source that is
+   *   not in the map is empty.
+   * @param mockKey The key of the source in the fixture map.
+   * @returns The HTML of the source, or an empty string when the source
+   *   could not be read (the reason is in `error`).
+   */
+  private async readSource(
+    source: JobSource,
+    mockHtmlMap: Record<string, string> | undefined,
+    mockKey: string,
+  ): Promise<{ html: string; error?: string; skipped?: string }> {
+    if (mockHtmlMap) {
+      return { html: mockHtmlMap[mockKey] ?? '' };
+    }
+
+    const decision = await this.scheduler.shouldFetch(source.key, source.intervalMinutes);
+    if (decision.skip) {
+      const reason = `${source.name}: skipped (${decision.reason})`;
+      this.skippedSources.push({ source: source.key, reason });
+      console.log(JSON.stringify({ event: 'worker_source_skipped', source: source.key, reason: decision.reason }));
+      return { html: '', skipped: decision.reason };
+    }
+
+    this.currentRateLimitMs = source.rateLimitMs;
     try {
-      const response = await fetchWithTlsTolerance(url, {
-        headers: {
-          'User-Agent': WORKER_CONFIG.userAgent,
-        },
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ${url}: ${response.status}`);
+      const html = await this.fetchHtml(source.url, source.timeoutMs);
+      await this.scheduler.markFetched(source.key, 0);
+      return { html };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`Worker: ${source.name} fetch failed, trying fallback:`, message);
+      if (source.fallbackUrl) {
+        try {
+          const html = await this.fetchHtml(source.fallbackUrl, source.timeoutMs);
+          await this.scheduler.markFetched(source.key, 0);
+          return { html };
+        } catch (err2) {
+          const fallbackMessage = err2 instanceof Error ? err2.message : String(err2);
+          console.warn(`Worker: ${source.name} fallback failed:`, fallbackMessage);
+          return { html: '', error: `${message}; fallback: ${fallbackMessage}` };
+        }
       }
-
-      const html = await response.text();
-
-      // GBU soft-404 trap: unknown paths return HTTP 200 with a ~38,725-byte
-      // "404 - Page not found" page. Never treat that as data.
-      if (isSoft404(html)) {
-        throw new Error(`Soft-404 body for ${url}`);
-      }
-
-      return html;
-    } finally {
-      clearTimeout(timeoutId);
+      return { html: '', error: message };
     }
   }
 
@@ -489,115 +627,136 @@ export class NoticesWorkerJob {
    */
   async runJob(mockHtmlMap?: Record<string, string>): Promise<NoticesWorkerResult> {
     const scraped: ScrapedRawNotice[] = [];
+    const sourceResults: SourceParseResult[] = [];
+
+    /**
+     * Records how one source fared.
+     *
+     * A source that answered but yielded nothing is "suspicious": the page
+     * layout probably changed. The rows that were stored earlier are kept -
+     * an empty parse must never be treated as "there are no notices".
+     *
+     * A source that was skipped because its interval had not elapsed is not
+     * suspicious: it was never asked.
+     */
+    const record = (
+      source: string,
+      items: unknown[],
+      error?: string,
+      skipped?: string,
+    ): void => {
+      const suspicious = !skipped && isEmptyParseSuspicious(items);
+      sourceResults.push({
+        source,
+        count: items.length,
+        failed: Boolean(error),
+        suspicious,
+        skipped: Boolean(skipped),
+        reason:
+          error ??
+          skipped ??
+          (suspicious ? 'empty parse (possible layout change)' : undefined),
+      });
+    };
 
     // 1. Main notices
-    let mainHtml = '';
-    if (mockHtmlMap) {
-      mainHtml = mockHtmlMap.main || '';
-    } else {
-      try {
-        mainHtml = await this.fetchHtml(WORKER_CONFIG.sources.mainNotices.url);
-      } catch (err) {
-        console.warn('Worker: Main notices fetch failed, trying fallback:', err);
-        try {
-          mainHtml = await this.fetchHtml(WORKER_CONFIG.sources.mainNotices.fallbackUrl);
-        } catch (e2) {
-          console.warn('Worker: Main notices fallback failed:', e2);
-        }
-      }
-    }
-
-    if (mainHtml) {
-      const mainItems = parseMainNoticesHtml(mainHtml);
-      scraped.push(...mainItems);
+    {
+      const source: JobSource = {
+        key: SOURCE_KEYS.mainNotices,
+        name: WORKER_CONFIG.sources.mainNotices.name,
+        url: WORKER_CONFIG.sources.mainNotices.url,
+        fallbackUrl: WORKER_CONFIG.sources.mainNotices.fallbackUrl,
+        intervalMinutes: WORKER_CONFIG.sources.mainNotices.intervalMinutes,
+        rateLimitMs: WORKER_CONFIG.sources.mainNotices.rateLimitMs,
+        timeoutMs: WORKER_CONFIG.sources.mainNotices.timeoutMs,
+      };
+      const { html, error, skipped } = await this.readSource(source, mockHtmlMap, 'main');
+      const items = html ? parseMainNoticesHtml(html) : [];
+      scraped.push(...items);
+      record('main', items, error, skipped);
     }
 
     // 2. Exams notices
-    let examsHtml = '';
-    if (mockHtmlMap) {
-      examsHtml = mockHtmlMap.exams || '';
-    } else {
-      try {
-        examsHtml = await this.fetchHtml(WORKER_CONFIG.sources.examsNotices.url);
-      } catch (err) {
-        console.warn('Worker: Exams notices fetch failed, trying fallback:', err);
-        try {
-          const fb = WORKER_CONFIG.sources.examsNotices.fallbackUrl;
-          if (fb) examsHtml = await this.fetchHtml(fb);
-        } catch (e2) {
-          console.warn('Worker: Exams fallback failed:', e2);
-        }
-      }
-    }
-
-    if (examsHtml) {
-      const examItems = parseExamsNoticesHtml(examsHtml);
-      scraped.push(...examItems);
+    {
+      const source: JobSource = {
+        key: SOURCE_KEYS.examsNotices,
+        name: WORKER_CONFIG.sources.examsNotices.name,
+        url: WORKER_CONFIG.sources.examsNotices.url,
+        fallbackUrl: WORKER_CONFIG.sources.examsNotices.fallbackUrl,
+        intervalMinutes: WORKER_CONFIG.sources.examsNotices.intervalMinutes,
+        rateLimitMs: WORKER_CONFIG.sources.examsNotices.rateLimitMs,
+        timeoutMs: WORKER_CONFIG.sources.examsNotices.timeoutMs,
+      };
+      const { html, error, skipped } = await this.readSource(source, mockHtmlMap, 'exams');
+      const items = html ? parseExamsNoticesHtml(html) : [];
+      scraped.push(...items);
+      record('exams', items, error, skipped);
     }
 
     // 3. Hostel notices
-    let hostelHtml = '';
-    if (mockHtmlMap) {
-      hostelHtml = mockHtmlMap.hostel || '';
-    } else {
-      try {
-        hostelHtml = await this.fetchHtml(WORKER_CONFIG.sources.hostels.url);
-      } catch (err) {
-        console.warn('Worker: Hostel notices fetch failed:', err);
-      }
-    }
-
-    if (hostelHtml) {
-      const hostelItems = parseHostelNoticesHtml(hostelHtml);
-      scraped.push(...hostelItems);
+    {
+      const source: JobSource = {
+        key: SOURCE_KEYS.hostels,
+        name: WORKER_CONFIG.sources.hostels.name,
+        url: WORKER_CONFIG.sources.hostels.url,
+        intervalMinutes: WORKER_CONFIG.sources.hostels.intervalMinutes,
+        rateLimitMs: WORKER_CONFIG.sources.hostels.rateLimitMs,
+        timeoutMs: WORKER_CONFIG.sources.hostels.timeoutMs,
+      };
+      const { html, error, skipped } = await this.readSource(source, mockHtmlMap, 'hostel');
+      const items = html ? parseHostelNoticesHtml(html) : [];
+      scraped.push(...items);
+      record('hostel', items, error, skipped);
     }
 
     // 4. OHMS notices
-    let ohmsHtml = '';
-    if (mockHtmlMap) {
-      ohmsHtml = mockHtmlMap.ohms || '';
-    } else if (WORKER_CONFIG.sources.ohms) {
-      try {
-        ohmsHtml = await this.fetchHtml(WORKER_CONFIG.sources.ohms.url);
-      } catch (err) {
-        console.warn('Worker: OHMS notices fetch failed:', err);
-      }
-    }
-    if (ohmsHtml) {
-      const ohmsItems = parseSubdomainHtml(ohmsHtml, 'ohms', WORKER_CONFIG.sources.ohms.url);
-      scraped.push(...ohmsItems);
+    {
+      const source: JobSource = {
+        key: SOURCE_KEYS.ohms,
+        name: WORKER_CONFIG.sources.ohms.name,
+        url: WORKER_CONFIG.sources.ohms.url,
+        intervalMinutes: WORKER_CONFIG.sources.ohms.intervalMinutes,
+        rateLimitMs: WORKER_CONFIG.sources.ohms.rateLimitMs,
+        timeoutMs: WORKER_CONFIG.sources.ohms.timeoutMs,
+      };
+      const { html, error, skipped } = await this.readSource(source, mockHtmlMap, 'ohms');
+      const items = html ? parseSubdomainHtml(html, 'ohms', WORKER_CONFIG.sources.ohms.url) : [];
+      scraped.push(...items);
+      record('ohms', items, error, skipped);
     }
 
     // 5. CSMS notices
-    let csmsHtml = '';
-    if (mockHtmlMap) {
-      csmsHtml = mockHtmlMap.csms || '';
-    } else if (WORKER_CONFIG.sources.csms) {
-      try {
-        csmsHtml = await this.fetchHtml(WORKER_CONFIG.sources.csms.url);
-      } catch (err) {
-        console.warn('Worker: CSMS notices fetch failed:', err);
-      }
-    }
-    if (csmsHtml) {
-      const csmsItems = parseSubdomainHtml(csmsHtml, 'csms', WORKER_CONFIG.sources.csms.url);
-      scraped.push(...csmsItems);
+    {
+      const source: JobSource = {
+        key: SOURCE_KEYS.csms,
+        name: WORKER_CONFIG.sources.csms.name,
+        url: WORKER_CONFIG.sources.csms.url,
+        intervalMinutes: WORKER_CONFIG.sources.csms.intervalMinutes,
+        rateLimitMs: WORKER_CONFIG.sources.csms.rateLimitMs,
+        timeoutMs: WORKER_CONFIG.sources.csms.timeoutMs,
+      };
+      const { html, error, skipped } = await this.readSource(source, mockHtmlMap, 'csms');
+      const items = html ? parseSubdomainHtml(html, 'csms', WORKER_CONFIG.sources.csms.url) : [];
+      scraped.push(...items);
+      record('csms', items, error, skipped);
     }
 
     // 6. DigiForms notices
-    let digiHtml = '';
-    if (mockHtmlMap) {
-      digiHtml = mockHtmlMap.digiforms || '';
-    } else if (WORKER_CONFIG.sources.digiforms) {
-      try {
-        digiHtml = await this.fetchHtml(WORKER_CONFIG.sources.digiforms.url);
-      } catch (err) {
-        console.warn('Worker: DigiForms notices fetch failed:', err);
-      }
-    }
-    if (digiHtml) {
-      const digiItems = parseSubdomainHtml(digiHtml, 'digiforms', WORKER_CONFIG.sources.digiforms.url);
-      scraped.push(...digiItems);
+    {
+      const source: JobSource = {
+        key: SOURCE_KEYS.digiforms,
+        name: WORKER_CONFIG.sources.digiforms.name,
+        url: WORKER_CONFIG.sources.digiforms.url,
+        intervalMinutes: WORKER_CONFIG.sources.digiforms.intervalMinutes,
+        rateLimitMs: WORKER_CONFIG.sources.digiforms.rateLimitMs,
+        timeoutMs: WORKER_CONFIG.sources.digiforms.timeoutMs,
+      };
+      const { html, error, skipped } = await this.readSource(source, mockHtmlMap, 'digiforms');
+      const items = html
+        ? parseSubdomainHtml(html, 'digiforms', WORKER_CONFIG.sources.digiforms.url)
+        : [];
+      scraped.push(...items);
+      record('digiforms', items, error, skipped);
     }
 
     // 7. Enrich & Deduplicate
@@ -614,10 +773,10 @@ export class NoticesWorkerJob {
       }
     }
 
-    // 4. Thread grouping
+    // 8. Thread grouping
     const grouped = groupNoticeThreads(enrichedItems);
 
-    // 5. Select push candidates (importance >= 3)
+    // 9. Select push candidates (importance >= 3)
     const pushCandidates = grouped.filter((n) => n.importance >= 3);
 
     return {
@@ -628,6 +787,7 @@ export class NoticesWorkerJob {
       pushCandidates,
       newSourceIds: newItems.map((n) => n.sourceId),
       timestamp: new Date().toISOString(),
+      sourceResults,
     };
   }
 }

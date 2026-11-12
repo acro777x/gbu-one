@@ -100,3 +100,35 @@ export function resolveClassKeyForRow(
   return normalised.length > 0 ? normalised : null;
 }
 
+/**
+ * How a device token row is written to the database.
+ *
+ * - `insert` - a guest row (no user id). The `device tokens guest insert`
+ *   policy allows an INSERT by `anon` with a null owner, and nothing else:
+ *   there is no update policy for `anon`. An upsert is an insert that may
+ *   turn into an update, so for a guest it is refused by row level security
+ *   the moment the token is already in the table.
+ * - `upsert` - a signed-in row. The `device tokens own` policy covers the
+ *   whole lifecycle for `authenticated`.
+ */
+export type DeviceTokenWriteMode = 'insert' | 'upsert';
+
+/** Picks the write mode that the row level security policies allow. */
+export function resolveDeviceTokenWriteMode(
+  userId: string | null | undefined,
+): DeviceTokenWriteMode {
+  return isValidSupabaseUserId(userId) ? 'upsert' : 'insert';
+}
+
+/**
+ * True when a failed write was only the token already being there.
+ *
+ * The token is unique, so a second registration of the same device is a
+ * duplicate rather than a failure: the device IS registered.
+ */
+export function isDuplicateTokenError(error: {
+  code?: string | null;
+} | null | undefined): boolean {
+  return error?.code === '23505';
+}
+

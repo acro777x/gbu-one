@@ -2,7 +2,12 @@
  * GBU One — Exam datesheet query (offline-first).
  *
  * Queries live class-wise date slots from Supabase (`exam_date_slots`)
- * with fallback to `exam_datesheets` and authentic bundled seeds per classKey.
+ * with fallback to `exam_datesheets` and the bundled sample per classKey.
+ *
+ * The class filter is pushed down to the server: the table holds a slot for
+ * every class of every school, so pulling the whole table and filtering it
+ * in JavaScript would download the entire examination schedule to show one
+ * student's own rows.
  */
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -12,6 +17,8 @@ import {
 import {
   matchClassKey,
   buildClassKey,
+  buildCanonicalClassKey,
+  baseClassKeyOf,
   rowToExamSlot,
   examSlotToDatesheetEntry,
   type DateSlotRow,
@@ -34,6 +41,21 @@ interface DatesheetRow {
 
 const SHIFTS: DatesheetEntry['shift'][] = ['Morning', 'Evening'];
 
+/** Where the rows on screen came from. */
+export type DatesheetSource = 'live' | 'sample';
+
+/** The exam type the phase stands for in the database. */
+export function examTypeForPhase(
+  phase: 'end' | 'practicals' | 'back' | 'mid',
+): 'mid_sem' | 'end_sem' | 'practical' | null {
+  if (phase === 'mid') return 'mid_sem';
+  if (phase === 'end') return 'end_sem';
+  if (phase === 'practicals') return 'practical';
+  // Back papers are end-semester papers, so the type is not narrowed down
+  // any further here; the back-paper flag does that.
+  return null;
+}
+
 /** Maps a legacy database row to the shape the exam hub renders. */
 export function datesheetRowToEntry(
   row: DatesheetRow,
@@ -51,7 +73,30 @@ export function datesheetRowToEntry(
     examTime: 'See the official date sheet',
     shift,
     roomBlock: String(row.school ?? ''),
+    isSample: false,
   };
+}
+
+/** The result of one date-sheet lookup, with the origin of the rows. */
+export interface DatesheetResult {
+  entries: DatesheetEntry[];
+  source: DatesheetSource;
+}
+
+/**
+ * The class key of a student: the programme, the semester, the batch and the
+ * section. The base key (without batch and section) is what the database is
+ * filtered on.
+ */
+export function classKeysForStudent(
+  programmeCode: string,
+  semester: string,
+  enrolledClassKey?: string,
+): { canonical: string; base: string } {
+  const canonical = enrolledClassKey
+    ? enrolledClassKey.trim().toLowerCase()
+    : buildCanonicalClassKey(programmeCode, semester);
+  return { canonical, base: baseClassKeyOf(canonical) || buildClassKey(programmeCode, semester) };
 }
 
 /** Loads the date sheet for a programme/class from the backend or local cache. */
@@ -61,20 +106,41 @@ export async function listDatesheet(
   enrolledClassKey?: string,
   phase: 'end' | 'practicals' | 'back' | 'mid' = 'end',
 ): Promise<DatesheetEntry[]> {
-  const classKey = enrolledClassKey || buildClassKey(programmeCode, semester);
-  const fallback = getClassDatesheet(classKey, phase);
+  const { entries } = await fetchDatesheet(programmeCode, semester, enrolledClassKey, phase);
+  return entries;
+}
+
+/**
+ * Loads the date sheet and says where it came from, so the screen can label
+ * the bundled sample instead of passing it off as the official schedule.
+ */
+export async function fetchDatesheet(
+  programmeCode: string,
+  semester: string,
+  enrolledClassKey?: string,
+  phase: 'end' | 'practicals' | 'back' | 'mid' = 'end',
+): Promise<DatesheetResult> {
+  const { canonical, base } = classKeysForStudent(programmeCode, semester, enrolledClassKey);
+  const fallback = getClassDatesheet(canonical, phase);
 
   try {
     let rows: DateSlotRow[] = [];
 
-    // 1. Try querying rich exam_date_slots table if Supabase is configured
+    // 1. Try querying rich exam_date_slots table if Supabase is configured.
+    //    The filters are pushed down: only this student's class and this
+    //    exam type come back.
     if (isSupabaseConfigured) {
       try {
-        const { data: slotData, error: slotErr } = await supabase
+        let query = supabase
           .from('exam_date_slots')
           .select('*')
+          .or(`class_key.eq.${base},class_key.like.${base}*`)
           .order('exam_date', { ascending: true })
           .limit(500);
+        const examType = examTypeForPhase(phase);
+        if (examType) query = query.eq('exam_type', examType);
+
+        const { data: slotData, error: slotErr } = await query;
 
         if (!slotErr && slotData && slotData.length > 0) {
           rows = slotData as DateSlotRow[];
@@ -118,7 +184,7 @@ export async function listDatesheet(
 
     if (rows.length > 0) {
       const matched = rows.filter((r) => {
-        const matchesClass = matchClassKey(classKey, r.class_key || buildClassKey(r.programme));
+        const matchesClass = matchClassKey(canonical, r.class_key || buildClassKey(r.programme));
         if (!matchesClass) return false;
 
         // Filter by phase if applicable
@@ -131,7 +197,8 @@ export async function listDatesheet(
       });
 
       if (matched.length > 0) {
-        return matched.map((r) => examSlotToDatesheetEntry(rowToExamSlot(r)));
+        const entries = dedupeSlots(matched).map((r) => examSlotToDatesheetEntry(rowToExamSlot(r)));
+        return { entries: entries.map((entry) => ({ ...entry, isSample: false })), source: 'live' };
       }
     }
 
@@ -146,16 +213,44 @@ export async function listDatesheet(
         .limit(50);
 
       if (!error && data && data.length > 0) {
-        return (data as DatesheetRow[]).map((row) =>
-          datesheetRowToEntry(row, programmeCode, semester),
-        );
+        return {
+          entries: (data as DatesheetRow[]).map((row) =>
+            datesheetRowToEntry(row, programmeCode, semester),
+          ),
+          source: 'live',
+        };
       }
     }
 
-    return fallback;
+    return { entries: fallback, source: 'sample' };
   } catch {
-    return fallback;
+    return { entries: fallback, source: 'sample' };
   }
+}
+
+/**
+ * Removes the rows the worker left behind from an earlier run.
+ *
+ * The slot key carries the batch, so a re-run with a corrected batch writes
+ * new rows and the old ones stay in the table. Two rows that describe the
+ * same exam for the same class are one row for the student.
+ */
+function dedupeSlots(rows: DateSlotRow[]): DateSlotRow[] {
+  const seen = new Set<string>();
+  const unique: DateSlotRow[] = [];
+  for (const row of rows) {
+    const key = [
+      row.class_key ?? '',
+      row.exam_date,
+      row.slot,
+      row.subject_code,
+      row.exam_type ?? '',
+    ].join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+  }
+  return unique;
 }
 
 export function useDatesheetQuery(
@@ -164,11 +259,11 @@ export function useDatesheetQuery(
   enrolledClassKey?: string,
   phase: 'end' | 'practicals' | 'back' | 'mid' = 'end',
 ) {
-  const key = enrolledClassKey || buildClassKey(programmeCode, semester);
+  const key = classKeysForStudent(programmeCode, semester, enrolledClassKey).canonical;
   return useQuery<DatesheetEntry[]>({
     queryKey: [...DATESHEET_QUERY_KEY, programmeCode, semester, key, phase],
     queryFn: async () => {
-      const entries = await listDatesheet(programmeCode, semester, key, phase);
+      const { entries } = await fetchDatesheet(programmeCode, semester, key, phase);
       return entries.length > 0 ? entries : getClassDatesheet(key, phase);
     },
     initialData: getClassDatesheet(key, phase),

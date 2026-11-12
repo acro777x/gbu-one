@@ -92,6 +92,30 @@ describe('upload validation', () => {
     });
   });
 
+  it('rejects DOC and DOCX, which the storage bucket does not allow', () => {
+    // The bucket only accepts application/pdf, image/jpeg and image/png.
+    // A Word file used to pass the app's validation and was then refused
+    // by the bucket with a raw error.
+    expect(validateUploadFile({ mimeType: 'application/msword', size: 1024 }).ok).toBe(false);
+    expect(
+      validateUploadFile({
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        size: 1024,
+      }).ok,
+    ).toBe(false);
+    expect(validateUploadFile({ mimeType: 'application/pdf', name: 'paper.docx', size: 1024 }).ok).toBe(
+      false,
+    );
+  });
+
+  it('accepts a file whose size the picker could not measure', () => {
+    // A cloud document provider may report `size: null`. That is an unknown
+    // size, not an empty file: real papers used to be lost here.
+    expect(validateUploadFile({ mimeType: 'application/pdf', size: null }).ok).toBe(true);
+    expect(validateUploadFile({ mimeType: 'application/pdf', size: undefined }).ok).toBe(true);
+    expect(validateUploadFile({ mimeType: 'application/pdf', size: 0 }).ok).toBe(false);
+  });
+
   it('rejects an empty file', () => {
     expect(validateUploadFile({ mimeType: 'application/pdf', size: 0 }).ok).toBe(false);
   });
@@ -154,23 +178,62 @@ describe('storage paths', () => {
 });
 
 describe('paper rows', () => {
-  it('starts in the pending state', () => {
-    const row = buildPaperRow(META, 'pyq_1', 'pyq-pending/x.pdf', 'student-1', {
-      name: 'Test User',
-      uniqueStudentId: 'student-1',
-      avatarId: 'tech-scholar',
-    });
+  it('starts in the pending state and keeps the whole attribution', () => {
+    const row = buildPaperRow(
+      META,
+      'pyq_1',
+      'pyq-pending/x.pdf',
+      {
+        authUserId: '3f0d5b2a-9c1e-4a7b-8d6e-1c2b3a4d5e6f',
+        studentId: 'GBU-21ICS045',
+        name: 'Test User',
+        avatarId: 'tech-scholar',
+      },
+      undefined,
+      2048,
+    );
     expect(row.status).toBe('pending');
     expect(row.subject_code).toBe('CSE205');
     expect(row.programme_code).toBe('BCS');
     expect(row.exam_type).toBe('Mid Sem');
-    expect(row.uploader_id).toBe('student-1');
+    // The auth user id is a real uuid and goes into the foreign key.
+    expect(row.uploader_id).toBe('3f0d5b2a-9c1e-4a7b-8d6e-1c2b3a4d5e6f');
+    // The device identity is a separate column.
+    expect(row.uploader_student_id).toBe('GBU-21ICS045');
+    expect(row.uploader_name).toBe('Test User');
+    expect(row.uploader_avatar).toBe('tech-scholar');
+    expect(row.file_size_bytes).toBe(2048);
     expect(row.downloads).toBe(0);
   });
 
   it('accepts a null uploader for guest uploads', () => {
-    const row = buildPaperRow(META, 'pyq_1', 'pyq-pending/x.pdf', null);
+    const row = buildPaperRow(META, 'pyq_1', 'pyq-pending/x.pdf', {
+      authUserId: null,
+      studentId: 'GBU-99XYZ12',
+      name: 'Guest Scholar',
+    });
     expect(row.uploader_id).toBeNull();
+    expect(row.uploader_student_id).toBe('GBU-99XYZ12');
+  });
+
+  it('never writes a device identity into the auth foreign key', () => {
+    // `uploader_id` is a real FK to auth.users(id): a device id there breaks
+    // every guest upload, so it has to stay NULL.
+    const row = buildPaperRow(META, 'pyq_1', 'pyq-pending/x.pdf', 'GBU-99XYZ12', {
+      uniqueStudentId: 'GBU-99XYZ12',
+    });
+    expect(row.uploader_id).toBeNull();
+    expect(row.uploader_student_id).toBe('GBU-99XYZ12');
+  });
+
+  it('refuses a non-uuid auth id', () => {
+    const row = buildPaperRow(META, 'pyq_1', 'pyq-pending/x.pdf', 'auth_user_aarav', {
+      uniqueStudentId: 'GBU-SOICT-9921',
+      name: 'Aarav Sharma',
+    });
+    expect(row.uploader_id).toBeNull();
+    expect(row.uploader_student_id).toBe('GBU-SOICT-9921');
+    expect(row.uploader_name).toBe('Aarav Sharma');
   });
 });
 
@@ -184,6 +247,11 @@ describe('moderation actions', () => {
     for (const action of MODERATION_ACTIONS) {
       expect(moderationActionLabel(action).length).toBeGreaterThan(0);
     }
+  });
+
+  it('does not offer a request-changes action that changes nothing', () => {
+    // It used to map to `pending` - a no-op that told nobody anything.
+    expect(MODERATION_ACTIONS).not.toContain('request-changes');
   });
 });
 

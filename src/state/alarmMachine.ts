@@ -1,10 +1,23 @@
 /**
  * GBU One — S8 Class Alarm State Machine
  *
+ * INTEGRATION STATUS: **NOT YET WIRED IN.**
+ *
+ * The app still uses `reminderState()` from
+ * `src/features/notifications/notificationPreferences.ts`, which is a
+ * second, simpler model of the same lifecycle. This machine is the
+ * intended replacement, but its context model (the snooze counters and
+ * `scheduledTime` against the stored `fireAt`) has to be re-modelled
+ * against the stored records before it can be adopted.
+ *
+ * Until then this module is a SPECIFICATION with its own tests, not the
+ * code the app runs. `tests/state_machines.test.ts` asserts that claim
+ * explicitly, so the gap cannot be quietly forgotten.
+ *
  * Implements the deterministic S8 Class Alarm lifecycle:
  *   'idle' -> 'scheduled' -> 'firing' -> 'snoozed' | 'dismissed' | 'missed'
  *
- * Connects with `src/features/notifications/useClassAlarmLifecycle.ts`:
+ * The lifecycle it describes:
  * - Schedules alarms before class start based on lead minutes (e.g., 10 min).
  * - Manages audible ringing / firing state.
  * - Handles snooze limits (e.g., maximum 3 snoozes before mandatory action).

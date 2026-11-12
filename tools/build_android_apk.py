@@ -65,9 +65,21 @@ def classify_env_line(line: str):
     name = name.strip()
     value = value.split(' #')[0].strip().strip('"').strip("'")
 
-    if SECRET_NAME_RE.search(name):
-        return 'drop', 'name looks like a credential'
-
+    # ------------------------------------------------------------------
+    # VALUE FIRST.
+    #
+    # A Supabase PUBLISHABLE key (`sb_publishable_...`) is safe to ship: it is
+    # designed to be embedded in a client and it is constrained by row level
+    # security. It must be KEPT even though its variable name contains the
+    # word "KEY" - dropping it would leave the release build with no backend
+    # at all, and the app would silently fall back to offline mode forever.
+    #
+    # A Supabase SECRET key (`sb_secret_...`) must never ship, whatever it is
+    # called: it bypasses every policy in the project.
+    # ------------------------------------------------------------------
+    for prefix in SUPABASE_PUBLISHABLE_PREFIXES:
+        if value.startswith(prefix):
+            return 'keep', 'a publishable key is safe to ship'
     for prefix in SUPABASE_SECRET_PREFIXES:
         if value.startswith(prefix):
             if name == 'EXPO_PUBLIC_SUPABASE_ANON_KEY':
@@ -77,6 +89,19 @@ def classify_env_line(line: str):
     if LEGACY_SERVICE_ROLE_RE.match(value) and 'SERVICE_ROLE' in name.upper():
         return 'drop', 'value is a legacy service-role JWT'
 
+    # ------------------------------------------------------------------
+    # NAME SECOND, for everything that is not a recognised Supabase key.
+    #
+    # The one legitimate exception is a variable whose value is empty: an
+    # unset optional credential carries no secret, and removing it would
+    # change behaviour (a missing variable and an empty one are not always
+    # the same thing).
+    # ------------------------------------------------------------------
+    if SECRET_NAME_RE.search(name):
+        if value == '':
+            return 'keep', 'empty optional credential'
+        return 'drop', 'name looks like a credential'
+
     return 'keep', ''
 
 
@@ -85,6 +110,7 @@ def sanitise_env_for_client(src_env: str, release: bool, allow_secret_anon: bool
     kept = []
     dropped = []
     secret_anon = False
+    secret_anon_line = None
 
     for line in src_env.splitlines(keepends=True):
         action, reason = classify_env_line(line)
@@ -94,6 +120,9 @@ def sanitise_env_for_client(src_env: str, release: bool, allow_secret_anon: bool
             dropped.append((line.split('=', 1)[0].strip(), reason))
         else:
             secret_anon = True
+            # The original line is kept so a DEBUG build can still reach the
+            # live backend. A release build never re-adds it.
+            secret_anon_line = line
             dropped.append((line.split('=', 1)[0].strip(), reason))
 
     if secret_anon:
@@ -111,16 +140,30 @@ def sanitise_env_for_client(src_env: str, release: bool, allow_secret_anon: bool
                 '         (SUPABASE_SERVICE_ROLE_KEY, used by worker/ and CI)\n'
                 '  Then build again.'
             )
-        print(
-            '  WARNING: the anon key is still a SECRET key. The bundle will\n'
-            '  contain a database credential. Rotate it before publishing.'
-        )
-        # Replace the value so the bundle cannot carry the real secret.
-        kept = [
-            l for l in kept
-            if not l.strip().startswith('EXPO_PUBLIC_SUPABASE_ANON_KEY=')
-        ]
-        kept.append('EXPO_PUBLIC_SUPABASE_ANON_KEY=REPLACE_ME_BEFORE_PUBLISHING\n')
+        if release:
+            print(
+                '  WARNING: the anon key is still a SECRET key. The bundle will\n'
+                '  contain a database credential. Rotate it before publishing.'
+            )
+            # A release bundle must never carry the real secret.
+            kept = [
+                l for l in kept
+                if not l.strip().startswith('EXPO_PUBLIC_SUPABASE_ANON_KEY=')
+            ]
+            kept.append('EXPO_PUBLIC_SUPABASE_ANON_KEY=REPLACE_ME_BEFORE_PUBLISHING\n')
+        else:
+            # A DEBUG build stays usable: the owner tests on a real device or
+            # the emulator, and an app with no backend cannot be tested at
+            # all. The warning is loud and the artifact is named "debug", so
+            # it is never the thing that is published.
+            print(
+                '  WARNING: this DEBUG build carries the Supabase SECRET key.\n'
+                '  It is fine for local testing and must NEVER be published.\n'
+                '  Rotate the key before building a release.'
+            )
+            if secret_anon_line is not None:
+                kept.append(secret_anon_line if secret_anon_line.endswith('\n')
+                            else secret_anon_line + '\n')
 
     if dropped:
         print(f'  dropped {len(dropped)} secret-bearing variable(s):')
@@ -166,15 +209,27 @@ def sync(is_admin: bool = False, release: bool = False, allow_secret_anon: bool 
         print('Sanitized .env for the client build.')
 
         # Post-condition: the build copy must not contain a Supabase secret.
+        # For a RELEASE build this is absolute. A DEBUG build may keep the
+        # real key so the app can be tested against the live backend - that
+        # build is named "debug" and must never be published.
         with open(os.path.join(BUILD, '.env'), 'r', encoding='utf-8') as f:
             built_env = f.read()
-        for prefix in SUPABASE_SECRET_PREFIXES:
-            if prefix in built_env:
-                raise SystemExit(
-                    f'REFUSING TO BUILD: the build copy still contains "{prefix}".'
-                )
-        if SECRET_NAME_RE.search(built_env) and 'EXPO_PUBLIC_SUPABASE_URL' not in built_env:
-            raise SystemExit('REFUSING TO BUILD: the build copy still holds a credential.')
+        if release:
+            for prefix in SUPABASE_SECRET_PREFIXES:
+                if prefix in built_env:
+                    raise SystemExit(
+                        f'REFUSING TO BUILD: the build copy still contains "{prefix}".'
+                    )
+            if SECRET_NAME_RE.search(built_env) and 'EXPO_PUBLIC_SUPABASE_URL' not in built_env:
+                raise SystemExit('REFUSING TO BUILD: the build copy still holds a credential.')
+        else:
+            for prefix in SUPABASE_SECRET_PREFIXES:
+                if prefix in built_env:
+                    print(
+                        f'  NOTE: the DEBUG build copy contains "{prefix}". '
+                        'This is expected for local testing and must never be published.'
+                    )
+                    break
 
     if not is_admin:
         # STRICT PUBLIC APK PURGE: Exclude all admin routes, moderation tools, and credentials

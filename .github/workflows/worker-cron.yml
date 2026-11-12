@@ -22,6 +22,9 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    # Least privilege: the workflow only ever reads the repository.
+    permissions:
+      contents: read
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -83,6 +86,27 @@ jobs:
             --skipLibCheck \
             --strict \
             --noCheck
+      - name: Guard - the Supabase secrets must actually be present
+        # The worker used to run in a "parse-only" mode when the secrets were
+        # missing: getWorkerSupabase() returned null, every write helper
+        # returned early WITHOUT an error, and the job exited 0. The cron
+        # therefore showed a green tick for eight days while not one notice
+        # was written and not one row appeared in worker_runs.
+        #
+        # A missing or empty secret must fail the job BEFORE the worker runs.
+        run: |
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo "::error::SUPABASE_URL secret is missing or empty. Add it under Settings -> Secrets and variables -> Actions."; exit 1
+          fi
+          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY secret is missing or empty. Add it under Settings -> Secrets and variables -> Actions."; exit 1
+          fi
+          case "$SUPABASE_SERVICE_ROLE_KEY" in
+            sb_secret_*) echo "secret key format ok (sb_secret_...)" ;;
+            eyJ*) echo "secret key format ok (legacy JWT)" ;;
+            *) echo "::error::SUPABASE_SERVICE_ROLE_KEY does not look like a Supabase service-role key (expected sb_secret_... or a legacy JWT)."; exit 1 ;;
+          esac
+          echo "supabase url: ${SUPABASE_URL}"
       - name: Run notices worker
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -90,3 +114,34 @@ jobs:
           EXPO_ACCESS_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
           OCR_PROVIDER: tesseract
         run: node dist/worker/run.js
+      - name: Verify the worker actually persisted a run
+        # The worker writes a row into worker_runs for every stage. If no new
+        # row appeared, the pipeline is broken even though the process exited
+        # cleanly, so the job must fail. This is the check that would have
+        # caught the silent "parse-only" mode on the first day.
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node -e '
+            const { createClient } = require("@supabase/supabase-js");
+            const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+            (async () => {
+              const { data, error } = await sb
+                .from("worker_runs")
+                .select("source,status,ran_at")
+                .order("ran_at", { ascending: false })
+                .limit(1);
+              if (error) { console.error("::error::could not read worker_runs: " + error.message); process.exit(1); }
+              if (!data || data.length === 0) {
+                console.error("::error::the worker wrote NO worker_runs row. The pipeline is broken even though the process exited cleanly.");
+                process.exit(1);
+              }
+              const age = Date.now() - new Date(data[0].ran_at).getTime();
+              if (age > 20 * 60 * 1000) {
+                console.error("::error::the newest worker_runs row is " + Math.round(age/60000) + " minutes old; the worker is not persisting.");
+                process.exit(1);
+              }
+              console.log("worker persisted:", JSON.stringify(data[0]));
+            })();
+          '

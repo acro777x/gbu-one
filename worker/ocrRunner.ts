@@ -31,6 +31,9 @@ export interface OcrRunnerResult {
 
 const TESSERACT_TIMEOUT_MS = 60_000;
 const MAX_OCR_BYTES = 15 * 1024 * 1024;
+/** The vision provider gets a base64 body, so its limit is much lower. */
+const MAX_VISION_BYTES = 5 * 1024 * 1024;
+const VISION_TIMEOUT_MS = 60_000;
 
 /** True when the Tesseract binary is callable. */
 export function isTesseractAvailable(): boolean {
@@ -117,11 +120,21 @@ export async function runVision(
     endpoint?: string;
     apiKey?: string;
     model?: string;
+    timeoutMs?: number;
   } = {},
 ): Promise<OcrRunnerResult> {
   const apiKey = options.apiKey || process.env.VISION_API_KEY || '';
   if (!apiKey) {
     return { text: '', provider: 'vision', ok: false, reason: 'no-api-key' };
+  }
+  if (!input.bytes || input.bytes.length === 0) {
+    return { text: '', provider: 'vision', ok: false, reason: 'empty-file' };
+  }
+  // The file is base64 encoded into a JSON body, so the encoded body is
+  // about a third bigger than the file. A big file would build a huge
+  // string and then a huge request, so it is refused here.
+  if (input.bytes.length > MAX_VISION_BYTES) {
+    return { text: '', provider: 'vision', ok: false, reason: 'too-large' };
   }
   const endpoint =
     options.endpoint || process.env.VISION_API_URL || 'https://api.openai.com/v1/chat/completions';
@@ -143,6 +156,12 @@ export async function runVision(
     ],
   });
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    options.timeoutMs ?? VISION_TIMEOUT_MS,
+  );
+
   try {
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -151,6 +170,7 @@ export async function runVision(
         Authorization: `Bearer ${apiKey}`,
       },
       body,
+      signal: controller.signal,
     });
     if (!res.ok) {
       return { text: '', provider: 'vision', ok: false, reason: `http-${res.status}` };
@@ -169,5 +189,7 @@ export async function runVision(
       ok: false,
       reason: err instanceof Error ? err.message : 'vision-failed',
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

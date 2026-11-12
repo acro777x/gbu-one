@@ -7,8 +7,11 @@ import { useSheetStore } from '../../src/store/useSheetStore';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 
 export default function TabLayout() {
-  const { user, isGuest } = useAuthStore();
-  const { isSheetOpen } = useSheetStore();
+  // Selectors, not the whole store: a store write (a new email, a sign-in)
+  // used to re-render the whole tab navigator.
+  const user = useAuthStore((state) => state.user);
+  const isGuest = useAuthStore((state) => state.isGuest);
+  const isSheetOpen = useSheetStore((state) => state.isSheetOpen);
   const { colors } = useAppTheme();
 
   return (
@@ -16,7 +19,6 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarStyle: { display: 'none' }, // Using our custom floating tab bar
         }}
         tabBar={(props) => {
           const currentRoute = props.state.routes[props.state.index].name;

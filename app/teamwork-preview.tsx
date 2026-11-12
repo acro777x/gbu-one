@@ -35,16 +35,22 @@ export default function TeamworkPreviewScreen() {
           style={[styles.backBtn, { backgroundColor: colors.surfaceAlt }]}
           onPress={() => router.back()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
         >
           <ArrowLeft size={18} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Cohort Hub (Preview)</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Feature Preview Disclaimer Banner */}
-        <View style={[styles.previewBanner, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+        <View
+          style={[styles.previewBanner, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
           <Text style={[styles.previewBannerTitle, { color: colors.accent }]}>PREVIEW MODE • SAMPLE DATA</Text>
           <Text style={[styles.previewBannerText, { color: colors.textSecondary }]}>
             Class standing and peer study circles below are simulation previews. Real cohort metrics will sync once backend cohort networking is connected.
@@ -146,9 +152,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },

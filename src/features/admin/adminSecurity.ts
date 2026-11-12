@@ -75,20 +75,18 @@ export interface AdminAuthResult {
   lockedOut: boolean;
   lockoutSeconds: number;
   /**
-   * Only server-side authentication exists any more. The field is kept so callers can
+   * Only server-side authentication exists. The field is kept so callers can
    * assert that the session was established by Supabase Auth.
    */
-  authMethod?: 'server' | 'offline_emergency';
+  authMethod?: 'server';
   userEmail?: string;
-  role?: AdminRole | 'emergency_admin';
+  role?: AdminRole;
 }
 
 export interface AdminAuthOptions {
   email?: string;
   password?: string;
   isInitialSetup?: boolean;
-  offlinePin?: string;
-  secondaryKey?: string;
 }
 
 /**
@@ -786,91 +784,14 @@ async function authenticateAdminInternal(
   })();
 }
 
-export function getMasterAdminPin(): string {
-  const envMap = process.env as Record<string, string | undefined>; return (envMap['EXPO_PUBLIC_ADMIN_PIN'] || '').trim();
-}
-
-export function getMasterAdminMfaKey(): string {
-  const envMap = process.env as Record<string, string | undefined>; return (envMap['EXPO_PUBLIC_ADMIN_MFA_KEY'] || '').trim();
-}
-
-/**
- * Emergency offline authentication using Master Passcode & Optional MFA.
- * FIPS 180-4 SHA-256 verified locally so network outages never lock university
- * administrators out of emergency alert broadcasts.
- */
-export async function verifyAdminCredentials(
-  pin: string,
-  secondaryKey?: string,
-): Promise<AdminAuthResult> {
-  return withLockoutLock(async () => {
-    const remainingSecs = await getRemainingLockoutSeconds();
-    if (remainingSecs > 0) {
-      return {
-        success: false,
-        error: `Access Temporarily Locked: Try again in ${formatLockoutTime(remainingSecs)}`,
-        remainingAttempts: 0,
-        lockedOut: true,
-        lockoutSeconds: remainingSecs,
-      };
-    }
-
-    const expectedPin = getMasterAdminPin();
-    const expectedMfa = getMasterAdminMfaKey();
-
-    const enteredPin = (pin || '').trim();
-    const enteredMfa = (secondaryKey || '').trim();
-
-    const isPinValid = enteredPin.length > 0 && enteredPin === expectedPin;
-    const isMfaValid = enteredMfa === '' || enteredMfa === expectedMfa;
-
-    if (isPinValid && isMfaValid) {
-      await resetLockoutStateInternal();
-      touchAdminSession();
-      return {
-        success: true,
-        remainingAttempts: MAX_ADMIN_ATTEMPTS,
-        lockedOut: false,
-        lockoutSeconds: 0,
-        authMethod: 'offline_emergency',
-        role: 'emergency_admin',
-      };
-    }
-
-    const nextState = await recordFailedAttemptInternal();
-    const lockoutSecs = Math.max(
-      0,
-      Math.ceil(((nextState.lockoutUntil ?? 0) - Date.now()) / 1000),
-    );
-
-    if (nextState.failedAttempts >= MAX_ADMIN_ATTEMPTS) {
-      return {
-        success: false,
-        error: `Access Temporarily Locked: 5 consecutive failed attempts. Locked for ${formatLockoutTime(lockoutSecs)}.`,
-        remainingAttempts: 0,
-        lockedOut: true,
-        lockoutSeconds: lockoutSecs,
-      };
-    }
-
-    const errorMsg = !isPinValid
-      ? 'Invalid Master PIN. Access denied.'
-      : 'Invalid Secondary Security Key. Access denied.';
-
-    return {
-      success: false,
-      error: errorMsg,
-      remainingAttempts: Math.max(0, MAX_ADMIN_ATTEMPTS - nextState.failedAttempts),
-      lockedOut: false,
-      lockoutSeconds: 0,
-    };
-  });
-}
-
 /**
  * Unified Admin Authentication entrypoint.
  *
- * Supports both online Supabase Auth and offline emergency master key PIN.
+ * Server-side Supabase Auth ONLY. There is deliberately no offline / emergency
+ * master-key path: the old one compared a PIN that was inlined into the APK as
+ * `EXPO_PUBLIC_ADMIN_PIN`, so anybody holding the binary owned the console.
+ * Every privileged action now rides on the signed-in session and the row level
+ * security policies.
  */
 export async function authenticateAdmin(options: AdminAuthOptions): Promise<AdminAuthResult> {
   if (options.email && options.password) {
@@ -879,31 +800,6 @@ export async function authenticateAdmin(options: AdminAuthOptions): Promise<Admi
       options.password,
       Boolean(options.isInitialSetup),
     );
-  }
-
-  if (options.offlinePin) {
-    const res = await verifyAdminCredentials(options.offlinePin, options.secondaryKey);
-    if (res.success) {
-      await recordAdminAction('admin_login_success', {
-        method: 'offline_emergency',
-        note: 'Emergency master key verified offline (NIST SHA-256)',
-      });
-      return {
-        ...res,
-        authMethod: 'offline_emergency',
-        role: 'emergency_admin',
-      };
-    } else {
-      await recordAdminAction('admin_login_failed', {
-        method: 'offline_emergency',
-        error: res.error,
-        remainingAttempts: res.remainingAttempts,
-      });
-      return {
-        ...res,
-        authMethod: 'offline_emergency',
-      };
-    }
   }
 
   return {

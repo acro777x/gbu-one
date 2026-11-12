@@ -9,6 +9,9 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # Least privilege: the workflow only ever reads the repository.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,3 +46,58 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - name: Guard - the generated schema must match its TypeScript source
+        # supabase/schema.sql is generated from supabase/schema.ts by
+        # tools/emit-sql.mjs. If someone edits schema.ts and forgets to
+        # regenerate, the live database silently keeps whatever was pasted
+        # last - which is exactly how the missing row level security policies
+        # went unnoticed. The schema_sql_sync test also covers this, but it
+        # only fails when somebody runs the suite locally.
+        run: |
+          node tools/emit-sql.mjs
+          if ! git diff --exit-code -- supabase/schema.sql; then
+            echo "::error::supabase/schema.sql is out of date. Run 'node tools/emit-sql.mjs' and commit the result."
+            exit 1
+          fi
+          echo "schema.sql is in sync with schema.ts"
+      - name: Guard - the worker must compile with the same flags the cron uses
+        # The cron compiles worker/run.ts on its own with --noCheck, so a type
+        # error in the worker only surfaces there. This step exercises the
+        # exact emit path so a broken worker build fails in CI instead of in
+        # the scheduled job.
+        run: |
+          node ./node_modules/typescript/bin/tsc worker/run.ts \
+            --outDir dist-ci \
+            --rootDir . \
+            --module commonjs \
+            --moduleResolution node \
+            --target es2022 \
+            --lib es2022,dom \
+            --esModuleInterop \
+            --allowSyntheticDefaultImports \
+            --resolveJsonModule \
+            --skipLibCheck \
+            --strict
+          test -f dist-ci/worker/run.js || { echo "::error::the worker did not emit dist-ci/worker/run.js"; exit 1; }
+          echo "worker compiled"
+      - name: Guard - no credential may reach a client bundle
+        # The shipped public APK really did contain the project's Supabase
+        # secret key, because the build sanitiser only removed variables whose
+        # NAME matched and the anon key was named EXPO_PUBLIC_SUPABASE_ANON_KEY
+        # while holding a secret value. tests/bundle_secrets.test.ts covers the
+        # source; this step also catches a secret committed into any file.
+        #
+        # The EXPO_PUBLIC_* check is scoped to src/ and app/ - the two
+        # directories that are compiled into the client bundle. A mention in a
+        # comment, a doc or a test that asserts the variable is NOT read is
+        # not a leak, and flagging those would train people to ignore the gate.
+        run: |
+          if git grep -nIE "sb_secret_[A-Za-z0-9_-]{20,}" -- . ':!supabase/schema.sql' ':!docs/*' ':!README.md'; then
+            echo "::error::a Supabase secret key is committed in the repository. Rotate it and remove it."
+            exit 1
+          fi
+          if git grep -nIE "process\.env\.EXPO_PUBLIC_[A-Z_]*(SECRET|PASSWORD|PIN|MFA|TOKEN)" -- src app; then
+            echo "::error::an EXPO_PUBLIC_* variable looks like a credential. Expo inlines it into the shipped bundle."
+            exit 1
+          fi
+          echo "no credential in the tracked source"

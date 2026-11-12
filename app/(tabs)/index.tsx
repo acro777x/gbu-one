@@ -6,7 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Platform,
+  AppState,
+  type AppStateStatus,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -74,10 +75,44 @@ export default function HomeScreen() {
   const unreadMails = getUnreadCount();
   const topMail = emails[0];
 
-  // Keeps the "Up Next" badge and the countdown chips honest over time.
+  /*
+   * Keeps the "Up Next" badge and the countdown chips honest over time.
+   *
+   * The timer only runs while the app is in the foreground: a background
+   * interval that re-renders the whole Home tree every thirty seconds is
+   * work the student never sees.
+   */
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(timer);
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(() => setNow(new Date()), 30_000);
+    };
+    const stop = () => {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+    };
+
+    const subscription = AppState.addEventListener(
+      'change',
+      (state: AppStateStatus) => {
+        if (state === 'active') {
+          setNow(new Date());
+          start();
+        } else {
+          stop();
+        }
+      },
+    );
+
+    if (AppState.currentState === 'active') start();
+
+    return () => {
+      stop();
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -105,6 +140,11 @@ export default function HomeScreen() {
     };
   }, [enrolledClassKey]);
 
+  // Live notices drive the hero; the bundled seed is the offline fallback.
+  // The query is declared BEFORE `onRefresh` uses it, so the handler can
+  // never close over a binding that does not exist yet.
+  const { data: notices = [], refetch: refetchNotices } = useNoticesQuery();
+
   const onRefresh = () => {
     setRefreshing(true);
     void refetchNotices();
@@ -117,9 +157,6 @@ export default function HomeScreen() {
         setRefreshing(false);
       });
   };
-
-  // Live notices drive the hero; the bundled seed is the offline fallback.
-  const { data: notices = [], refetch: refetchNotices } = useNoticesQuery();
 
   const programmeCode = classSelection?.programmeCode || 'BCS';
   const semester = classSelection?.semester || 'II';
@@ -156,20 +193,41 @@ export default function HomeScreen() {
     router.push('/(tabs)/notices' as never);
   };
 
-  const validNotices = notices.filter(
-    (n) => n.cleanTitle && !/^view\s+attachment$/i.test(n.cleanTitle.trim())
+  /*
+   * The notice lists are memoised.
+   *
+   * They used to be rebuilt on every render, which meant the carousel
+   * re-diffed every visible slide twice a minute - once for the clock
+   * ticking over and once for anything else that changed.
+   */
+  const validNotices = useMemo(
+    () =>
+      notices.filter(
+        (n) => n.cleanTitle && !/^view\s+attachment$/i.test(n.cleanTitle.trim())
+      ),
+    [notices],
   );
-  const prioritized = validNotices.filter((n) => n.importance >= 3);
-  const topNotices = (prioritized.length > 0 ? prioritized : validNotices).slice(0, 5);
-  const heroSlides = topNotices.map((n) => ({
-    id: n.id,
-    category: n.category === 'datesheet' ? 'Exam Alert' : n.category.toUpperCase(),
-    title: n.cleanTitle,
-    meta: n.deadlineAt
-      ? `Deadline: ${new Date(n.deadlineAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
-      : `${n.source.toUpperCase()} • ${new Date(n.postedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
-    onPress: () => router.push({ pathname: '/notice/[id]', params: { id: n.id } } as never),
-  }));
+  const prioritized = useMemo(
+    () => validNotices.filter((n) => n.importance >= 3),
+    [validNotices],
+  );
+  const topNotices = useMemo(
+    () => (prioritized.length > 0 ? prioritized : validNotices).slice(0, 5),
+    [prioritized, validNotices],
+  );
+  const heroSlides = useMemo(
+    () =>
+      topNotices.map((n) => ({
+        id: n.id,
+        category: n.category === 'datesheet' ? 'Exam Alert' : n.category.toUpperCase(),
+        title: n.cleanTitle,
+        meta: n.deadlineAt
+          ? `Deadline: ${new Date(n.deadlineAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+          : `${n.source.toUpperCase()} • ${new Date(n.postedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
+        onPress: () => router.push({ pathname: '/notice/[id]', params: { id: n.id } } as never),
+      })),
+    [topNotices],
+  );
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
@@ -251,8 +309,6 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(120, 100 + insets.bottom) }]}
         showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
-        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -270,6 +326,8 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.quickHubItem}
               onPress={() => router.push('/mail' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="GBU Webmail"
             >
               <View style={[styles.quickHubIcon, { backgroundColor: colors.accentSoft, borderColor: colors.borderGlass }]}>
                 <Mail size={18} color={colors.accent} />
@@ -281,6 +339,8 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.quickHubItem}
               onPress={() => router.push('/timetable' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Class schedule"
             >
               <View style={[styles.quickHubIcon, { backgroundColor: colors.successSoft, borderColor: colors.borderGlass }]}>
                 <Calendar size={18} color={colors.success} />
@@ -291,6 +351,8 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.quickHubItem}
               onPress={() => router.push('/exams' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Exam hub"
             >
               <View style={[styles.quickHubIcon, { backgroundColor: colors.warningSoft, borderColor: colors.borderGlass }]}>
                 <GraduationCap size={18} color={colors.warning} />
@@ -301,6 +363,8 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.quickHubItem}
               onPress={() => router.push('/calendar' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Academic calendar"
             >
               <View
                 style={[
@@ -319,6 +383,8 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.quickHubItem}
               onPress={() => router.push('/events' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Campus events"
             >
               <View
                 style={[
@@ -344,7 +410,9 @@ export default function HomeScreen() {
             <TouchableOpacity
               onPress={() => router.push('/timetable' as never)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={{ paddingVertical: 8 }}
+              style={styles.seeAllBtn}
+              accessibilityRole="button"
+              accessibilityLabel="See the full class schedule"
             >
               <Text style={[styles.seeAllText, { color: colors.accent }]}>Full Schedule</Text>
             </TouchableOpacity>
@@ -388,7 +456,9 @@ export default function HomeScreen() {
             <TouchableOpacity
               onPress={() => router.push('/(tabs)/notices' as never)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={{ paddingVertical: 8 }}
+              style={styles.seeAllBtn}
+              accessibilityRole="button"
+              accessibilityLabel="See every notice"
             >
               <Text style={[styles.seeAllText, { color: colors.accent }]}>View all</Text>
             </TouchableOpacity>
@@ -443,7 +513,9 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   onPress={() => router.push('/mail' as never)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={{ paddingVertical: 8 }}
+                  style={styles.seeAllBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open the GBU webmail"
                 >
                   <Text style={[styles.seeAllText, { color: colors.accent }]}>Open Webmail</Text>
                 </TouchableOpacity>
@@ -478,7 +550,12 @@ export default function HomeScreen() {
           {/* Deadlines Section */}
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Active Deadlines</Text>
-            <TouchableOpacity onPress={() => router.push('/calendar' as never)}>
+            <TouchableOpacity
+              onPress={() => router.push('/calendar' as never)}
+              style={styles.seeAllBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Open the academic calendar"
+            >
               <Text style={[styles.seeAllText, { color: colors.accent }]}>Academic Calendar</Text>
             </TouchableOpacity>
           </View>
@@ -578,7 +655,12 @@ export default function HomeScreen() {
           {/* Trending PYQs */}
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Trending PYQs</Text>
-            <TouchableOpacity onPress={() => router.push('/pyq' as never)}>
+            <TouchableOpacity
+              onPress={() => router.push('/pyq' as never)}
+              style={styles.seeAllBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Browse every question paper"
+            >
               <Text style={[styles.seeAllText, { color: colors.accent }]}>Browse all</Text>
             </TouchableOpacity>
           </View>
@@ -771,6 +853,18 @@ const styles = StyleSheet.create({
   seeAllText: {
     fontFamily: 'Inter-Medium',
     fontSize: 13,
+  },
+  /**
+   * The "Full Schedule" / "View all" links are words, not buttons, so they
+   * are only as tall as the text. The box around them carries the 44pt the
+   * project asks for.
+   */
+  seeAllBtn: {
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingVertical: 8,
   },
   noticeSummaryCard: {
     padding: 14,

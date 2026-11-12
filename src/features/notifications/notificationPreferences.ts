@@ -16,6 +16,50 @@
 export const CLASS_REMINDERS_STORAGE_KEY = '@gbu_one_class_reminders';
 
 /**
+ * Whether the app has ever asked the OS for the notification permission.
+ *
+ * The permission prompt is one-shot on iOS and effectively one-shot on
+ * Android 13+, so the app has to remember that it asked: without this the
+ * screen cannot tell "the student has not been asked yet" from "the student
+ * said no", and it would offer an "Enable" button that can do nothing.
+ */
+export const NOTIFICATION_PERMISSION_ASKED_KEY = '@gbu_one_notifications_asked';
+
+/**
+ * What the app knows about the notification permission.
+ *
+ * - `unknown`  - the student has not been asked yet.
+ * - `granted`  - notifications are on.
+ * - `denied`   - the student said no, but the OS will ask again.
+ * - `blocked`  - the OS will not ask again; only the settings can fix it.
+ */
+export type NotificationPermissionState = 'unknown' | 'granted' | 'denied' | 'blocked';
+
+/**
+ * Works out the permission state from what the OS reported.
+ *
+ * `blocked` and `denied` are kept apart on purpose: a blocked permission
+ * cannot be asked for again, so the only way forward is the system
+ * settings, and offering "Try again" there would be a lie.
+ */
+export function resolvePermissionState(
+  permissions: { granted: boolean; canAskAgain?: boolean; status?: string },
+  askedBefore: boolean,
+): NotificationPermissionState {
+  if (permissions.granted) return 'granted';
+  if (permissions.status === 'undetermined') return 'unknown';
+  if (permissions.status === 'denied') {
+    return permissions.canAskAgain === false ? 'blocked' : 'denied';
+  }
+  // Older Android builds report no status: the local ask flag is the only
+  // evidence that the student was asked.
+  if (askedBefore) {
+    return permissions.canAskAgain === false ? 'blocked' : 'denied';
+  }
+  return permissions.canAskAgain === false ? 'blocked' : 'unknown';
+}
+
+/**
  * How long after the alarm fired the student is still offered the snooze.
  * Past this the alarm counts as missed rather than ringing.
  */

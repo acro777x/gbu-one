@@ -10,6 +10,7 @@ import {
   FlatList,
   Platform,
   Image,
+  AppState,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -24,6 +25,8 @@ import {
   FileText,
   X,
   Trophy,
+  RefreshCw,
+  Trash2,
 } from 'lucide-react-native';
 import {
   GlassCard,
@@ -46,21 +49,25 @@ import { usePyqQuery } from '../../src/features/pyq/usePyqQuery';
 import {
   reportPaper,
   uploadPendingPaper,
+  recordDownload,
   ensureValidUuid,
   type PyqUploadResult,
 } from '../../src/features/pyq/pyqRepository';
-import { PYQ_ALLOWED_MIME_TYPES, resolveCanonicalMime } from '../../src/features/pyq/pyqStorage';
+import { humaniseUploadError, resolveCanonicalMime } from '../../src/features/pyq/pyqStorage';
 import {
   buildQueuedUpload,
+  deleteQueuedUpload,
   enqueueUpload,
+  flushUploadQueue,
   readUploadQueue,
+  retryQueuedUpload,
+  type QueuedUpload,
+  type QueuedUploadIdentity,
 } from '../../src/features/pyq/localUploadQueue';
 import { useAppTheme } from '../../src/lib/ThemeContext';
 import { theme } from '../../src/lib/theme';
 import {
   getLeaderboard,
-  awardUploadPoints,
-  DEFAULT_LEADERBOARD_SEED,
   type LeaderboardEntry,
   type CurrentUserParam,
 } from '../../src/features/pyq/pyqLeaderboard';
@@ -120,7 +127,6 @@ const UPLOAD_SEMESTERS = [
 
 import {
   PROGRAMMES_BY_SCHOOL,
-  type ProgrammeDescriptor,
 } from '../../src/features/pyq/pyqProgrammes';
 
 export { PROGRAMMES_BY_SCHOOL };
@@ -189,10 +195,11 @@ const PaperCard = React.memo<PaperCardProps>(function PaperCard({
                 e.stopPropagation();
                 onToggleSelect();
               }}
+              style={styles.selectToggle}
               hitSlop={8}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: isSelected }}
-              accessibilityLabel={`Select ${paper.subjectCode}`}
+              accessibilityLabel={`Select ${paper.subjectCode} for download`}
             >
               <CheckCircle2 size={16} color={isSelected ? colors.accent : colors.textTertiary} />
             </TouchableOpacity>
@@ -253,7 +260,7 @@ const PaperCard = React.memo<PaperCardProps>(function PaperCard({
 export default function PYQScreen() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { isGuest, user } = useAuthStore();
+  const { user, isAuthenticated } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSchool, setSelectedSchool] = useState('All');
   const [selectedSemester, setSelectedSemester] = useState('All');
@@ -267,6 +274,7 @@ export default function PYQScreen() {
   const [selectedReportReason, setSelectedReportReason] = useState('Incomplete or blurred scan');
   const [reportCustomNote, setReportCustomNote] = useState('');
   const [reportSheetVisible, setReportSheetVisible] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const [detailPaper, setDetailPaper] = useState<PYQItem | null>(null);
   const [detailSheetVisible, setDetailSheetVisible] = useState(false);
 
@@ -284,14 +292,13 @@ export default function PYQScreen() {
     uri: string;
     name: string;
     mimeType: string;
-    size: number;
+    size: number | null;
   } | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [queuedCount, setQueuedCount] = useState(0);
-  const [leaderboardRefreshKey, setLeaderboardRefreshKey] = useState(0);
-  const [topContributors, setTopContributors] = useState<LeaderboardEntry[]>(() =>
-    DEFAULT_LEADERBOARD_SEED.slice(0, 3),
-  );
+  const [queue, setQueue] = useState<QueuedUpload[]>([]);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [topContributors, setTopContributors] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
 
   const leaderboardUser = useMemo<CurrentUserParam | undefined>(
     () =>
@@ -315,34 +322,112 @@ export default function PYQScreen() {
     ],
   );
 
-  // Load top 3 contributors for sleek banner card
-  useEffect(() => {
-    let active = true;
-    void getLeaderboard(leaderboardUser).then((data) => {
-      if (active) setTopContributors(data.slice(0, 3));
-    });
-    return () => {
-      active = false;
+  /**
+   * The identity written with every upload.
+   *
+   * `authUserId` is the real Supabase user id and is NULL for a guest - the
+   * column is a foreign key, so a device id must never be written into it.
+   * `studentId` is the device identity that names the contributor.
+   */
+  const uploaderIdentity = useMemo<QueuedUploadIdentity>(() => {
+    const studentId =
+      user?.uniqueStudentId ||
+      user?.rollNo ||
+      (user?.id ? `GBU-${user.id.slice(0, 6).toUpperCase()}` : 'GBU-GUEST');
+    return {
+      authUserId: isAuthenticated ? ensureValidUuid(user?.id) : null,
+      studentId,
+      name: user?.name || 'Guest Scholar',
+      avatarId: user?.avatarId || user?.avatarUrl || 'tech-scholar',
     };
-  }, [leaderboardUser, leaderboardRefreshKey]);
-
-  useEffect(() => {
-    let active = true;
-    void readUploadQueue().then((queue) => {
-      if (active) setQueuedCount(queue.length);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Approved papers from the backend; the bundled seed is the offline fallback.
-  const { data: papers = MOCK_PAPERS, isFetching, refetch } = usePyqQuery();
+  }, [user, isAuthenticated]);
 
   const showToast = (message: string) => {
     setToastMessage(message);
     setToastVisible(true);
   };
+
+  // Load top contributors for the banner. The standings are server-derived,
+  // so an empty board means "nobody has an approved paper yet" - it is
+  // never filled with invented names.
+  useEffect(() => {
+    let active = true;
+    void getLeaderboard(leaderboardUser)
+      .then((data) => {
+        if (!active) return;
+        setTopContributors(data.slice(0, 3));
+        setLeaderboardError(null);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setTopContributors([]);
+        setLeaderboardError(
+          err instanceof Error ? err.message : 'The contributor standings could not be loaded.',
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [leaderboardUser]);
+
+  const refreshQueue = useCallback(async () => {
+    const entries = await readUploadQueue();
+    setQueue(entries);
+  }, []);
+
+  useEffect(() => {
+    void refreshQueue();
+  }, [refreshQueue]);
+
+  /**
+   * Drains the offline queue.
+   *
+   * The queue used to be write-only: the screen promised the paper "will
+   * upload automatically once connected" and nothing ever uploaded it. The
+   * queue is now flushed when the app comes to the foreground, when the
+   * account changes, and whenever the student asks for it.
+   */
+  const runFlush = useCallback(async () => {
+    const result = await flushUploadQueue({ uploader: uploaderIdentity });
+    await refreshQueue();
+    if (result.uploaded > 0) {
+      showToast(
+        `${result.uploaded} paper${result.uploaded === 1 ? '' : 's'} uploaded to the library.`,
+      );
+    } else if (result.failed > 0) {
+      showToast(
+        `${result.failed} paper${result.failed === 1 ? '' : 's'} could not be uploaded yet. It stays on this phone.`,
+      );
+    }
+    return result;
+  }, [uploaderIdentity, refreshQueue]);
+
+  useEffect(() => {
+    void runFlush();
+  }, [runFlush]);
+
+  // The app comes back to the foreground: the network is probably back too.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void runFlush();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [runFlush]);
+
+  // Approved papers from the backend; the bundled seed is the offline fallback.
+  const { data: papers = MOCK_PAPERS, isFetching, error: libraryError, refetch } = usePyqQuery();
+
+  // The library answered: Supabase is reachable again, so the queue goes
+  // out now.
+  useEffect(() => {
+    if (!isFetching && !libraryError) {
+      void runFlush();
+    }
+  }, [isFetching, libraryError, runFlush]);
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -362,6 +447,9 @@ export default function PYQScreen() {
     const targetUrl = paper.fileUrl;
     const title = `${paper.subjectCode} - ${paper.subjectName}`;
     const docId = registerDocument(targetUrl, title);
+    // The counter was never written before: the screen said "Download
+    // logged" while nothing was logged at all.
+    void recordDownload(paper.id);
     router.push({
       pathname: '/pdf',
       params: { id: docId, url: targetUrl, title },
@@ -369,17 +457,42 @@ export default function PYQScreen() {
     showToast(`Opening ${paper.subjectCode} (${paper.examType}). Download logged.`);
   }, []);
 
-  const handleBulkDownload = () => {
-    if (selectedIds.length === 0) return;
-    const selected = papers.filter((p) => selectedIds.includes(p.id));
-    const links = selected.filter((p) => p.fileUrl).length;
-    showToast(
-      links > 0
-        ? `Opening ${links} paper${links === 1 ? '' : 's'} in your browser.`
-        : 'Bulk download needs the cloud backend to be connected.',
-    );
+  /**
+   * Opens the selected papers.
+   *
+   * The button used to be labelled "Download ZIP" and did nothing at all:
+   * it counted the papers and showed a toast. There is no zip writer in the
+   * app, so the action is now honest - it opens the first selected paper in
+   * the reader and logs the download of every selected paper.
+   */
+  const handleBulkDownload = useCallback(async () => {
+    const selected = papers.filter((p) => selectedIds.includes(p.id) && p.fileUrl);
+    if (selected.length === 0) {
+      showToast('None of the selected papers have a file yet.');
+      return;
+    }
+
+    for (const paper of selected) {
+      void recordDownload(paper.id);
+    }
+
+    const [first] = selected;
+    const docId = registerDocument(first.fileUrl!, `${first.subjectCode} - ${first.subjectName}`);
+    router.push({
+      pathname: '/pdf',
+      params: {
+        id: docId,
+        url: first.fileUrl!,
+        title: `${first.subjectCode} - ${first.subjectName}`,
+      },
+    });
     setSelectedIds([]);
-  };
+    showToast(
+      selected.length === 1
+        ? 'Opened the paper. Download logged.'
+        : `Opened ${first.subjectCode}. Download logged for ${selected.length} papers - open the rest one by one.`,
+    );
+  }, [papers, selectedIds]);
 
   const handleUploadPress = () => {
     setPickedFile(null);
@@ -399,28 +512,33 @@ export default function PYQScreen() {
     const custom = reportCustomNote.trim();
     setReportSheetVisible(false);
     setReportCustomNote('');
-    const result = await reportPaper(
-      reportingPaper.id,
-      finalReason,
-      user?.uniqueStudentId || user?.rollNo || user?.id || null,
-      {
-        customNote: custom,
-        studentName: user?.name || 'GBU Student',
-        subjectCode: reportingPaper.subjectCode,
-        subjectName: reportingPaper.subjectName,
-      },
-    );
-    showToast(
-      result.ok
-        ? `Report received: moderation will review ${reportingPaper.subjectCode}.`
-        : `Report could not be sent: ${result.reason}`,
-    );
+    setReporting(true);
+    try {
+      const result = await reportPaper(
+        reportingPaper.id,
+        finalReason,
+        user?.uniqueStudentId || user?.rollNo || user?.id || null,
+        {
+          customNote: custom,
+          studentName: user?.name || 'GBU Student',
+          subjectCode: reportingPaper.subjectCode,
+          subjectName: reportingPaper.subjectName,
+        },
+      );
+      showToast(
+        result.ok
+          ? `Report received: moderation will review ${reportingPaper.subjectCode}.`
+          : `Report could not be sent: ${result.reason}`,
+      );
+    } finally {
+      setReporting(false);
+    }
   };
 
   const handlePickFile = async () => {
     try {
       const picked = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/*', '*/*'],
+        type: ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/*'],
         copyToCacheDirectory: true,
         multiple: false,
       });
@@ -431,7 +549,9 @@ export default function PYQScreen() {
         uri: asset.uri,
         name: asset.name || 'paper.pdf',
         mimeType: canonicalMime,
-        size: asset.size ?? 0,
+        // A cloud document provider may not measure the file. `null` means
+        // "unknown", not "empty" - the old `?? 0` threw real papers away.
+        size: typeof asset.size === 'number' ? asset.size : null,
       });
       showToast(`Selected ${asset.name}`);
     } catch (err) {
@@ -468,13 +588,6 @@ export default function PYQScreen() {
       return;
     }
 
-    const guestStudentId =
-      user?.uniqueStudentId ||
-      user?.rollNo ||
-      (user?.id ? `GBU-${user.id.slice(0, 6).toUpperCase()}` : `GBU-${Math.floor(100000 + Math.random() * 900000)}`);
-    const uploaderName = user?.name || 'Guest Scholar';
-    const uploaderAvatar = user?.avatarId || (user?.avatarUrl ?? 'tech-scholar');
-
     const meta = {
       school: uploadSchool,
       programmeCode: finalProg,
@@ -486,22 +599,24 @@ export default function PYQScreen() {
     };
 
     setUploading(true);
-    const result: PyqUploadResult = await uploadPendingPaper(
-      pickedFile,
-      meta,
-      user?.id ?? guestStudentId,
-      {
-        name: uploaderName,
-        uniqueStudentId: guestStudentId,
-        avatarId: uploaderAvatar,
-      },
-    );
-    setUploading(false);
+    let result: PyqUploadResult;
+    try {
+      result = await uploadPendingPaper(pickedFile, meta, uploaderIdentity);
+    } catch (err) {
+      result = {
+        ok: false,
+        reason: humaniseUploadError(err instanceof Error ? err.message : undefined),
+      };
+    } finally {
+      // The spinner used to stay on forever when the upload was refused.
+      setUploading(false);
+    }
 
     if (!result.ok) {
       const isOfflineOrNetworkFailure =
         result.reason === 'Cloud sync is not configured yet.' ||
         result.reason.toLowerCase().includes('network') ||
+        result.reason.toLowerCase().includes('no connection') ||
         result.reason.toLowerCase().includes('failed to fetch') ||
         result.reason.toLowerCase().includes('timeout') ||
         result.reason.toLowerCase().includes('connection');
@@ -515,24 +630,19 @@ export default function PYQScreen() {
             size: pickedFile.size,
           },
           meta,
+          new Date(),
+          uploaderIdentity,
         );
-        const queue = await enqueueUpload(entry);
-        setQueuedCount(queue.length);
+        const next = await enqueueUpload(entry);
+        setQueue(next);
         setUploadSheetVisible(false);
         setUploadSubjectCode('');
         setUploadSubjectName('');
         setPickedFile(null);
         showToast('Saved on this phone. It will upload automatically once connected.');
-        void awardUploadPoints({
-          id: user?.id || guestStudentId,
-          name: uploaderName,
-          avatarId: uploaderAvatar,
-          uniqueStudentId: guestStudentId,
-          school: user?.classSelection?.school || uploadSchool,
-        }).then(() => setLeaderboardRefreshKey((k) => k + 1));
         return;
       }
-      showToast(result.reason);
+      showToast(humaniseUploadError(result.reason));
       return;
     }
 
@@ -540,16 +650,30 @@ export default function PYQScreen() {
     setUploadSubjectCode('');
     setUploadSubjectName('');
     setPickedFile(null);
+    // Points are NOT awarded here. They are derived by the server from the
+    // approved papers, so a rejected paper pays nothing and the score
+    // always lives on the server.
     showToast('Upload submitted! A moderator will review it before it is listed on GBU One.');
-    void awardUploadPoints({
-      id: user?.id || guestStudentId,
-      name: uploaderName,
-      avatarId: uploaderAvatar,
-      uniqueStudentId: guestStudentId,
-      school: user?.classSelection?.school || uploadSchool,
-    }).then(() => setLeaderboardRefreshKey((k) => k + 1));
     void refetch();
   };
+
+  const handleDeleteQueued = useCallback(
+    async (id: string) => {
+      const next = await deleteQueuedUpload(id);
+      setQueue(next);
+      showToast('The queued paper was removed from this phone.');
+    },
+    [],
+  );
+
+  const handleRetryQueued = useCallback(
+    async (id: string) => {
+      const next = await retryQueuedUpload(id);
+      setQueue(next);
+      void runFlush();
+    },
+    [runFlush],
+  );
 
   const availableSubjects = useMemo(() => {
     const map = new Map<string, { code: string; name: string; count: number }>();
@@ -596,9 +720,11 @@ export default function PYQScreen() {
     );
   }, [papers, searchQuery, selectedSchool, selectedSemester, examTab, selectedSubject]);
 
+  // The trending row used to ignore every filter, so a student looking for
+  // one subject still saw the global most-downloaded papers.
   const trendingPapers = useMemo(() => {
-    return [...papers].sort((a, b) => b.downloads - a.downloads).slice(0, 4);
-  }, [papers]);
+    return [...filteredPapers].sort((a, b) => b.downloads - a.downloads).slice(0, 4);
+  }, [filteredPapers]);
 
   const renderPaperItem = useCallback(
     ({ item: paper }: { item: PYQItem }) => {
@@ -754,41 +880,111 @@ export default function PYQScreen() {
         </View>
 
         {/* Compact row of Top 3 podium avatars & points */}
-        <View style={styles.top3Row}>
-          {topContributors.map((entry, index) => {
-            const medal = index === 0 ? '👑' : index === 1 ? '🥈' : '🥉';
-            const medalBorder = index === 0 ? '#F59E0B' : index === 1 ? '#94A3B8' : '#D97706';
-            return (
-              <View key={`top3_${entry.id}_${index}`} style={styles.top3Item}>
-                <View style={[styles.top3AvatarRing, { borderColor: medalBorder }]}>
-                  <Avatar name={entry.name} avatarId={entry.avatarId} size={28} />
-                  <Text style={styles.top3Medal}>{medal}</Text>
+        {topContributors.length > 0 ? (
+          <View style={styles.top3Row}>
+            {topContributors.map((entry, index) => {
+              const medal = index === 0 ? '👑' : index === 1 ? '🥈' : '🥉';
+              const medalBorder = index === 0 ? '#F59E0B' : index === 1 ? '#94A3B8' : '#D97706';
+              return (
+                <View key={`top3_${entry.id}_${index}`} style={styles.top3Item}>
+                  <View style={[styles.top3AvatarRing, { borderColor: medalBorder }]}>
+                    <Avatar name={entry.name} avatarId={entry.avatarId} size={28} />
+                    <Text style={styles.top3Medal}>{medal}</Text>
+                  </View>
+                  <View style={styles.top3Details}>
+                    <Text
+                      style={[styles.top3Name, { color: colors.textPrimary }]}
+                      numberOfLines={1}
+                    >
+                      {entry.name.split(' ')[0]}
+                    </Text>
+                    <Text style={[styles.top3Points, { color: colors.accent }]}>
+                      {entry.points} pts
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.top3Details}>
-                  <Text
-                    style={[styles.top3Name, { color: colors.textPrimary }]}
-                    numberOfLines={1}
-                  >
-                    {entry.name.split(' ')[0]}
-                  </Text>
-                  <Text style={[styles.top3Points, { color: colors.accent }]}>
-                    {entry.points} pts
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={styles.top3Row}>
+            <Text style={[styles.leaderboardEmpty, { color: colors.textSecondary }]}>
+              {leaderboardError
+                ? 'The contributor standings could not be loaded.'
+                : 'No approved uploads yet — the first contributor takes the crown.'}
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
 
-      {/* Search Bar */}
-      {queuedCount > 0 ? (
+      {/* The library could not be refreshed: say so, the papers below are the saved ones. */}
+      {libraryError ? (
+        <View style={[styles.queuedBanner, { backgroundColor: colors.warningSoft, borderColor: colors.warning }]}>
+          <AlertTriangle size={15} color={colors.warning} style={{ marginRight: 8 }} />
+          <Text style={[styles.queuedBannerText, { color: colors.textSecondary }]}>
+            {`The paper library could not be reached. Showing the papers saved on this phone. (${libraryError instanceof Error ? libraryError.message : String(libraryError)})`}
+          </Text>
+        </View>
+      ) : null}
+
+      {queue.length > 0 ? (
         <View style={[styles.queuedBanner, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
           <UploadCloud size={15} color={colors.accent} style={{ marginRight: 8 }} />
-          <Text style={[styles.queuedBannerText, { color: colors.textPrimary }]}>
-            {queuedCount} {queuedCount === 1 ? 'paper is' : 'papers are'} waiting on this phone. They
-            will go up as soon as the library is connected.
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.queuedBannerText, { color: colors.textPrimary }]}>
+              {queue.length} {queue.length === 1 ? 'paper is' : 'papers are'} waiting on this phone.
+              {queueOpen ? '' : ' Tap to see them.'}
+            </Text>
+            {queueOpen ? (
+              <View style={styles.queueList}>
+                {queue.map((entry) => (
+                  <View key={entry.id} style={styles.queueRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.queueTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                        {entry.meta.subjectCode} — {entry.meta.subjectName}
+                      </Text>
+                      <Text style={[styles.queueSubtitle, { color: colors.textSecondary }]} numberOfLines={2}>
+                        {entry.status === 'failed'
+                          ? `Upload failed: ${entry.lastError ?? 'unknown error'}`
+                          : `Waiting to upload (${entry.attempts} attempt${entry.attempts === 1 ? '' : 's'})`}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.queueAction}
+                      onPress={() => void handleRetryQueued(entry.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Retry uploading ${entry.meta.subjectCode}`}
+                    >
+                      <RefreshCw size={15} color={colors.accent} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.queueAction}
+                      onPress={() => void handleDeleteQueued(entry.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete queued paper ${entry.meta.subjectCode}`}
+                    >
+                      <Trash2 size={15} color={colors.danger || '#EF4444'} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                <PillButton
+                  label="Upload queued papers now"
+                  onPress={() => void runFlush()}
+                  variant="outline"
+                  size="sm"
+                  icon={<UploadCloud size={14} color={colors.accent} style={{ marginRight: 4 }} />}
+                />
+              </View>
+            ) : null}
+          </View>
+          <TouchableOpacity
+            onPress={() => setQueueOpen((open) => !open)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={queueOpen ? 'Hide queued papers' : 'Show queued papers'}
+          >
+            <Text style={[styles.queueToggle, { color: colors.accent }]}>{queueOpen ? 'Hide' : 'Show'}</Text>
+          </TouchableOpacity>
         </View>
       ) : null}
 
@@ -801,6 +997,7 @@ export default function PYQScreen() {
             placeholder="Search by subject name or code..."
             placeholderTextColor={colors.textTertiary}
             style={[styles.searchInput, { color: colors.textPrimary }]}
+            accessibilityLabel="Search previous year question papers"
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
@@ -869,6 +1066,33 @@ export default function PYQScreen() {
         </ScrollView>
       </View>
 
+      {/* Subject level of the browse: school -> semester -> subject */}
+      {availableSubjects.length > 0 ? (
+        <View style={styles.filterSection}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScroll}
+          >
+            <Chip
+              label="All Subjects"
+              selected={selectedSubject === 'All'}
+              onPress={() => setSelectedSubject('All')}
+              style={styles.filterChip}
+            />
+            {availableSubjects.map((subject) => (
+              <Chip
+                key={subject.code}
+                label={subject.code}
+                selected={selectedSubject === subject.code}
+                onPress={() => setSelectedSubject(subject.code)}
+                style={styles.filterChip}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
       <FlatList
         data={filteredPapers}
         keyExtractor={(item) => item.id}
@@ -899,13 +1123,19 @@ export default function PYQScreen() {
             <Text style={[styles.floatingCountText, { color: colors.textPrimary }]}>
               {selectedIds.length} paper{selectedIds.length > 1 ? 's' : ''} selected
             </Text>
-            <TouchableOpacity onPress={() => setSelectedIds([])}>
+            <TouchableOpacity
+              onPress={() => setSelectedIds([])}
+              style={styles.floatingClear}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Clear the selection"
+            >
               <Text style={[styles.floatingClearText, { color: colors.textSecondary }]}>Clear</Text>
             </TouchableOpacity>
           </View>
           <PillButton
-            label="Download ZIP"
-            onPress={handleBulkDownload}
+            label="Open Selected"
+            onPress={() => void handleBulkDownload()}
             variant="primary"
             size="sm"
             icon={<Download size={14} color={colors.onAccent} style={{ marginRight: 4 }} />}
@@ -935,6 +1165,7 @@ export default function PYQScreen() {
             placeholderTextColor={colors.textTertiary}
             style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.borderGlass, color: colors.textPrimary }]}
             autoCapitalize="characters"
+            accessibilityLabel="Subject code"
           />
 
           <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Subject Name</Text>
@@ -944,6 +1175,7 @@ export default function PYQScreen() {
             placeholder="e.g. Data Structures & Algorithms"
             placeholderTextColor={colors.textTertiary}
             style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.borderGlass, color: colors.textPrimary }]}
+            accessibilityLabel="Subject name"
           />
 
           <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>School</Text>
@@ -1010,6 +1242,7 @@ export default function PYQScreen() {
               placeholder="Enter programme code (e.g. DUAL, PHD, ROBOTICS)"
               placeholderTextColor={colors.textTertiary}
               autoCapitalize="characters"
+              accessibilityLabel="Custom programme code"
               style={[
                 styles.formInput,
                 {
@@ -1044,9 +1277,10 @@ export default function PYQScreen() {
             placeholderTextColor={colors.textTertiary}
             keyboardType="number-pad"
             style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.borderGlass, color: colors.textPrimary }]}
+            accessibilityLabel="Exam year"
           />
 
-          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Paper File (PDF, Images, Word Docs)</Text>
+          <Text style={[styles.uploadFormLabel, { color: colors.textPrimary }]}>Paper File (PDF, JPG or PNG)</Text>
           {pickedFile ? (
             <View
               style={{
@@ -1100,7 +1334,9 @@ export default function PYQScreen() {
                       marginTop: 2,
                     }}
                   >
-                    {Math.round(pickedFile.size / 1024)} KB · Ready to upload
+                    {pickedFile.size === null
+                      ? 'Size unknown · Ready to upload'
+                      : `${Math.round(pickedFile.size / 1024)} KB · Ready to upload`}
                   </Text>
                 </View>
               </View>
@@ -1155,7 +1391,7 @@ export default function PYQScreen() {
                 ]}
                 numberOfLines={1}
               >
-                Choose PDF, JPG, PNG, DOC or DOCX (max 20 MB)
+                Choose PDF, JPG or PNG (max 20 MB)
               </Text>
             </TouchableOpacity>
           )}
@@ -1170,7 +1406,7 @@ export default function PYQScreen() {
 
           <PillButton
             label="Submit Question Paper"
-            onPress={handleSubmitUpload}
+            onPress={() => void handleSubmitUpload()}
             loading={uploading}
             disabled={uploading}
             variant="primary"
@@ -1180,7 +1416,7 @@ export default function PYQScreen() {
           />
 
           <Text style={[styles.uploadHint, { color: colors.textTertiary }]}>
-            A moderator reviews your paper before it is listed on GBU One. +50 points will be added to your profile!
+            A moderator reviews your paper before it is listed on GBU One. +50 points are added once it is approved.
           </Text>
         </View>
       </BottomSheet>
@@ -1215,7 +1451,7 @@ export default function PYQScreen() {
             <View style={styles.detailStatsRow}>
               <Download size={14} color={colors.textSecondary} />
               <Text style={[styles.detailStatsText, { color: colors.textSecondary }]}>
-                {detailPaper.downloads} verified downloads by students
+                {detailPaper.downloads} downloads
               </Text>
             </View>
 
@@ -1307,6 +1543,9 @@ export default function PYQScreen() {
             return (
               <TouchableOpacity
                 key={reasonOption}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={reasonOption}
                 style={[
                   styles.reportOption,
                   {
@@ -1349,13 +1588,16 @@ export default function PYQScreen() {
             onChangeText={setReportCustomNote}
             multiline
             numberOfLines={3}
+            accessibilityLabel="Additional details for the report"
           />
 
           <PillButton
             label="Submit Report to Admin"
             variant="primary"
             size="md"
-            onPress={() => handleSendReport()}
+            loading={reporting}
+            disabled={reporting}
+            onPress={() => void handleSendReport()}
             style={{ marginTop: 14 }}
           />
 
@@ -1432,7 +1674,12 @@ const styles = StyleSheet.create({
   },
   leaderboardBannerActionText: {
     fontFamily: 'Inter-SemiBold',
-    fontSize: 12,
+    fontSize: 11,
+  },
+  leaderboardEmpty: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    flex: 1,
   },
   top3Row: {
     flexDirection: 'row',
@@ -1490,6 +1737,36 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 12,
     lineHeight: 17,
+  },
+  queueToggle: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+  },
+  queueList: {
+    marginTop: 8,
+    gap: 8,
+  },
+  queueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  queueTitle: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 12,
+  },
+  queueSubtitle: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  queueAction: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   uploadHint: {
     fontFamily: 'Inter-Regular',
@@ -1636,10 +1913,17 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 2,
   },
+  selectToggle: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   downloadRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    minHeight: 44,
   },
   downloadCount: {
     fontFamily: 'Inter-Regular',
@@ -1678,10 +1962,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
   },
+  floatingClear: {
+    minHeight: 44,
+    justifyContent: 'center',
+  },
   floatingClearText: {
     fontFamily: 'Inter-Regular',
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 12,
   },
   detailSheetTitle: {
     fontFamily: 'Inter-Bold',
@@ -1740,6 +2027,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontFamily: 'Inter-Regular',
     fontSize: 14,
+    minHeight: 44,
   },
   formChipRow: {
     flexDirection: 'row',
@@ -1789,6 +2077,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     marginBottom: 8,
+    minHeight: 44,
   },
   reportOptionText: {
     fontFamily: 'Inter-Medium',

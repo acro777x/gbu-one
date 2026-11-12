@@ -6,17 +6,31 @@
  * from "this account is not a moderator" — the owner saw "Moderator access
  * required" while their own allowlist row was sitting in the table. These tests
  * pin the three states apart (docs/ADMIN_MODERATION.md, OPEN_QUESTIONS #21).
+ *
+ * The allowlist is read with a CASE-INSENSITIVE match, because the server
+ * helper `public.is_moderator()` compares `lower(m.email)` with the JWT
+ * email: a row written as `Admin@GBU.ac.in` matches on the server and must
+ * match in the app too.
  */
 import { moderatorStatus, isModerator } from '../src/features/pyq/pyqRepository';
 
 const mockConfig = { configured: true };
 let moderatorRow: { role: string } | null = null;
 let listError: { message: string } | null = null;
+/** How the allowlist was read: `ilike` is case-insensitive, `eq` is not. */
+let lastLookup: { method: 'eq' | 'ilike'; value: string } | null = null;
 
 jest.mock('../src/lib/supabase', () => {
   const query = {
     select: () => query,
-    eq: () => query,
+    eq: (column: string, value: string) => {
+      lastLookup = { method: 'eq', value };
+      return query;
+    },
+    ilike: (column: string, value: string) => {
+      lastLookup = { method: 'ilike', value };
+      return query;
+    },
     maybeSingle: () =>
       Promise.resolve({ data: moderatorRow, error: listError }),
   };
@@ -26,6 +40,9 @@ jest.mock('../src/lib/supabase', () => {
     },
     supabase: {
       from: () => query,
+      auth: {
+        getSession: jest.fn().mockResolvedValue({ data: { session: null } }),
+      },
       storage: { from: () => ({ download: jest.fn(), upload: jest.fn(), remove: jest.fn() }) },
     },
   };
@@ -36,6 +53,7 @@ describe('moderator access', () => {
     mockConfig.configured = true;
     moderatorRow = null;
     listError = null;
+    lastLookup = null;
   });
 
   it('is signed-out when no account is signed in', async () => {
@@ -50,6 +68,16 @@ describe('moderator access', () => {
     expect(status.state).toBe('moderator');
     expect(status.reason).toBe('');
     await expect(isModerator('owner@gbuone.test')).resolves.toBe(true);
+  });
+
+  it('matches the allowlist case-insensitively', async () => {
+    moderatorRow = { role: 'owner' };
+    await moderatorStatus('Admin@GBU.ac.in');
+    // `public.is_moderator()` compares `lower(m.email)`, so the app has to
+    // compare the same way: an allowlist row written as `Admin@GBU.ac.in`
+    // must match the account `admin@gbu.ac.in`.
+    expect(lastLookup?.method).toBe('ilike');
+    expect(lastLookup?.value).toBe('Admin@GBU.ac.in');
   });
 
   it('explains a readable allowlist that does not contain the account', async () => {

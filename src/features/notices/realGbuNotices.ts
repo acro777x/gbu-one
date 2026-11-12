@@ -1,11 +1,19 @@
 /**
- * GBU One — Real Official University Notices
- * Scraped directly from official Gautam Buddha University portals:
+ * GBU One — The bundled notice archive
+ *
+ * Captured from the official Gautam Buddha University portals:
  * - www.gbu.ac.in/page/notices
  * - exams.gbu.ac.in
  * - hostels.gbu.ac.in / ohms.gbu.ac.in
  * - csms.gbu.ac.in & digiforms.gbu.ac.in
- * Zero mock data.
+ *
+ * WHY EVERY ROW CARRIES `isSample: true`
+ *
+ * This archive is a snapshot: it was captured earlier and it is NOT read from
+ * the university when the app runs. The app therefore never presents it as
+ * live university data - the notices status store says "sample" whenever
+ * this list is what is on screen, and the screen shows a banner. The flag on
+ * the row says the same thing for code that looks at a single notice.
  */
 import { NoticeItem } from './noticeService';
 
@@ -24,7 +32,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": "2026-11-15T18:00:00+00:00",
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
@@ -40,7 +48,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 5,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "c3d4e5f6-7890-1234-abcd-ef0123456781",
@@ -56,7 +64,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 4,
     "deadlineAt": "2026-11-20T18:00:00+00:00",
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "c3d4e5f6-7890-1234-abcd-ef0123456783",
@@ -72,7 +80,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 4,
     "deadlineAt": "2026-11-25T18:00:00+00:00",
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "c3d4e5f6-7890-1234-abcd-ef0123456782",
@@ -88,7 +96,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 5,
     "deadlineAt": "2026-11-28T18:00:00+00:00",
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "ce17d36a-236d-4247-9ab4-664efbae8c6d",
@@ -106,7 +114,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "6bfe4c75-e003-4755-a0ab-43fa799c09c1",
@@ -125,7 +133,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": null,
     "threadId": "th_forscholarshiponnspporta",
     "threadUpdateCount": 2,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "93a56883-4d12-4dcb-86d7-066335572095",
@@ -143,7 +151,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "1d108245-ecaf-45dc-90f9-5b79bcb53607",
@@ -161,7 +169,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "810c7dbd-5c2a-439b-b01a-28ff43cacdc5",
@@ -179,7 +187,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "5d5e5bb3-49d3-4931-baba-3e0219862eb3",
@@ -197,7 +205,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "113f6fb1-3709-4836-ab40-d38fd2f35df7",
@@ -215,7 +223,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "ceba00ae-d154-47b6-878b-88af841da113",
@@ -233,7 +241,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 5,
     "deadlineAt": "2026-09-30T18:29:59+00:00",
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "e87d59c1-d304-48b5-a6ec-3ae0ec1283e3",
@@ -251,7 +259,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "4c15c336-ae56-48f2-a9ea-ae115c0c58b1",
@@ -269,7 +277,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "ac07a53f-2362-4c66-af56-c4ce36f718b1",
@@ -287,7 +295,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "be549b1e-37c7-474f-88b1-0b16d0344238",
@@ -306,7 +314,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": "2026-09-10T18:29:59+00:00",
     "threadId": "th_deadlineforfeessubmissio",
     "threadUpdateCount": 2,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "a67ec71b-ce31-4d2d-a9d3-0d172c2b47cb",
@@ -324,7 +332,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "f7086a81-89d2-4795-a318-bd295f772b06",
@@ -342,7 +350,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "8cc62fdf-b577-41a3-b0c0-1c25e5a5abd0",
@@ -360,7 +368,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "0d670d60-99f7-4212-a594-b3de0d603434",
@@ -378,7 +386,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "f26068a5-ee9d-4010-8e41-cf95e89912b4",
@@ -400,7 +408,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": null,
     "threadId": "th_declarationofresearchsch",
     "threadUpdateCount": 2,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "a8945a7f-9ca4-48e0-bd0d-aea2659ba699",
@@ -422,7 +430,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": null,
     "threadId": "th_declarationofresearchsch",
     "threadUpdateCount": 2,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "5f034364-1483-4849-8b5a-93bbec07319f",
@@ -440,7 +448,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "f2987edf-2c01-4083-af8c-9fc5b7c8d021",
@@ -458,7 +466,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "c2da765a-63f2-4738-8c04-a0b506702266",
@@ -476,7 +484,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "9bc494a2-42a2-4102-a0af-cf5f5d862d39",
@@ -494,7 +502,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "2a3d7ae0-ce70-450e-b5a2-5fccdf7a6c3d",
@@ -512,7 +520,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "fbe90e29-c693-49a3-87bd-427ce6ee9c08",
@@ -530,7 +538,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "6ca0e326-82fb-4fdb-b96c-44a4c3eee048",
@@ -549,7 +557,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": null,
     "threadId": "th_ofeoiforthesiastudyofthe",
     "threadUpdateCount": 2,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "ae695f08-99df-4171-afa0-2cde83d2c44e",
@@ -568,7 +576,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": null,
     "threadId": "th_ofeoiforthesiastudyofthe",
     "threadUpdateCount": 2,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "ceba264a-9c87-4bd9-8a5c-ffcd2b8b32b2",
@@ -586,7 +594,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "4e7d621e-4a5a-4cd9-82d0-21ea6f7f02dc",
@@ -605,7 +613,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": null,
     "threadId": "th_importantfortabletsmartp",
     "threadUpdateCount": 3,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "b2a69f0d-15d2-43b8-97ad-6b4352183443",
@@ -623,7 +631,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "825d8155-078e-461f-b96c-d314472db686",
@@ -641,7 +649,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "8e6dbe4f-5bcc-487a-aad2-11d55d127f11",
@@ -659,7 +667,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": "2026-03-02T18:29:59+00:00",
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "2ce787d2-36f3-483a-894f-05203bc232c3",
@@ -678,7 +686,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": "2026-03-02T18:29:59+00:00",
     "threadId": "th_officememorandumgbu002ad",
     "threadUpdateCount": 2,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "c6f78397-063c-4552-a8f1-ec70275cc317",
@@ -697,7 +705,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": "2026-03-02T18:29:59+00:00",
     "threadId": "th_officememorandumgbu002ad",
     "threadUpdateCount": 2,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "b508aec4-f94d-4227-8f89-773663fe7879",
@@ -716,7 +724,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": null,
     "threadId": "th_importantfortabletsmartp",
     "threadUpdateCount": 3,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "72116283-0cad-450c-b103-922f22e46f90",
@@ -734,7 +742,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": "2026-02-13T18:29:59+00:00",
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "4aae2dcb-0c66-4ae2-89a1-ae2205798453",
@@ -755,7 +763,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 5,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "4c8649da-0ffe-4fb4-927d-33c133c71aa9",
@@ -773,7 +781,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "21a38f25-59c8-4a59-ade8-9b128b4b4806",
@@ -791,7 +799,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "cc3b90c0-6c4c-4c0a-a5f9-cb7ce1498dc8",
@@ -809,7 +817,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "9df7a1db-b049-4828-a881-6264787f1056",
@@ -827,7 +835,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "4e96c696-3648-44d7-b3b2-b79b5a279f05",
@@ -845,7 +853,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "0dd9d468-f2d9-4740-a420-de7ecacfe5d8",
@@ -864,7 +872,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": null,
     "threadId": "th_deadlineforfeessubmissio",
     "threadUpdateCount": 2,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "67f18ee0-1d50-47ef-9e7b-70cad17c53b7",
@@ -883,7 +891,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "deadlineAt": null,
     "threadId": "th_forhostelandmessexemptio",
     "threadUpdateCount": 2,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "a05c2be5-326f-4cc6-86ad-c23bf376cda5",
@@ -901,7 +909,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "3d404c49-e525-4904-939c-e5a5e39f85b3",
@@ -919,7 +927,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "8b530961-d1e4-4283-a688-c7a9714e792a",
@@ -937,7 +945,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": "2026-01-24T18:29:59+00:00",
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "2a2282a1-131b-4a04-8e5e-06538cfeb375",
@@ -955,7 +963,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "b33536cb-9dd6-4ab7-934f-a2b56a0bb951",
@@ -973,7 +981,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "f5f1ab3e-3a2a-473c-bc72-7e127570ca05",
@@ -991,7 +999,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "5ea00540-320c-428e-bc7d-c0cbbffc61ff",
@@ -1009,7 +1017,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "150a1e2c-ff6a-4459-a36b-370a872fb5b4",
@@ -1027,7 +1035,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "29dd2c27-bcb6-403e-845d-a3e7e8e0cdf1",
@@ -1045,7 +1053,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "a87f3aef-b531-4099-ae00-2a03b9252f31",
@@ -1063,7 +1071,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 3,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "fc68584a-16b2-4be6-bf70-1fdcbd0b37c3",
@@ -1081,7 +1089,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   },
   {
     "id": "511c84c5-6505-46ac-82d3-c15f05290ab4",
@@ -1099,7 +1107,7 @@ export const REAL_GBU_NOTICES: NoticeItem[] = [
     "importance": 0,
     "deadlineAt": null,
     "threadId": null,
-    "isSample": false
+    "isSample": true
   }
 ];
 

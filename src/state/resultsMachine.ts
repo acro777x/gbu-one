@@ -1,6 +1,16 @@
 /**
  * GBU One — Results Watcher State Machine
  *
+ * INTEGRATION STATUS: **NOT YET WIRED IN.**
+ *
+ * `src/features/exams/resultsWatch.ts` owns the watch lifecycle today.
+ * This machine is the intended replacement for it, but the watch hook has
+ * to be re-shaped around it first.
+ *
+ * Until then this module is a SPECIFICATION with its own tests, not the
+ * code the app runs. `tests/state_machines.test.ts` asserts that claim
+ * explicitly, so the gap cannot be quietly forgotten.
+ *
  * Implements the deterministic Results Watcher lifecycle:
  *   'idle' -> 'watching' -> 'polling' -> 'notified' | 'error'
  *

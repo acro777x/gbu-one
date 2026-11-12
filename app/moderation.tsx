@@ -8,7 +8,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import {
   ChevronLeft,
   ShieldCheck,
@@ -20,7 +20,6 @@ import {
   Eye,
 } from 'lucide-react-native';
 import { GlassCard, PillButton, Toast, EmptyState, BottomSheet } from '../src/components/ui';
-import { useAuthStore } from '../src/store/useAuthStore';
 import {
   applyModeration,
   approveAllPending,
@@ -36,20 +35,24 @@ import { useAppTheme } from '../src/lib/ThemeContext';
 import { spacing } from '../src/lib/theme';
 import { isAdminApp } from '../src/lib/appVariant';
 
+/**
+ * The moderation queue.
+ *
+ * The guard lives in this wrapper and NOT in the component below: the old
+ * version returned `null` before its `useState` calls, which is a
+ * Rules-of-Hooks violation that throws "Rendered fewer hooks than during
+ * the previous render" as soon as the variant becomes dynamic.
+ */
 export default function ModerationQueueScreen() {
+  if (!isAdminApp()) {
+    return <Redirect href="/(tabs)/pyq" />;
+  }
+  return <ModerationQueue />;
+}
+
+function ModerationQueue() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { user } = useAuthStore();
-
-  useEffect(() => {
-    if (!isAdminApp()) {
-      router.replace('/(tabs)/pyq');
-    }
-  }, []);
-
-  if (!isAdminApp()) {
-    return null;
-  }
 
   const [papers, setPapers] = useState<PyqPaperRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,14 +68,38 @@ export default function ModerationQueueScreen() {
     setToastVisible(true);
   };
 
+  /**
+   * Loads the queue.
+   *
+   * The moderator identity comes from the verified Supabase session, not
+   * from the student auth store: in the admin APK that store holds the
+   * guest/empty email, so the queue was permanently unreachable. The
+   * moderator MUST be signed in with a Supabase Auth account.
+   */
   const load = useCallback(async () => {
     setLoading(true);
-    const status = await moderatorStatus(user?.email);
-    const pending = status.state === 'moderator' ? await listPendingPapers() : [];
+    const status = await moderatorStatus();
     setAccess(status);
-    setPapers(pending);
+
+    if (status.state !== 'moderator') {
+      setPapers([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const pending = await listPendingPapers();
+      setPapers(pending);
+    } catch (err) {
+      setPapers([]);
+      showToast(
+        err instanceof Error
+          ? `The queue could not be loaded: ${err.message}`
+          : 'The queue could not be loaded.',
+      );
+    }
     setLoading(false);
-  }, [user?.email]);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -80,7 +107,7 @@ export default function ModerationQueueScreen() {
 
   const handleAction = async (paper: PyqPaperRecord, action: ModerationAction) => {
     setBusyId(paper.id);
-    const result = await applyModeration(paper.id, action, user?.email ?? null);
+    const result = await applyModeration(paper.id, action);
     setBusyId(null);
     if (!result.ok) {
       showToast(result.reason);
@@ -88,10 +115,8 @@ export default function ModerationQueueScreen() {
     }
     showToast(
       action === 'approve'
-        ? `${paper.subjectCode} approved and published.`
-        : action === 'reject'
-          ? `${paper.subjectCode} rejected.`
-          : 'Changes requested from the uploader.',
+        ? `${paper.subjectCode} approved and published.${result.warning ? ` ${result.warning}` : ''}`
+        : `${paper.subjectCode} rejected.${result.warning ? ` ${result.warning}` : ''}`,
     );
     setPapers((prev) => prev.filter((p) => p.id !== paper.id));
   };
@@ -99,13 +124,16 @@ export default function ModerationQueueScreen() {
   const handleApproveAll = async () => {
     setBulkSheetVisible(false);
     setBulkBusy(true);
-    const { approved, failed } = await approveAllPending(user?.email ?? null);
-    setBulkBusy(false);
-    showToast(
-      failed === 0
-        ? `${approved} paper${approved === 1 ? '' : 's'} approved and published.`
-        : `${approved} approved, ${failed} could not be published. The first error is above the list.`,
-    );
+    try {
+      const { approved, failed } = await approveAllPending();
+      showToast(
+        failed === 0
+          ? `${approved} paper${approved === 1 ? '' : 's'} approved and published.`
+          : `${approved} approved, ${failed} could not be published. The first error is above the list.`,
+      );
+    } finally {
+      setBulkBusy(false);
+    }
     void load();
   };
 
@@ -202,7 +230,7 @@ export default function ModerationQueueScreen() {
                 {papers.length} paper{papers.length === 1 ? '' : 's'} waiting
               </Text>
               <Text style={[styles.bulkBody, { color: colors.textSecondary }]}>
-                Approving publishes the file to every student and records your email in the
+                Approving publishes the file to every student and records your account in the
                 moderation log. Check the metadata before you publish a batch.
               </Text>
               <PillButton
@@ -259,6 +287,13 @@ export default function ModerationQueueScreen() {
                       {paper.semester}
                     </Text>
                   </View>
+
+                  {paper.uploader_name ? (
+                    <Text style={[styles.uploaderText, { color: colors.textTertiary }]}>
+                      Uploaded by {paper.uploader_name}
+                      {paper.uploaderStudentId ? ` (${paper.uploaderStudentId})` : ''}
+                    </Text>
+                  ) : null}
 
                   <View style={styles.actionRow}>
                     <PillButton
@@ -432,6 +467,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: 'Inter-Regular',
     fontSize: 12,
+  },
+  uploaderText: {
+    fontFamily: 'Inter-Regular',
+    fontSize: 11,
+    marginBottom: spacing.md,
   },
   actionRow: {
     flexDirection: 'row',

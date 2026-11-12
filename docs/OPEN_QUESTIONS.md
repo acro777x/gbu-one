@@ -3,7 +3,7 @@
 ## 23. Native APK build & emulator visual test not possible in this environment
 - **Context:** The owner asked to compile an APK, run it in the emulator, and visually verify screens (events, exams, PYQ, alarms, notifications, etc.).
 - **Blocker:** No Android SDK (`ANDROID_HOME` unset), no `expo`/`eas` CLI, no `gradle` on PATH. Only `java` and `adb` are available. Building a native Expo APK requires the Android SDK, build-tools, and `expo prebuild` + gradle, which are not installed.
-- **What IS verified:** `npm run typecheck` (clean), `npm run lint` (clean), `npm test` (29 suites / 420 tests, all pass). The events screen logic is covered by the events service + query unit tests.
+- **What IS verified:** `npm run typecheck` (clean), `npm run lint` (clean), `npm test` (41 suites / 722 tests, all pass). The events screen logic is covered by the events service + query unit tests.
 - **Owner action:** install Android Studio + SDK + `npm i -g eas-cli`, then `eas build --platform android --profile preview` (see `docs/RELEASE.md`). Visual QA on the emulator can then be run against the resulting APK.
 - **Fallback:** All screens are verified against `docs/UI_SPEC.md` / `docs/FULL_UI_AUDIT.md` in code review; the unit suite guards logic; the owner's signed release APK (already built per `docs/RELEASE.md`) is the reference binary.
 
@@ -43,6 +43,19 @@
 
    Fixed in the repo: `supabase/schema.ts` now creates a `security definer` helper `public.is_moderator()` (the only place allowed to read the allowlist) plus the policies the shipped screens need; `tools/emit-sql.mjs` generates the paste-ready `supabase/schema.sql`; `tests/schema_sql_sync.test.ts` keeps the two in step and forbids a policy from reading `public.moderators` directly. **There is no DDL route to this project from a machine** (no Postgres password, no Management API token, `pg/query` returns 404, and there is no `exec_sql` RPC — which also means the worker's `ensureSchema()` guard has never once succeeded and only warns). Owner action: open the Supabase dashboard → SQL editor → paste all of `supabase/schema.sql` → Run. It is idempotent (`create ... if not exists`, `drop policy if exists`, `create or replace function`). Then verify with `node scripts/_rls-probe.js` (all six steps should read `ALLOWED`) — see `docs/ADMIN_MODERATION.md`.
 
+   **Re-measured on 2026-11-12 (read-only probes against the live project):** the paste has still not happened. The live database is running the OLD schema:
+
+   - Tables `admin_claims`, `campus_events`, `app_versions` — **missing**.
+   - Columns `pyq_papers.uploader_student_id / uploader_name / uploader_avatar / file_size_bytes` and `reports.reporter_student_id / reporter_email / status` — **missing**.
+   - Functions `is_moderator`, `is_owner`, `claim_initial_admin`, `has_any_moderator`, `set_moderator`, `remove_moderator` — **missing**.
+   - View `public.pyq_contributor_points` — **missing**.
+   - Storage bucket `pyq-files` — **missing** (the other three exist; `pyq-pending` is still private, which is correct).
+   - `public.moderators` holds **two `owner` rows**: `ashishkhola56@gmail.com` and `admin@gbu.ac.in`. The second one is a **fabricated address that exists on no official GBU page** and should be removed.
+
+   The app code now targets the NEW schema, so the admin console's "Initial Setup", the What's-On events screen, the compulsory-update screen, PYQ uploads and the student report list all fail at runtime. The app does not crash — it falls back to bundled data, which is why this is easy to miss.
+
+   **The full step-by-step procedure is in `docs/SUPABASE_PASTE_GUIDE.md`.**
+
 22. An automated exam-portal login is refused; results are watched on the public sheet instead: [RESOLVED — design decision] The owner asked for students to enter their portal credentials once, have them saved "for the future", and be notified when results or notices appear. `https://gbuexam.in/result/login.php` serves Roll Number + Password + **CAPTCHA** (verified live, 2026-10-23). Driving that form programmatically means defeating a deliberate anti-automation control, and `docs/DATA_SOURCES.md` already says of this host: "Login required — **do not scrape. Link out only.**" So the app does not ask for, store or transmit those credentials at all.
 
    What ships instead (`docs/NOTIFICATIONS.md`: "New result PDF posted for the user's programme; roll-number match is local"):
@@ -52,3 +65,41 @@
    - The old copy claiming the portal asks for "your roll number and your mobile number" was wrong and is corrected in `app/exams.tsx`, `src/features/exams/resultPortals.ts` and `docs/DATA_SOURCES.md`.
 
    Open sub-question for the owner: do you want the roll number (and nothing else — no password) remembered on the device so the field is pre-filled when the portal opens in the browser? It would be stored in `expo-secure-store` (not added as a dependency yet) or in plain app storage, and it is only convenience — say the word and it is a small change. A second route exists if the university ever cooperates: an official API or a written OK from the Exam Department would let the app fetch the personal result directly instead; that is question #9 territory.
+
+23. The scheduled worker has been running "successfully" while writing nothing since 3 November 2026: [OPEN - owner action required, one secret]
+
+   Measured on 2026-11-12. The GitHub Actions cron **is** running (last run 2026-11-11T23:38Z, every job step green) but the live `public.worker_runs` table has had **no new row since 2026-11-03T09:59Z**. The pipeline has therefore been silently dead for eight days: no new notice, no timetable snapshot, no date sheet.
+
+   The mechanism, verified in the code:
+   - `worker/run.ts` calls `isWorkerSupabaseConfigured()`. When it is false it logs *"Supabase not configured - running parse-only (no persistence, no push)"* and **continues, exiting 0**. The job is green.
+   - `worker/supabaseClient.ts` `getWorkerSupabase()` returns `null` when `SUPABASE_SERVICE_ROLE_KEY` is empty, and every write helper then returns early **without an error**.
+   - `recordWorkerRun()` ignores the `error` that `supabase-js` returns (it does not throw on a PostgREST error), so even a real failure is invisible.
+
+   The most likely cause is that the `SUPABASE_SERVICE_ROLE_KEY` repository secret is missing, empty or stale. **Owner action:** add it under *Settings -> Secrets and variables -> Actions*, then run the workflow by hand. The workflow now guards this: it fails immediately if a secret is missing, and after the worker runs it reads `worker_runs` and **fails the job if no new row appeared**. That check is what would have caught this on the first day.
+
+24. The app's client key is a Supabase SECRET key, and it was baked into the shipped APK: [OPEN - owner action required, one key]
+
+   Measured on 2026-11-12. In `.env`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` and `EXPO_PUBLIC_ADMIN_SERVICE_ROLE_KEY` were all the **same** value, and that value is a **secret** key (`sb_secret_...`), not a publishable key. Because Expo inlines every `EXPO_PUBLIC_*` variable into the JavaScript bundle, every student who installed the APK held a key that **bypasses every row level security policy in the project**.
+
+   Fixed in the repo:
+   - the build sanitiser (`tools/build_android_apk.py`) now checks the **value**, not just the variable name, and **refuses to produce a release build** while the client key is a secret key;
+   - the admin build is sanitised the same way (it no longer copies `.env` verbatim);
+   - `tests/bundle_secrets.test.ts` fails the build if any client source file reads a credential-shaped variable, implements an offline admin bypass, or hard-codes a secret;
+   - the CI workflow greps the tracked source for the same things.
+
+   **Owner action:** in the Supabase dashboard, *Project Settings -> API Keys*, create a **Publishable** key (`sb_publishable_...`) and put it in `.env` as `EXPO_PUBLIC_SUPABASE_ANON_KEY`. Keep the secret key for the worker only (`SUPABASE_SERVICE_ROLE_KEY`). Then rebuild the APK. The build will refuse to run until this is done - that is the guard working, not a bug.
+
+25. `NODE_TLS_REJECT_UNAUTHORIZED=0` is set as a persistent USER environment variable on the build machine: [OPEN - owner action required, one command]
+
+   Measured on 2026-11-12. The variable is set at User scope, so **every** Node.js process on the machine - `npm install`, the Android build script, the worker, anything using `fetch` - silently accepts any TLS certificate. That removes the protection against a man-in-the-middle for the Supabase connection, the GitHub API and the npm registry.
+
+   It also makes `worker/noticesJob.ts` `fetchWithTlsTolerance()` pointless: that helper correctly scopes its relaxed verification to `*.gbu.ac.in` and `mygbu.in` with a per-request undici agent, but the global fallback `fetch(url, init)` it falls back to is already insecure for every host.
+
+   **Owner action:** remove the variable, then rebuild so the machine is clean:
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable('NODE_TLS_REJECT_UNAUTHORIZED', $null, 'User')
+   Remove-Item Env:NODE_TLS_REJECT_UNAUTHORIZED   # for the current shell
+   ```
+
+   The two GBU hosts with expired certificates (`ohms.gbu.ac.in`, `digiforms.gbu.ac.in`) are handled correctly by the per-request agent, so nothing breaks.
