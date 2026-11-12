@@ -205,6 +205,20 @@ export default function MailScreen() {
           {/* Subject */}
           <Text style={[styles.readerSubject, { color: colors.textPrimary }]}>{activeEmail.subject}</Text>
 
+          {/* The reader is where a student would believe the message. Say
+              plainly, on the message itself, that it is a demo. */}
+          {activeEmail.isSample && (
+            <View
+              style={[styles.readerSampleTag, { backgroundColor: colors.warningSoft, borderColor: colors.warning }]}
+              accessibilityRole="alert"
+            >
+              <Info size={13} color={colors.warning} style={{ marginRight: 6 }} />
+              <Text style={[styles.readerSampleTagText, { color: colors.warning }]}>
+                SAMPLE - no university sent this message
+              </Text>
+            </View>
+          )}
+
           {/* Sender Card */}
           <View style={[styles.readerSenderRow, { backgroundColor: colors.surfaceMuted }]}>
             <View
@@ -409,6 +423,26 @@ export default function MailScreen() {
           <MailCheck size={18} color={colors.accent} />
           <Text style={[styles.markAllText, { color: colors.accent }]}>Mark Read</Text>
         </TouchableOpacity>
+      </View>
+
+      {/* The university does not publish a student webmail and this app
+          does not connect to one. Everything in this inbox is a bundled
+          DEMO, written to look like a real university email - a placement
+          drive with a CTC package, a detention notice, a hostel circular.
+          A student must never be left thinking the placement drive is
+          real, or that they are going to be detained. */}
+      <View
+        style={[styles.sampleBanner, { backgroundColor: colors.warningSoft, borderColor: colors.warning }]}
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+      >
+        <Info size={16} color={colors.warning} style={{ marginRight: 8, marginTop: 1 }} />
+        <Text style={[styles.sampleBannerText, { color: colors.textSecondary }]}>
+          <Text style={{ fontWeight: '700', color: colors.warning }}>SAMPLE DATA.</Text>{' '}
+          GBU does not publish a student webmail and this app is not connected
+          to one. These messages are a demo of what the screen looks like - no
+          university has sent them.
+        </Text>
       </View>
 
       {/* Search Bar */}
@@ -629,6 +663,38 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     fontSize: 12,
     marginTop: 1,
+  },
+  sampleBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  sampleBannerText: {
+    flex: 1,
+    fontFamily: 'Inter-Regular',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  readerSampleTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  readerSampleTagText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 11,
+    letterSpacing: 0.3,
   },
   markAllButton: {
     flexDirection: 'row',

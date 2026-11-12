@@ -20,6 +20,16 @@ export interface StudentEmail {
   category: 'all' | 'official' | 'academics' | 'placements' | 'hostel';
   isUnread: boolean;
   isStarred: boolean;
+  /**
+   * True for the BUNDLED sample inbox.
+   *
+   * The university does not publish a student webmail, and this app does
+   * not connect to one. Everything in the seeded inbox is written to look
+   * like a real university email - a placement drive with a CTC package, a
+   * detention notice, a hostel circular - so a student could act on it. It
+   * is a DEMO, and the screen says so.
+   */
+  isSample?: boolean;
   hasAttachment: boolean;
   attachments?: StudentEmailAttachment[];
   priority?: 'high' | 'normal';
@@ -28,6 +38,7 @@ export interface StudentEmail {
 export const INITIAL_STUDENT_EMAILS: StudentEmail[] = [
   {
     id: 'mail-001',
+    isSample: true,
     senderName: 'Training & Placement Cell',
     senderEmail: 'placements@gbu.ac.in',
     senderRole: 'Corporate Relations & Placement Office',
@@ -50,6 +61,7 @@ export const INITIAL_STUDENT_EMAILS: StudentEmail[] = [
   },
   {
     id: 'mail-002',
+    isSample: true,
     senderName: 'Dean of Academic Affairs',
     senderEmail: 'dean.academics@gbu.ac.in',
     senderRole: 'Office of the Dean, Gautam Buddha University',
@@ -71,6 +83,7 @@ export const INITIAL_STUDENT_EMAILS: StudentEmail[] = [
   },
   {
     id: 'mail-003',
+    isSample: true,
     senderName: 'Registrar Secretariat',
     senderEmail: 'registrar@gbu.ac.in',
     senderRole: 'Central Administrative Office',
@@ -88,6 +101,7 @@ export const INITIAL_STUDENT_EMAILS: StudentEmail[] = [
   },
   {
     id: 'mail-004',
+    isSample: true,
     senderName: 'Chief Warden Office',
     senderEmail: 'chiefwarden@gbu.ac.in',
     senderRole: 'Hostel Affairs & Student Residence Council',
@@ -108,6 +122,7 @@ export const INITIAL_STUDENT_EMAILS: StudentEmail[] = [
   },
   {
     id: 'mail-005',
+    isSample: true,
     senderName: 'Central Bodhisattva Library',
     senderEmail: 'library@gbu.ac.in',
     senderRole: 'University Resource & Digital Library',
