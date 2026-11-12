@@ -90,6 +90,11 @@ describe('client bundle secret hygiene', () => {
   it('the production master PIN appears nowhere in the repository source', () => {
     // The PIN that used to be shipped inside the APK must never come back,
     // not even as a "test fixture".
+    //
+    // The digits are assembled at runtime so that this very file does not
+    // contain them: otherwise the guard would have to allow itself, and a
+    // copy of the PIN pasted into this file would pass unnoticed.
+    const pin = ['852', '096'].join('');
     const walkAll = (dir: string, out: string[] = []): string[] => {
       for (const name of readdirSync(dir)) {
         if (['node_modules', '.git', 'dist', 'apk', '.expo'].includes(name)) continue;
@@ -102,7 +107,7 @@ describe('client bundle secret hygiene', () => {
     };
     const offenders = walkAll(ROOT)
       .map((p) => ({ path: relative(ROOT, p).replace(/\\/g, '/'), text: readFileSync(p, 'utf8') }))
-      .filter((f) => /\b852096\b/.test(f.text))
+      .filter((f) => f.text.includes(pin))
       .map((f) => f.path);
     expect(offenders).toEqual([]);
   });

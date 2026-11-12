@@ -17,6 +17,7 @@
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { programmesWithoutPublishedSections, fallbackSections, sectionsForProgramme } from '../src/features/timetable/classCatalogue';
 
 const ROOT = join(__dirname, '..');
 
@@ -62,18 +63,18 @@ describe('class catalogue vs the published timetable', () => {
     // The examination portal publishes `soljg.pdf` and `sobsc.pdf`, so a
     // law or basic-science student must be able to pick their school -
     // otherwise they can never watch for their own result.
-    const catalogue = readFileSync(
-      join(ROOT, 'src', 'features', 'timetable', 'classCatalogue.ts'),
-      'utf8',
-    );
-    for (const school of ['SOL', 'SOBSC']) {
-      expect(catalogue).toContain(`school: '${school}'`);
-    }
-    // Their section list must be empty: there is no timetable to read the
-    // sections from, and an invented section would put the student in the
-    // wrong class.
-    expect(catalogue).toMatch(/code: 'SOL',[\s\S]{0,200}sections: \[\]/);
-    expect(catalogue).toMatch(/code: 'SOBSC',[\s\S]{0,200}sections: \[\]/);
+    const withoutTimetable = programmesWithoutPublishedSections();
+    const schools = withoutTimetable.map((p) => p.school).sort();
+    expect(schools).toEqual(['SOBSC', 'SOL']);
+
+    // They must be offered as programmes with NO sections: there is no
+    // timetable to read the sections from, and an invented section would put
+    // the student in the wrong class.
+    expect(
+      withoutTimetable.every(
+        (p) => sectionsForProgramme(fallbackSections(), p.code).length === 0,
+      ),
+    ).toBe(true);
   });
 
   it('covers every section the university publishes', async () => {

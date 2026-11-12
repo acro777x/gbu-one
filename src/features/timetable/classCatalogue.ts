@@ -877,6 +877,31 @@ export function schoolsOf(programmes: CatalogueProgramme[]): string[] {
   return [...new Set(programmes.map((programme) => programme.school))].sort();
 }
 
+/**
+ * The programmes whose school publishes NO timetable at all.
+ *
+ * The School of Law (SOL) and the School of Basic Science (SOBSC) publish
+ * no timetable: the live timetable API returns sections for only six
+ * schools. They are still offered, because the examination portal
+ * publishes a result sheet for each of them, and a student who cannot
+ * pick their school cannot watch for their own result.
+ *
+ * These entries must be MERGED into the live programme list. The live list
+ * is built from published section codes, so a school with no sections
+ * would otherwise never appear.
+ */
+export function programmesWithoutPublishedSections(): CatalogueProgramme[] {
+  return FALLBACK_CATALOGUE.filter((programme) => programme.sections.length === 0).map(
+    (programme) => ({
+      code: programme.code,
+      name: programme.name,
+      school: programme.school,
+      dept: lookupProgramme(programme.apiCode)?.dept ?? 'CSE',
+      apiCode: programme.apiCode,
+    }),
+  );
+}
+
 /** The programmes of one school. */
 export function schoolProgrammesFor(
   programmes: CatalogueProgramme[],

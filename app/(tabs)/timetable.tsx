@@ -117,7 +117,27 @@ export default function TimetableScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [timetable, setTimetable] = useState<Timetable | null>(null);
+
+  /**
+   * The heading under "Class Schedule".
+   *
+   * A class that publishes no timetable has no year and no section, so the
+   * raw key would read "SOL- - ". Only the parts that exist are shown.
+   */
+  const timetableHeading = useMemo(() => {
+    const session = timetable?.semesterSessionId ?? '39';
+    const parts = currentSection
+      .split('-')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (parts.length === 0) return `Semester Session ${session}`;
+    const year = classSelection?.semester?.trim();
+    const label = year ? `${parts[0]} ${year}` : parts[0];
+    return `${label} - Semester Session ${session}`;
+  }, [currentSection, classSelection?.semester, timetable?.semesterSessionId]);
   const [isOffline, setIsOffline] = useState(false);
+  /** True when the university publishes no timetable for the chosen class. */
+  const [hasNoPublishedClasses, setHasNoPublishedClasses] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
 
@@ -151,13 +171,15 @@ export default function TimetableScreen() {
       if (!forceRefresh) setLoading(true);
       setFetchError(null);
       const data = await getSectionTimetable(currentSection, '39', forceRefresh);
-      setTimetable({
-        ...data,
-        slots: deduplicateSlots(data.slots || []),
-      });
+      const slots = deduplicateSlots(data.slots || []);
+      setTimetable({ ...data, slots });
       setIsOffline(data.source === 'mock');
+      // A mock schedule with no slots at all means the university publishes
+      // no timetable for this class - not that the app is offline.
+      setHasNoPublishedClasses(data.source === 'mock' && slots.length === 0);
     } catch (err: unknown) {
       setIsOffline(true);
+      setHasNoPublishedClasses(false);
       setFetchError(err instanceof Error ? err.message : 'Failed to load timetable');
     } finally {
       setLoading(false);
@@ -364,7 +386,7 @@ export default function TimetableScreen() {
         <View style={styles.headerTitleBox}>
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Class Schedule</Text>
           <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
-            {currentSection} - Semester Session {timetable?.semesterSessionId ?? '39'}
+            {timetableHeading}
           </Text>
         </View>
 
@@ -407,11 +429,19 @@ export default function TimetableScreen() {
         </View>
       </View>
 
-      {/* Offline Banner if applicable */}
+      {/* The banner must say what is really on screen.
+          A mock schedule is NOT a cached copy of the student's timetable -
+          it is a placeholder for a class the university publishes nothing
+          for. Saying "Showing cached timetable" when there is no cache was
+          a small lie on the one screen a student trusts most. */}
       {isOffline && (
         <View style={[styles.offlineBanner, { backgroundColor: colors.warningSoft }]}>
           <WifiOff size={14} color={colors.warning} />
-          <Text style={[styles.offlineText, { color: colors.warning }]}>Offline mode - Showing cached timetable</Text>
+          <Text style={[styles.offlineText, { color: colors.warning }]}>
+            {hasNoPublishedClasses
+              ? 'The university publishes no timetable for this class.'
+              : 'Could not reach the university. Showing the last saved copy.'}
+          </Text>
         </View>
       )}
 

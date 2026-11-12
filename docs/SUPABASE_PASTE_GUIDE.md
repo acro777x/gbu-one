@@ -27,6 +27,8 @@ paste it. This document is the exact procedure.
 | Function `public.set_moderator()` / `remove_moderator()` | **missing** | created |
 | View `public.pyq_contributor_points` | **missing** | created |
 | Policy `pyq papers own read` | **missing** | created (a student can see their own pending/rejected uploads) |
+| Policy `device tokens guest update` | **missing** | created (a guest could register a push token but never update it, so changing section kept the old class key) |
+| Table `results_push_log` | **missing** | created (without it the worker's results stage refuses to push, because otherwise the whole backlog would be re-announced to every device) |
 | Storage bucket `pyq-files` | **missing** | created |
 | Storage bucket `pyq-pending` | private | **still private** (the old script could flip it public — the new one cannot) |
 | Row level security | weak (`using (true)` on writes) | **deny-by-default**, moderator-only writes |
@@ -128,7 +130,7 @@ Still in the SQL editor, click **New query** and paste this check:
 select
   (select count(*) from information_schema.tables
      where table_schema = 'public' and table_name in
-       ('admin_claims','campus_events','app_versions'))   as new_tables,
+       ('admin_claims','campus_events','app_versions','results_push_log')) as new_tables,
   (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public' and p.proname in
        ('is_moderator','is_owner','claim_initial_admin','has_any_moderator',
@@ -141,7 +143,7 @@ select
 
 You are looking for:
 
-* `new_tables` = **3**
+* `new_tables` = **4**
 * `new_functions` = **6**
 * `rls_enabled` = the number of public tables (they should all be protected)
 
@@ -242,7 +244,7 @@ it again.
 1. Create a **publishable** key in the dashboard → put it in `.env` as
    `EXPO_PUBLIC_SUPABASE_ANON_KEY`.
 2. Dashboard → **SQL Editor** → paste `supabase/schema.sql` → **Run**.
-3. Run the verification query → expect `new_tables = 3`, `new_functions = 6`.
+3. Run the verification query → expect `new_tables = 4`, `new_functions = 6`.
 4. Edit `supabase/seed.sql` with your real email → paste → **Run**.
 5. Add `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` to the GitHub Actions
    secrets → run the workflow by hand.

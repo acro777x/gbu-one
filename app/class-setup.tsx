@@ -20,6 +20,7 @@ import {
   groupSectionsIntoProgrammes,
   normaliseYearLabel,
   parsePublishedSection,
+  programmesWithoutPublishedSections,
   schoolProgrammesFor,
   schoolsOf,
   sectionLetterOf,
@@ -56,6 +57,24 @@ function bundledClassList(): ClassRef[] {
       section: section.section,
     })),
   );
+}
+
+/**
+ * Adds the schools that publish no timetable to the live programme list.
+ *
+ * The live list is built from the section codes the university publishes,
+ * so a school with no sections (the School of Law, the School of Basic
+ * Science) would never be offered - and a student who cannot pick their
+ * school cannot watch for their own result.
+ */
+function mergeProgrammesWithoutTimetable(
+  programmes: CatalogueProgramme[],
+): CatalogueProgramme[] {
+  const known = new Set(programmes.map((programme) => programme.code));
+  const extra = programmesWithoutPublishedSections().filter(
+    (programme) => !known.has(programme.code),
+  );
+  return extra.length > 0 ? [...programmes, ...extra] : programmes;
 }
 
 /**
@@ -129,7 +148,13 @@ export default function ClassSetupScreen() {
   }, []);
 
   const codes = useMemo(() => classes.map((entry) => entry.section), [classes]);
-  const programmes = useMemo(() => groupSectionsIntoProgrammes(classes), [classes]);
+  const programmes = useMemo(
+    () =>
+      mergeProgrammesWithoutTimetable(
+        groupSectionsIntoProgrammes(classes),
+      ),
+    [classes],
+  );
   const schools = useMemo(() => schoolsOf(programmes), [programmes]);
 
   const schoolProgrammes = useMemo(
@@ -162,8 +187,7 @@ export default function ClassSetupScreen() {
   }, [programmeSections, selectedYear]);
 
   const currentProgramme: CatalogueProgramme | undefined = useMemo(
-    () => programmes.find((programme) => programme.code === selectedProgramme),
-    [programmes, selectedProgramme],
+    () => programmes.find((programme) => programme.code === selectedProgramme),    [programmes, selectedProgramme],
   );
 
   /** The published codes of one programme and year. */
