@@ -95,10 +95,16 @@ describe('Auth Store', () => {
     expect(authApi.signInWithPassword).not.toHaveBeenCalled();
 
     const state = useAuthStore.getState();
-    expect(state.isAuthenticated).toBe(true);
+    // `isAuthenticated` means "the SERVER confirmed this session". A local
+    // fallback account was never confirmed by anyone, so it must NOT claim
+    // to be authenticated - otherwise an offline student believes they are
+    // signed in when they are not, and the Profile screen's "Session not
+    // verified" warning never appears.
+    expect(state.isAuthenticated).toBe(false);
     expect(state.isGuest).toBe(false);
     expect(state.user?.rollNo).toBe('22/BCS/048');
     expect(state.user?.isOfflineSession).toBe(true);
+    expect(state.user?.authSource).toBe('offline');
   });
 
   it('rejects a wrong password instead of falling back to a local session', async () => {

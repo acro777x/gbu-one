@@ -1,14 +1,21 @@
 """
-Sync the source into the space-free build copy and produce a debug APK.
+Sync the source into the space-free build copy and produce an APK.
 
 The native (CMake/ninja) part of the Android build breaks when the project
 path contains a space, so the APK is always built from a copy at a path
 without spaces. See docs/RELEASE.md.
 
-    python tools/build_android_apk.py [--release]
+    python tools/build_android_apk.py [--release] [--admin]
 
 Uses the keystore pointed at by the GBU_ANDROID_* environment variables when
 --release is given.
+
+    python tools/build_android_apk.py --prepare-only [--release]
+
+applies ONLY the prepare step (sanitised .env + the student variant purge)
+to the tree the script lives in. That is the step the EAS prebuild hook
+runs, so the hosted build and the local build produce the same artifact -
+see eas.json and docs/RELEASE.md.
 """
 import os
 import shutil
@@ -20,6 +27,13 @@ import re
 
 SOURCE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 BUILD = os.environ.get('GBU_BUILD_DIR', r'C:\gbuone-build')
+
+# The shared, build-system independent decisions (which routes exist, which
+# package the artifact carries, which backend a release needs). The EAS
+# prebuild hook imports the very same module, so the two build systems can
+# never disagree about the CONTENT of the artifact.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import build_config  # noqa: E402  (the path has to be set up first)
 
 # Everything except the generated/build artefacts.
 SKIP_DIRS = {
@@ -188,40 +202,56 @@ def sync(is_admin: bool = False, release: bool = False, allow_secret_anon: bool 
         else:
             shutil.copy2(src, dst)
 
-    # .env carries the local configuration (git-ignored).
-    env_file = os.path.join(SOURCE, '.env')
+    prepare_client_tree(
+        BUILD,
+        release=release,
+        allow_secret_anon=allow_secret_anon,
+        is_admin=is_admin,
+    )
+
+
+def prepare_client_tree(
+    root: str,
+    release: bool,
+    allow_secret_anon: bool,
+    is_admin: bool = False,
+) -> None:
+    """Apply the prepare step to a tree IN PLACE.
+
+    This is the whole "what is inside the artifact" decision:
+
+      1. the .env is sanitised (no credential may reach the bundle), and
+      2. the admin variant is purged (student build) or switched on (admin
+         build), so the artifact is the app it claims to be.
+
+    The local build applies it to the space-free copy; the EAS prebuild
+    hook applies it to the checked-out project. One implementation, two
+    callers - which is the whole point.
+    """
+    env_file = os.path.join(root, '.env')
+    clean_env = ''
     if os.path.exists(env_file):
         with open(env_file, 'r', encoding='utf-8') as f:
             src_env = f.read()
-
-        if is_admin:
-            # The admin build authenticates with its OWN Supabase account and
-            # relies on the row level security policies, so it needs the
-            # service-role key no more than the student build does. The secret
-            # is therefore stripped from BOTH builds.
-            clean_env = sanitise_env_for_client(src_env, release, allow_secret_anon)
-        else:
-            # SANITIZE: for the student public APK, strip every credential.
-            clean_env = sanitise_env_for_client(src_env, release, allow_secret_anon)
-
-        with open(os.path.join(BUILD, '.env'), 'w', encoding='utf-8') as f:
+        clean_env = sanitise_env_for_client(src_env, release, allow_secret_anon)
+        with open(env_file, 'w', encoding='utf-8') as f:
             f.write(clean_env)
         print('Sanitized .env for the client build.')
 
-        # Post-condition: the build copy must not contain a Supabase secret.
-        # For a RELEASE build this is absolute. A DEBUG build may keep the
-        # real key so the app can be tested against the live backend - that
-        # build is named "debug" and must never be published.
-        with open(os.path.join(BUILD, '.env'), 'r', encoding='utf-8') as f:
+        # Post-condition: the prepared tree must not contain a Supabase
+        # secret. For a RELEASE build this is absolute. A DEBUG build may
+        # keep the real key so the app can be tested against the live
+        # backend - that build is named "debug" and must never be published.
+        with open(env_file, 'r', encoding='utf-8') as f:
             built_env = f.read()
         if release:
             for prefix in SUPABASE_SECRET_PREFIXES:
                 if prefix in built_env:
                     raise SystemExit(
-                        f'REFUSING TO BUILD: the build copy still contains "{prefix}".'
+                        f'REFUSING TO BUILD: the prepared tree still contains "{prefix}".'
                     )
             if SECRET_NAME_RE.search(built_env) and 'EXPO_PUBLIC_SUPABASE_URL' not in built_env:
-                raise SystemExit('REFUSING TO BUILD: the build copy still holds a credential.')
+                raise SystemExit('REFUSING TO BUILD: the prepared tree still holds a credential.')
         else:
             for prefix in SUPABASE_SECRET_PREFIXES:
                 if prefix in built_env:
@@ -231,59 +261,66 @@ def sync(is_admin: bool = False, release: bool = False, allow_secret_anon: bool 
                     )
                     break
 
-    if not is_admin:
-        # STRICT PUBLIC APK PURGE: Exclude all admin routes, moderation tools, and credentials
-        admin_dir = os.path.join(BUILD, 'app', 'admin')
-        if os.path.exists(admin_dir):
-            shutil.rmtree(admin_dir, ignore_errors=True)
-            print('Purged app/admin from student public APK build.')
-
-        moderation_file = os.path.join(BUILD, 'app', 'moderation.tsx')
-        if os.path.exists(moderation_file):
-            os.remove(moderation_file)
-            print('Purged app/moderation.tsx from student public APK build.')
-
-        layout_file = os.path.join(BUILD, 'app', '_layout.tsx')
-        if os.path.exists(layout_file):
-            with open(layout_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            content = re.sub(r'\{isAdminApp\(\)\s*\?[\s\S]*?: null\}', '', content)
-            with open(layout_file, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print('Cleaned admin stack screens from app/_layout.tsx.')
-
-        variant_file = os.path.join(BUILD, 'src', 'lib', 'appVariant.ts')
-        if os.path.exists(variant_file):
-            with open(variant_file, 'w', encoding='utf-8') as f:
-                f.write("export function isAdminApp(): boolean { return false; }\n")
-            print('Configured appVariant to strictly false for student public APK.')
-
-        app_json = os.path.join(BUILD, 'app.json')
-        if os.path.exists(app_json):
-            with open(app_json, 'r', encoding='utf-8') as f:
-                c = f.read()
-            c = c.replace('"package": "in.gbu.one.admin"', '"package": "in.gbu.one"')
-            c = c.replace('"name": "GBU One Admin"', '"name": "GBU One"')
-            with open(app_json, 'w', encoding='utf-8') as f:
-                f.write(c)
-            print('Configured app.json for in.gbu.one student package.')
+    if is_admin:
+        # The dedicated admin APK keeps the moderation console and switches
+        # the variant on.
+        build_config.configure_admin_variant(root)
     else:
-        # Configure as dedicated Admin APK
-        variant_file = os.path.join(BUILD, 'src', 'lib', 'appVariant.ts')
-        if os.path.exists(variant_file):
-            with open(variant_file, 'w', encoding='utf-8') as f:
-                f.write("export function isAdminApp(): boolean { return true; }\n")
-            print('Configured appVariant to true for dedicated Admin APK.')
+        # STRICT PUBLIC APK PURGE: Exclude all admin routes, moderation tools,
+        # and credentials. The implementation is shared with the EAS prebuild
+        # hook (tools/build_config.py), so the hosted build purges exactly the
+        # same files as this one.
+        build_config.purge_admin_variant(root)
 
-        app_json = os.path.join(BUILD, 'app.json')
-        if os.path.exists(app_json):
-            with open(app_json, 'r', encoding='utf-8') as f:
-                c = f.read()
-            c = c.replace('"package": "in.gbu.one"', '"package": "in.gbu.one.admin"')
-            c = c.replace('"name": "GBU One"', '"name": "GBU One Admin"')
-            with open(app_json, 'w', encoding='utf-8') as f:
-                f.write(c)
-            print('Configured app.json for in.gbu.one.admin package.')
+    if not release:
+        return
+
+    # A release without a backend does not crash: the app starts, finds no
+    # backend and runs OFFLINE FOREVER, with no error anywhere. That is why
+    # this is checked and not left to the Play review.
+    problems = build_config.backend_env_problems(clean_env, os.environ)
+    if problems:
+        raise SystemExit(
+            'REFUSING TO BUILD: the release build has no usable backend:\n'
+            + ''.join(f'  - {problem}\n' for problem in problems)
+            + '\n'
+            '  A release bundle without EXPO_PUBLIC_SUPABASE_URL and\n'
+            '  EXPO_PUBLIC_SUPABASE_ANON_KEY runs offline forever without\n'
+            '  a single error, so the build is stopped instead.\n'
+            '  Set them in .env (see .env.example) or, for an EAS build, in\n'
+            '  the env block of the profile in eas.json.\n'
+        )
+
+
+def assert_release_keystore() -> None:
+    """A release build must be signed with the owner keystore.
+
+    This is the FIRST line of defence. The generated Gradle script throws
+    when the keystore is missing (the second), and apksigner verifies the
+    signature afterwards (the third).
+    """
+    required = (
+        'GBU_ANDROID_KEYSTORE_PATH',
+        'GBU_ANDROID_KEYSTORE_PASSWORD',
+        'GBU_ANDROID_KEY_ALIAS',
+        'GBU_ANDROID_KEY_PASSWORD',
+    )
+    missing = [name for name in required if not os.environ.get(name)]
+    if missing:
+        raise SystemExit(
+            'REFUSING TO BUILD: a release build must be signed with the owner\n'
+            '  keystore, and there is NO debug-key fallback. Missing:\n'
+            + ''.join(f'    - {name}\n' for name in missing)
+            + '\n'
+            '  Set the four GBU_ANDROID_* variables (see docs/RELEASE.md)\n'
+            '  and build again.'
+        )
+    keystore = os.environ['GBU_ANDROID_KEYSTORE_PATH']
+    if not os.path.exists(keystore):
+        raise SystemExit(
+            f'REFUSING TO BUILD: the keystore "{keystore}" does not exist.\n'
+            '  Check GBU_ANDROID_KEYSTORE_PATH (see docs/RELEASE.md).'
+        )
 
 
 def dependency_fingerprint() -> str:
@@ -361,10 +398,31 @@ def main() -> None:
     release = '--release' in sys.argv
     is_admin = '--admin' in sys.argv
     allow_secret_anon = '--allow-secret-anon-key' in sys.argv
+    prepare_only = '--prepare-only' in sys.argv
     if allow_secret_anon and not release:
         print('  (--allow-secret-anon-key is accepted for local QA builds only.)')
+    if prepare_only:
+        # The EAS prebuild hook runs this against the CHECKED-OUT project, and
+        # then EAS runs its own Gradle build. Only the steps that change what
+        # is inside the artifact belong here: the sanitised .env, the admin
+        # purge and the variant switch. The sync into the space-free build
+        # directory, npm install and the Gradle invocation are the local
+        # path's business.
+        with open(os.path.join(SOURCE, '.env'), 'r', encoding='utf-8') as f:
+            src_env = f.read()
+        prepare_client_tree(
+            SOURCE,
+            release=release,
+            allow_secret_anon=allow_secret_anon,
+            is_admin=is_admin,
+        )
+        print('Prepare-only: the client bundle is sanitised and the variant is set.')
+        print('  variant :', 'admin' if is_admin else 'public')
+        return
+
     os.makedirs(BUILD, exist_ok=True)
     sync(is_admin=is_admin, release=release, allow_secret_anon=allow_secret_anon)
+
     install_dependencies()
 
     # Always prebuild: the signing plugin writes the GBU_ANDROID_* values into
@@ -449,7 +507,9 @@ def main() -> None:
     print(f'Updated {dst_apk}')
 
     # A release APK signed with the debug key is not publishable, so make the
-    # mistake loud instead of shipping it.
+    # mistake loud instead of shipping it. This is the LAST line of defence:
+    # the build already refused to start without the owner keystore, and the
+    # generated Gradle script throws when it is missing.
     if release:
         apksigner = find_apksigner()
         if apksigner:
@@ -457,8 +517,15 @@ def main() -> None:
                 [apksigner, 'verify', '--print-certs', apk],
                 capture_output=True, text=True,
             )
+            if result.returncode != 0:
+                raise SystemExit(
+                    'REFUSING TO PUBLISH: apksigner could not verify the APK:\n'
+                    + (result.stderr or result.stdout).strip()
+                )
+            certificate_seen = False
             for line in result.stdout.splitlines():
                 if 'certificate DN' in line:
+                    certificate_seen = True
                     print(line.strip())
                     if 'CN=Android Debug' in line:
                         raise SystemExit(
@@ -466,6 +533,11 @@ def main() -> None:
                             'GBU_ANDROID_KEYSTORE_PATH and the other GBU_ANDROID_* '
                             'variables (see docs/RELEASE.md)'
                         )
+            if not certificate_seen:
+                raise SystemExit(
+                    'REFUSING TO PUBLISH: apksigner printed no certificate for '
+                    'the release APK - it is not signed.'
+                )
 
 
 if __name__ == '__main__':

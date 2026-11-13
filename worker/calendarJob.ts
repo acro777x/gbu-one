@@ -18,9 +18,13 @@ import { fetchAcademicCalendar, type AcademicEvent } from './academicCalendar';
 import {
   fetchDateSheet,
   DATE_SHEET_SCHOOL_CODES,
-  buildClassKey,
   resolveRunningDateSheetSession,
 } from './examDateSheet';
+import {
+  baseClassKeyOf,
+  buildCanonicalClassKey,
+  dateSlotKey,
+} from '../src/lib/classKey';
 import { fetchHolidays2026 } from './holidayList';
 import { SOURCE_KEYS, WORKER_CONFIG } from './sources.config';
 import { ALWAYS_FETCH, type SourceScheduler } from './sourceScheduler';
@@ -120,23 +124,14 @@ export function calendarEventKey(
   return `academic:${semester}:${dateFrom}:${slug}`;
 }
 
-/** The key a date-sheet slot is stored under. */
-export function dateSlotKey(
-  schoolCode: string,
-  examDate: string,
-  slot: string,
-  subjectCode: string,
-  subjectName: string,
-  classKey?: string,
-): string {
-  const parts = classKey
-    ? ['datesheet', schoolCode, classKey, examDate, slot, subjectCode, subjectName]
-    : ['datesheet', schoolCode, examDate, slot, subjectCode, subjectName];
-  return parts
-    .join(':')
-    .toLowerCase()
-    .replace(/\s+/g, '-');
-}
+/**
+ * The key a date-sheet slot is stored under.
+ *
+ * The class key is mandatory and it is the CANONICAL one: the key is the
+ * unique identity of the row, so two cohorts of one programme must never
+ * share it. The shared implementation lives in `src/lib/classKey.ts`.
+ */
+export { dateSlotKey };
 
 function categoryFor(name: string): CalendarEventRow['type'] {
   const lower = name.toLowerCase();
@@ -259,7 +254,11 @@ export async function collectCalendarRows(
       }
       published += 1;
       for (const slot of sheet.slots) {
-        const classKey = buildClassKey(slot.programme);
+        // The slot key carries the CANONICAL class key, so two cohorts of
+        // one programme are two rows; the row keeps the BASE class key,
+        // because that is the value the database is filtered on.
+        const canonicalKey = buildCanonicalClassKey(slot.programme);
+        const classKey = baseClassKeyOf(canonicalKey);
         const shiftTime =
           slot.slot === 'morning' ? '09:30 AM - 12:30 PM' : '02:00 PM - 05:00 PM';
         slots.push({
@@ -269,7 +268,7 @@ export async function collectCalendarRows(
             slot.slot,
             slot.subjectCode ?? '',
             slot.subjectName,
-            classKey,
+            canonicalKey,
           ),
           school_code: slot.schoolCode,
           programme: slot.programme,

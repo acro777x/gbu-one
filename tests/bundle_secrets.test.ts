@@ -270,14 +270,39 @@ except SystemExit as e:
     expect(build).toMatch(/if release and not allow_secret_anon/);
   });
 
-  it('the build script strips the secret from the ADMIN build too', () => {
-    const build = readFileSync(join(ROOT, 'tools', 'build_android_apk.py'), 'utf8');
+  it('the ADMIN build is sanitised too', () => {
     // The admin console authenticates with its own Supabase account and
-    // relies on RLS, so it needs the secret key no more than the student
-    // build does.
-    const adminBlock = build.slice(build.indexOf('if is_admin:'), build.indexOf('if is_admin:') + 900);
-    expect(adminBlock).toContain('sanitise_env_for_client');
-    expect(adminBlock).not.toMatch(/shutil\.copy2\(env_file/);
+    // relies on RLS, so it needs the service-role key no more than the
+    // student build does. This is asserted as BEHAVIOUR, not as the shape of
+    // the source: the admin variant must come out of the prepare step with
+    // the same sanitised .env as the student one.
+    const script = `
+import importlib.util, json, os, shutil, sys, tempfile
+spec = importlib.util.spec_from_file_location("b", ${JSON.stringify(
+      join(ROOT, 'tools', 'build_android_apk.py'),
+    )})
+sys.path.insert(0, ${JSON.stringify(join(ROOT, 'tools'))})
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+root = tempfile.mkdtemp()
+env = ${JSON.stringify(
+      SECRET_ENV,
+    )}
+with open(os.path.join(root, ".env"), "w", encoding="utf-8") as handle:
+    handle.write(env)
+# The admin build keeps the admin routes, so it only needs the .env.
+m.prepare_client_tree(root, release=False, allow_secret_anon=True, is_admin=True)
+with open(os.path.join(root, ".env"), "r", encoding="utf-8") as handle:
+    print("__RESULT__" + json.dumps({"out": handle.read()}))
+shutil.rmtree(root, ignore_errors=True)
+`;
+    const raw = execFileSync('python', ['-c', script], { encoding: 'utf8' });
+    const line = raw.split('\n').find((l: string) => l.startsWith('__RESULT__'));
+    expect(line).toBeDefined();
+    const parsed = JSON.parse(line!.slice('__RESULT__'.length));
+    // The worker-only secret must never reach ANY client bundle.
+    expect(parsed.out).not.toContain('SUPABASE_SERVICE_ROLE_KEY=sb_secret_');
+    expect(parsed.out).not.toContain('EXPO_PUBLIC_ADMIN_');
   });
 
   it('the build script asserts the build copy is clean afterwards', () => {

@@ -10,6 +10,12 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug"
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "development",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://pjnxllnncsoroevgfbmt.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "REPLACE_ME_WITH_THE_PUBLISHABLE_KEY",
+        "EXPO_PUBLIC_APP_VARIANT": "public"
       }
     },
     "preview": {
@@ -19,19 +25,33 @@
       },
       "ios": {
         "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "preview",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://pjnxllnncsoroevgfbmt.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "REPLACE_ME_WITH_THE_PUBLISHABLE_KEY",
+        "EXPO_PUBLIC_APP_VARIANT": "public"
       }
     },
     "production": {
       "autoIncrement": true,
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "apk"
       },
       "ios": {
         "resourceClass": "m-medium"
       },
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "production"
+        "EXPO_PUBLIC_APP_ENV": "production",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://pjnxllnncsoroevgfbmt.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "REPLACE_ME_WITH_THE_PUBLISHABLE_KEY",
+        "EXPO_PUBLIC_APP_VARIANT": "public"
       }
+    }
+  },
+  "hooks": {
+    "prebuild": {
+      "command": "python tools/build_android_apk.py --prepare-only --release"
     }
   },
   "submit": {

@@ -14,9 +14,18 @@
  *   GBU_ANDROID_KEY_ALIAS          key alias
  *   GBU_ANDROID_KEY_PASSWORD       key password
  *
- * When the values are missing the release build falls back to the debug
- * signing config, so a fresh clone still builds. The release pipeline must
- * provide the real values; see docs/RELEASE.md.
+ * When the values are missing a RELEASE build FAILS CLOSED: there is no
+ * fallback to the debug key, because a debug-signed "release" can never be
+ * updated on the Play Store and the mistake stays invisible until the
+ * upload is rejected. The generated Gradle script throws, and a build that
+ * is explicitly marked as a release (`GBU_RELEASE_BUILD=1`) is stopped even
+ * earlier - during the prebuild. A DEBUG build still uses the debug key;
+ * that is what debug builds are for.
+ *
+ * EAS managed signing is supported as well: when the owner does not use
+ * the GBU_ANDROID_* variables, the standard `MYAPP_UPLOAD_*` variables that
+ * EAS injects are used instead. Both are resolved at BUILD time, so a
+ * credential never has to be written into the repository.
  *
  * The plugin also pins the NDK to r27 and enables the CMake flexible page
  * sizes, so the native libraries this project compiles itself are 16 KB
@@ -27,6 +36,14 @@ const fs = require('fs');
 const path = require('path');
 const { withDangerousMod } = require('@expo/config-plugins');
 
+/** The four variables a release build needs. */
+const SIGNING_VARIABLES = [
+  'GBU_ANDROID_KEYSTORE_PATH',
+  'GBU_ANDROID_KEYSTORE_PASSWORD',
+  'GBU_ANDROID_KEY_ALIAS',
+  'GBU_ANDROID_KEY_PASSWORD',
+];
+
 const SIGNING_BLOCK = `    signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -35,23 +52,30 @@ const SIGNING_BLOCK = `    signingConfigs {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('GBU_KEYSTORE_FILE') && file(project.property('GBU_KEYSTORE_FILE')).exists()) {
-                storeFile file(project.property('GBU_KEYSTORE_FILE'))
-                storePassword project.property('GBU_KEYSTORE_PASSWORD')
-                keyAlias project.property('GBU_KEY_ALIAS')
-                keyPassword project.property('GBU_KEY_PASSWORD')
-            }
+            // The owner keystore. It may come from gradle.properties (the
+            // local build writes the values there) or from the environment
+            // (EAS managed signing injects MYAPP_UPLOAD_*).
+            storeFile file(project.findProperty('GBU_KEYSTORE_FILE') ?: System.getenv('GBU_ANDROID_KEYSTORE_PATH') ?: System.getenv('MYAPP_UPLOAD_STORE_FILE') ?: 'MISSING_GBU_KEYSTORE')
+            storePassword project.findProperty('GBU_KEYSTORE_PASSWORD') ?: System.getenv('GBU_ANDROID_KEYSTORE_PASSWORD') ?: System.getenv('MYAPP_UPLOAD_STORE_PASSWORD') ?: ''
+            keyAlias project.findProperty('GBU_KEY_ALIAS') ?: System.getenv('GBU_ANDROID_KEY_ALIAS') ?: System.getenv('MYAPP_UPLOAD_KEY_ALIAS') ?: ''
+            keyPassword project.findProperty('GBU_KEY_PASSWORD') ?: System.getenv('GBU_ANDROID_KEY_PASSWORD') ?: System.getenv('MYAPP_UPLOAD_KEY_PASSWORD') ?: ''
         }
     }
 `;
 
 const RELEASE_BLOCK = `        release {
-            if (project.hasProperty('GBU_KEYSTORE_FILE') && file(project.property('GBU_KEYSTORE_FILE')).exists()) {
+            // FAIL CLOSED. A release build must be signed with the owner
+            // keystore. There is deliberately NO fallback to the debug key:
+            // a debug-signed "release" can never be updated on the Play
+            // Store, and the mistake stays invisible until the upload is
+            // rejected. Stop the build instead.
+            def storeFilePath = project.findProperty('GBU_KEYSTORE_FILE') ?: System.getenv('GBU_ANDROID_KEYSTORE_PATH') ?: System.getenv('MYAPP_UPLOAD_STORE_FILE')
+            def requestedTasks = gradle.startParameter.taskNames.collect { it.toLowerCase() }
+            def releaseRequested = requestedTasks.any { t -> t.contains('release') || t == 'build' || t == 'assemble' || t == 'bundle' }
+            if (storeFilePath && file(storeFilePath).exists()) {
                 signingConfig signingConfigs.release
-            } else {
-                // No owner keystore supplied: fall back to the debug key so a
-                // fresh clone still produces an installable APK.
-                signingConfig signingConfigs.debug
+            } else if (releaseRequested) {
+                throw new GradleException("REFUSING TO BUILD: a release build must be signed with the owner keystore. Set GBU_ANDROID_KEYSTORE_PATH, GBU_ANDROID_KEYSTORE_PASSWORD, GBU_ANDROID_KEY_ALIAS and GBU_ANDROID_KEY_PASSWORD (see docs/RELEASE.md), or use EAS managed signing.")
             }
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
@@ -152,6 +176,38 @@ function signingProperties() {
 }
 
 /**
+ * Stops a build that is explicitly marked as a RELEASE build when the
+ * owner keystore is not available.
+ *
+ * `tools/build_android_apk.py --release` sets GBU_RELEASE_BUILD=1 for the
+ * prebuild, so the build stops in seconds with a readable message instead
+ * of failing ten minutes later inside Gradle. A build that is not marked
+ * as a release (a debug build, a plain `expo prebuild`) is never stopped
+ * here - the Gradle script applies the same rule to the release variant.
+ */
+function assertReleaseSigningAvailable() {
+  const flag = String(process.env.GBU_RELEASE_BUILD || '').toLowerCase();
+  if (!['1', 'true', 'yes'].includes(flag)) return;
+
+  const missing = SIGNING_VARIABLES.filter((name) => !process.env[name]);
+  if (missing.length > 0) {
+    throw new Error(
+      `REFUSING TO BUILD: a release build needs ${missing.join(', ')}. ` +
+        'The release build is signed with the owner keystore - there is no ' +
+        'debug-key fallback (see docs/RELEASE.md).',
+    );
+  }
+
+  const keystore = process.env.GBU_ANDROID_KEYSTORE_PATH;
+  if (!fs.existsSync(keystore)) {
+    throw new Error(
+      `REFUSING TO BUILD: the keystore ${keystore} does not exist. ` +
+        'Check GBU_ANDROID_KEYSTORE_PATH (see docs/RELEASE.md).',
+    );
+  }
+}
+
+/**
  * Patches android/app/build.gradle and android/gradle.properties.
  * A dangerous mod is used on purpose: it runs after prebuild has written the
  * native files, which is the only point where the generated Gradle script
@@ -162,6 +218,9 @@ function withAndroidSigningFiles(config) {
     'android',
     async (cfg) => {
       const androidRoot = cfg.modRequest.platformProjectRoot;
+
+      // 0. A release build without the owner keystore stops HERE.
+      assertReleaseSigningAvailable();
 
       // 1. gradle.properties: hand the signing values to Gradle.
       const propertiesFile = path.join(androidRoot, 'gradle.properties');

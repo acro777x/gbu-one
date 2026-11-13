@@ -424,24 +424,33 @@ export const FALLBACK_CATALOGUE: Array<{
     // timetable at all: the live timetable API returns sections for only
     // six schools (SOBT, SOE, SOHSS, SOICT, SOM, SOVSAS - verified
     // 2026-11-12). They are listed here anyway, because the examination
-    // portal DOES publish a result sheet for each of them
-    // (`soljg.pdf` and `sobsc.pdf`), and a student who cannot pick their
-    // school cannot watch for their own result.
+    // portal DOES publish a result sheet and a DATE SHEET for each of them
+    // (`soljg.pdf`, `sobsc.pdf` and their `*-end-sem-dec-2025.pdf`
+    // siblings - verified 2026-11-13), and a student who cannot pick their
+    // school cannot watch for their own result or see their date sheet.
     //
     // The section codes are deliberately empty rather than invented: no
     // timetable exists to read them from, and a made-up section would put
-    // a student in the wrong class. The timetable screen shows an honest
-    // empty schedule for these two.
-    code: 'SOL',
-    apiCode: 'SOL',
-    name: 'School of Law (no timetable published)',
+    // the student in the wrong class. The timetable screen shows an honest
+    // empty schedule for these two, and the date sheet is matched on the
+    // programme, the batch and the semester instead.
+    code: 'LLB',
+    apiCode: 'LLB',
+    name: 'LL.B. (3 Years) - Semester I',
     school: 'SOL',
     sections: [],
   },
   {
-    code: 'SOBSC',
-    apiCode: 'SOBSC',
-    name: 'School of Basic Science (no timetable published)',
+    code: 'BA-HONS-BS',
+    apiCode: 'BSU',
+    name: 'B.A. (Hons.) in Buddhist Studies & Civilization - Semester I',
+    school: 'SOBSC',
+    sections: [],
+  },
+  {
+    code: 'MA-BS',
+    apiCode: 'BS',
+    name: 'M.A. in Buddhist Studies & Civilization - Semester I',
     school: 'SOBSC',
     sections: [],
   },

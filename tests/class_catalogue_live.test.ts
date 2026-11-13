@@ -60,11 +60,12 @@ describe('class catalogue vs the published timetable', () => {
   });
 
   it('offers the two schools that publish a result sheet but no timetable', () => {
-    // The examination portal publishes `soljg.pdf` and `sobsc.pdf`, so a
-    // law or basic-science student must be able to pick their school -
-    // otherwise they can never watch for their own result.
+    // The examination portal publishes `soljg.pdf` and `sobsc.pdf` AND a
+    // date sheet for each, so a law or basic-science student must be able to
+    // pick their school - otherwise they can never watch for their own
+    // result or see their date sheet.
     const withoutTimetable = programmesWithoutPublishedSections();
-    const schools = withoutTimetable.map((p) => p.school).sort();
+    const schools = [...new Set(withoutTimetable.map((p) => p.school))].sort();
     expect(schools).toEqual(['SOBSC', 'SOL']);
 
     // They must be offered as programmes with NO sections: there is no
@@ -75,6 +76,13 @@ describe('class catalogue vs the published timetable', () => {
         (p) => sectionsForProgramme(fallbackSections(), p.code).length === 0,
       ),
     ).toBe(true);
+
+    // The real programme names, taken from the live date sheets on
+    // 2026-11-13: the School of Law publishes LL.B. with an EMPTY
+    // programme column, and the School of Basic Science publishes the
+    // Buddhist Studies programmes.
+    const codes = withoutTimetable.map((p) => p.code).sort();
+    expect(codes).toEqual(['BA-HONS-BS', 'LLB', 'MA-BS']);
   });
 
   it('covers every section the university publishes', async () => {

@@ -1,9 +1,31 @@
 # Release build (Android)
 
-The owner-owned part of a release is the **signing key** and the **store
-credentials**. Everything else is automated and lives in the repo.
+**There is ONE way to build this app: `tools/build_android_apk.py`.**
 
-## 1. Create the upload key (once, owner only)
+It used to be three - the Python script, `eas.json`, and `tools/build_admin.py` -
+and they disagreed on eight points. An EAS production build had no backend
+configured (so the app ran offline forever, silently), still contained the
+admin console and the moderation screen, and was signed with the **debug key**.
+That is fixed: the EAS profile now runs the same prepare step through
+`tools/build_config.py`, and a release build refuses to use the debug key.
+
+---
+
+## 1. The four things a release needs
+
+| What | Where it comes from | Missing means |
+|---|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | `.env` | the app runs offline forever, silently |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `.env` - a **publishable** key (`sb_publishable_...`) | the same, and a `sb_secret_...` key here would ship a credential to every student |
+| The owner keystore | the four `GBU_ANDROID_*` variables | the build is refused |
+| The app version | `app.json` `version` | the update manifest cannot tell students what to install |
+
+The build checks all four and **stops** rather than producing an artifact that
+looks fine and is not.
+
+---
+
+## 2. Create the upload key (once, owner only)
 
 ```bash
 keytool -genkeypair -v -storetype PKCS12 \
@@ -12,118 +34,125 @@ keytool -genkeypair -v -storetype PKCS12 \
   -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-Keep `gbuone-upload.keystore` and its passwords somewhere private. If it is
-lost, the app can never be updated again on Play — a new key means a new
-app id. Back it up.
+Keep the keystore and its passwords somewhere private. If it is lost the app
+can never be updated on Play again - a new key means a new app id. **Back it
+up.**
 
-## 2. Build a signed release APK
+---
 
-The signing values are read from the environment by
-`plugins/withReleaseSigning.js`, which patches the generated Gradle files on
-every `expo prebuild`:
-
-| Variable | Meaning |
-|---|---|
-| `GBU_ANDROID_KEYSTORE_PATH` | path to the `.keystore` / `.jks` file |
-| `GBU_ANDROID_KEYSTORE_PASSWORD` | keystore password |
-| `GBU_ANDROID_KEY_ALIAS` | key alias (e.g. `gbuone`) |
-| `GBU_ANDROID_KEY_PASSWORD` | key password |
+## 3. Build the student release APK
 
 ```bash
+# the key
 export GBU_ANDROID_KEYSTORE_PATH=/absolute/path/gbuone-upload.keystore
-export GBU_ANDROID_KEYSTORE_PASSWORD='…'
+export GBU_ANDROID_KEYSTORE_PASSWORD='...'
 export GBU_ANDROID_KEY_ALIAS=gbuone
-export GBU_ANDROID_KEY_PASSWORD='…'
+export GBU_ANDROID_KEY_PASSWORD='...'
 
-npx expo prebuild --platform android --clean
-cd android && ./gradlew assembleRelease
-```
-
-The APK lands in `android/app/build/outputs/apk/release/app-release.apk`.
-Without the environment variables the build still succeeds but falls back to
-the debug key, so the APK is **not** publishable - always check the signer:
-
-```bash
-apksigner verify --print-certs app-release.apk
-```
-
-The certificate DN must read `CN=GBU One, …`, not `CN=Android Debug`.
-
-> **Build path caveat.** The native C++ build breaks when the project path
-> contains a space (`CMake`/`ninja` mangles the path). Build from a
-> space-free path, e.g. `C:\gbuone-build`.
-
-## 3. Build the Play Store bundle (AAB)
-
-```bash
-npx expo prebuild --platform android --clean
-cd android && ./gradlew bundleRelease
-```
-
-The bundle lands in `android/app/build/outputs/bundle/release/app-release.aab`.
-
-## 4. EAS Build (recommended for the store)
-
-`eas.json` is committed with three profiles:
-
-- `development` — dev client, internal distribution
-- `preview` — internal APK for testing
-- `production` — the store build (AAB for Android)
-
-```bash
-npx eas login
-npx eas build --platform android --profile production
-```
-
-EAS needs an Expo account and a linked project (`npx eas init`), which also
-writes `extra.eas.projectId` into `app.json` (see
-`docs/OPEN_QUESTIONS.md` #11 - the app needs that id for push registration).
-
-## 5. 16 KB page sizes (Android 15+)
-
-`plugins/withReleaseSigning.js` also:
-
-- pins the **NDK to r27**, whose linker emits 16 KB aligned objects, and
-- adds `-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON` to the CMake arguments,
-  so the modules built from source in this project are 16 KB ready.
-
-That fixes every library this repo compiles (`libappmodules.so`,
-`libc++_shared.so`, the `libreact_codegen_*` set). The **prebuilt** binaries
-that ship inside React Native 0.76 and the Expo/React Native AARs
-(`libreactnative.so`, `libhermes.so`, `libfbjni.so`, `libjsi.so`,
-`libreanimated.so`, `libworklets.so`, …) are still 4 KB aligned. Android 15+
-then shows the "not 16 KB compatible" dialog and runs the app in page-size
-compatible mode.
-
-Full 16 KB support therefore needs **Expo SDK 53 / React Native 0.79 or
-newer**, which ship 16 KB aligned prebuilts. Until that upgrade lands, a
-store release is possible but Play may flag the upload - see
-`docs/OPEN_QUESTIONS.md` #13.
-
-## 6. Before uploading
-
-- `npm run typecheck && npm run lint && npm test`
-- Install the release APK on a device and walk through the app once
-- Check the About page still shows the right version
-- Never commit the keystore, its passwords or `google-services.json`
-
-## 7. On-device QA helpers
-
-Two scripts drive the emulator so a release is checked the same way every
-time. Both are in `tools/`.
-
-```bash
-# Build the APK from a space-free copy, install it and walk through the app,
-# saving a screenshot per step into docs/qa/release/
+# the build
 python tools/build_android_apk.py --release
-python tools/emulator_qa.py --apk <path-to-apk> --fresh --shots docs/qa/release
-
-# Report every tappable node smaller than 44dp on the current screen
-python tools/audit_touch_targets.py
 ```
 
-`emulator_qa.py` walks onboarding (including the notification permission
-prompt), the class setup, Home, all five tabs, a notice detail, the PYQ
-upload sheet and the moderation queue. It answers the Android 16 KB
-compatibility notice once, because that dialog would otherwise swallow the
-first taps.
+The artifact lands at `apk/gbu-one.apk`.
+
+What the script does, in order:
+
+1. **syncs** the repo into `C:\gbuone-build` - the native CMake/ninja build
+   breaks on a path with a space, which is why the repo cannot be built in
+   place;
+2. **sanitises** `.env` in the build copy - every credential is removed, and
+   the check is on the **value**, not the variable name, so a secret key that
+   is called `EXPO_PUBLIC_SUPABASE_ANON_KEY` is caught;
+3. **purges the admin variant** - `app/admin/`, `app/moderation.tsx`, the admin
+   stack in `app/_layout.tsx` and the `isAdminApp()` switch are all removed or
+   forced to `false`;
+4. **prebuilds and compiles** with the release signing plugin;
+5. **verifies the signature** with `apksigner` and fails if the certificate is
+   the debug key.
+
+### The admin APK
+
+```bash
+python tools/build_android_apk.py --admin --release
+```
+
+It is a separate package (`in.gbu.one.admin`) so it installs side by side
+with the student app.
+
+---
+
+## 4. What the build refuses to do
+
+| The build stops when | Why |
+|---|---|
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` holds a `sb_secret_...` key | Expo inlines it into the bundle; every student would hold a key that bypasses every row level security policy |
+| a release build has no `GBU_ANDROID_*` keystore variables | a debug-signed "release" cannot be uploaded, and shipping one by accident is worse than shipping none |
+| the release build has no usable backend | the app starts, finds no backend and runs offline forever with no error anywhere |
+| `apksigner` reports the debug certificate | the same |
+
+A **debug** build keeps a working anon key on purpose - the owner tests on a
+real device or the emulator, and an app with no backend cannot be tested at
+all. A debug build is named "debug" and must never be published.
+
+---
+
+## 5. Verify the artifact before publishing
+
+```bash
+# the signature is the owner key, not the debug key
+apksigner verify --print-certs apk/gbu-one.apk
+
+# the bundle carries no secret key
+unzip -p apk/gbu-one.apk assets/index.android.bundle | grep -c 'sb_secret_'
+# must print 0 for a release build
+
+# the student build has no admin route
+unzip -l apk/gbu-one.apk | grep -c 'admin'
+```
+
+---
+
+## 6. The version manifest
+
+The update screen reads `version.json` from the `campus-events` storage
+bucket. Publish it from the admin console (**Updates** tab) after the build.
+
+The version in the manifest must match `app.json` `version`, and
+`minSupportedVersion` must be **less than or equal to** `latestVersion` -
+otherwise every student is pushed into an update loop that can never end. The
+admin console refuses to publish a manifest that would do that.
+
+`appVersionSource` is `local`, so `version` in `app.json` is the single
+source of truth and it must be bumped by hand.
+
+---
+
+## 7. The EAS profile (optional)
+
+`eas.json` still exists and now runs the **same** prepare step:
+
+```json
+"hooks": { "prebuild": { "command": "python tools/build_android_apk.py --prepare-only --release" } }
+```
+
+It declares the backend env vars for every profile and produces an APK, like
+the local path. `tools/build_config.py` validates it, and CI fails if the
+profile ever drifts back to a state that could ship an admin-bearing,
+backend-less or debug-signed artifact.
+
+Use the local script unless there is a reason not to. There is exactly one
+build path, and it is the one the owner documents.
+
+---
+
+## 8. After the release
+
+- [ ] `apksigner verify --print-certs` shows the owner certificate
+- [ ] the bundle contains no `sb_secret_` string
+- [ ] the student APK contains no admin route
+- [ ] the app starts, reaches the Home screen, and the timetable is LIVE (a
+      real class, not the "no timetable published" message)
+- [ ] the notices list shows real university notices, not the SAMPLE banner
+- [ ] the version manifest is published and matches `app.json`
+- [ ] the GitHub Actions secret `SUPABASE_SERVICE_ROLE_KEY` is set, so the
+      worker keeps running - see `docs/OPEN_QUESTIONS.md` #23

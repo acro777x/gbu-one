@@ -786,9 +786,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     set({
       user: localUser,
-      isGuest: false,
-      isAuthenticated: true,
       hydrated: true,
+      // An offline session is NOT a verified sign-in. `isAuthenticated`
+      // means "the server confirmed this", so it must stay false here -
+      // otherwise a local-only session is indistinguishable from a real
+      // account and the student believes they are signed in when they are
+      // not.
+      ...applyAuthEvent(get().authState, {
+        type: 'BOOT_OFFLINE_SESSION',
+        payload: {
+          userId: localUser.id ?? undefined,
+          rollNo: localUser.rollNo,
+          email: localUser.email,
+          name: localUser.name,
+        },
+      }),
     });
 
     await AsyncStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(localUser)).catch(() => {});

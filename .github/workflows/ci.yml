@@ -100,4 +100,39 @@ jobs:
             echo "::error::an EXPO_PUBLIC_* variable looks like a credential. Expo inlines it into the shipped bundle."
             exit 1
           fi
+      - name: Guard - the build system cannot produce a bad artifact
+        # There are two ways to build this app, and they used to disagree on
+        # eight points: an EAS production build had no backend configured, no
+        # admin purge and a DEBUG key. This step asserts that the shared
+        # build configuration still forbids all of that, so a future edit
+        # cannot quietly reintroduce a "release" that is not one.
+        run: |
+          python - <<'PY'
+          import json, sys
+          sys.path.insert(0, "tools")
+          import build_config
+
+          problems = build_config.eas_profile_problems(json.load(open("eas.json", encoding="utf-8")))
+          if problems:
+              print("::error::eas.json cannot produce a correct artifact:")
+              for problem in problems:
+                  print("  -", problem)
+              sys.exit(1)
+
+          # A release build must have NO debug-key fallback.
+          signing = open("plugins/withReleaseSigning.js", encoding="utf-8").read()
+          if "GBU_RELEASE_BUILD" not in signing:
+              print("::error::plugins/withReleaseSigning.js does not fail closed on a release build.")
+              sys.exit(1)
+
+          # The variant purge must still be in the shared module, so both
+          # build paths delete the admin routes.
+          config = open("tools/build_config.py", encoding="utf-8").read()
+          if "purge_admin_variant" not in config:
+              print("::error::tools/build_config.py no longer purges the admin variant.")
+              sys.exit(1)
+
+          print("the build system cannot produce a bad artifact")
+          PY
+          echo "build-system guard ok"
           echo "no credential in the tracked source"

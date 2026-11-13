@@ -43,6 +43,7 @@ import {
   type ExamDateSlot,
   type DateSheetParseOptions,
 } from '../src/features/exams/examDateSheetParser';
+import { baseClassKeyOf, buildCanonicalClassKey } from '../src/lib/classKey';
 
 export {
   parseExcelDateSheet,
@@ -1283,14 +1284,29 @@ export function parsePdfDateSheet(
   }
 
   return dateSheetSlots.map((slot) => {
-    const classKey = buildClassKey(slot.programme);
+    // The slot key carries the CANONICAL class key, so two cohorts of one
+    // programme (`Batch 2022-2026` and `Batch 2025-2029`) are two rows and
+    // never overwrite each other. The row keeps the BASE class key, because
+    // that is the value the database is filtered on.
+    //
+    // The school code is passed because the School of Law publishes its date
+    // sheet with an EMPTY programme column - the cell holds only
+    // "2024-2029 II" - so the school is the only thing that names the
+    // programme.
+    const canonicalKey = buildCanonicalClassKey(
+      slot.programme,
+      undefined,
+      undefined,
+      slot.schoolCode,
+    );
+    const classKey = baseClassKeyOf(canonicalKey);
     const key = dateSlotKey(
       slot.schoolCode,
       slot.date,
       slot.slot,
       slot.subjectCode ?? '',
       slot.subjectName,
-      classKey,
+      canonicalKey,
     );
     const shiftTime =
       examType === 'mid_sem'
