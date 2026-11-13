@@ -271,6 +271,62 @@ jest.mock('expo-sqlite', () => {
   type Row = Record<string, unknown>;
   const tables = new Map<string, Row[]>();
 
+  /**
+   * Applies a simple WHERE clause to the rows.
+   *
+   * The fake used to ignore the WHERE clause entirely, so `getFirstSync`
+   * returned the first row of the table no matter what was asked for. That
+   * made the timetable cache untestable: a lookup for semester session 40
+   * returned the row for session 39.
+   *
+   * Supported: `col = ?`, `col = 'literal'`, `col = "literal"` and
+   * `col IN (?, ?, ...)`.
+   */
+  const filterByWhere = (
+    rows: Row[],
+    sql: string,
+    params: unknown[] = [],
+  ): Row[] => {
+    const where = sql.match(/\bWHERE\b([\s\S]*?)(?:\bORDER\b|\bLIMIT\b|;|$)/i);
+    if (!where) return rows;
+    const condition = where[1].trim();
+
+    const inMatch = condition.match(/(\w+)\s+IN\s*\(([^)]*)\)/i);
+    if (inMatch) {
+      const column = inMatch[1];
+      const placeholders = inMatch[2].split(',').map((v) => v.trim());
+      const wanted = placeholders.map((placeholder) =>
+        placeholder === '?'
+          ? String(params.shift() ?? '')
+          : placeholder.replace(/^['"]|['"]$/g, ''),
+      );
+      return rows.filter((r) => wanted.includes(String(r[column])));
+    }
+
+    // A WHERE clause may chain several conditions with AND, e.g.
+    //   WHERE class_key = ? AND session_id = ?
+    const eqMatches = [
+      ...condition.matchAll(/(\w+)\s*=\s*(\?|'(?:[^']*)'|"(?:[^"]*)")/gi),
+    ];
+    if (eqMatches.length > 0) {
+      const remaining = [...params];
+      const conditions = eqMatches.map((m) => {
+        const column = m[1];
+        const raw = m[2];
+        const value =
+          raw === '?'
+            ? String(remaining.shift() ?? '')
+            : raw.replace(/^['"]|['"]$/g, '');
+        return { column, value };
+      });
+      return rows.filter((r) =>
+        conditions.every((c) => String(r[c.column]) === c.value),
+      );
+    }
+
+    return rows;
+  };
+
   const db = {
     _tables: tables,
     execSync: (sql: string) => {
@@ -291,21 +347,10 @@ jest.mock('expo-sqlite', () => {
       if (insert) {
         const name = insert[1];
         const rows = tables.get(name) ?? [];
-        const values = params.slice(1);
-        const conflict = sql.match(/ON CONFLICT\(([^)]+)\)\s+DO UPDATE/i);
-        const conflictCols = conflict
-          ? conflict[1].split(',').map((c) => c.trim())
-          : [];
-        if (conflictCols.length) {
-          const idx = rows.findIndex((r) =>
-            conflictCols.every((c, i) => String(r[c]) === String(values[i])),
-          );
-          if (idx >= 0) {
-            rows[idx] = { ...rows[idx], ...Object.fromEntries(rows[idx] && conflictCols.map((c, i) => [c, values[i]])) };
-            tables.set(name, rows);
-            return { lastInsertRowId: idx, changes: 1 };
-          }
-        }
+        // The parameters are the values of the INSERT, in order. The fake
+        // used to drop the first one (`params.slice(1)`), so every cached
+        // row in every test held the WRONG column values.
+        const values = params;
         const cols = (sql.match(/\(([^)]*)\)\s*VALUES/i)?.[1] ?? '')
           .split(',')
           .map((c) => c.trim())
@@ -314,6 +359,34 @@ jest.mock('expo-sqlite', () => {
         cols.forEach((c, i) => {
           row[c] = values[i];
         });
+
+        const conflict = sql.match(/ON CONFLICT\(([^)]+)\)\s+DO UPDATE/i);
+        const conflictCols = conflict
+          ? conflict[1].split(',').map((c) => c.trim())
+          : [];
+        if (conflictCols.length) {
+          const idx = rows.findIndex((r) =>
+            conflictCols.every((c) => String(r[c]) === String(row[c])),
+          );
+          if (idx >= 0) {
+            // The UPDATE list names the columns that change. The fake used
+            // to update only the CONFLICT columns, so a row's changed
+            // fields were never applied.
+            const updateList = sql.match(/DO\s+UPDATE\s+SET\s+([\s\S]*?)(?:;|$)/i)?.[1] ?? '';
+            const updated = { ...rows[idx] };
+            const assignments = updateList.match(/(\w+)\s*=\s*excluded\.(\w+)/gi) ?? [];
+            for (const assignment of assignments) {
+              const [, target, source] = assignment.match(
+                /(\w+)\s*=\s*excluded\.(\w+)/i,
+              ) as RegExpMatchArray;
+              updated[target] = row[source];
+            }
+            rows[idx] = updated;
+            tables.set(name, rows);
+            return { lastInsertRowId: idx, changes: 1 };
+          }
+        }
+
         rows.push(row);
         tables.set(name, rows);
         return { lastInsertRowId: rows.length, changes: 1 };
@@ -322,18 +395,61 @@ jest.mock('expo-sqlite', () => {
       if (del) {
         const name = del[1];
         const rows = tables.get(name) ?? [];
+
+        // The cache prunes with
+        //   DELETE FROM t WHERE <key> NOT IN (SELECT <key> FROM t ORDER BY <col> DESC LIMIT ?)
+        // The fake used to delete EVERY row for any DELETE, so the prune
+        // emptied the whole cache - which means the notices cache and the
+        // question-paper cache were never actually exercised by a test.
+        const prune = sql.match(
+          /NOT\s+IN\s*\(\s*SELECT\s+(\w+)\s+FROM\s+(\w+)(?:\s+ORDER\s+BY\s+(\w+)\s+DESC)?\s+LIMIT\s+(\d+|\?)\s*\)/i,
+        );
+        if (prune) {
+          const [, keyColumn, sourceTable, orderColumn, limitText] = prune;
+          const limit = limitText === '?' ? (params[params.length - 1] as number) : Number(limitText);
+          const source = tables.get(sourceTable) ?? [];
+          const ordered = orderColumn
+            ? [...source].sort(
+                (a, b) => Number(b[orderColumn] ?? 0) - Number(a[orderColumn] ?? 0),
+              )
+            : source;
+          const keep = new Set(
+            ordered.slice(0, Math.max(0, Number(limit) || 0)).map((r) => String(r[keyColumn])),
+          );
+          const kept = rows.filter((r) => keep.has(String(r[keyColumn])));
+          tables.set(name, kept);
+          return { changes: rows.length - kept.length };
+        }
+
+        // A plain DELETE FROM t WHERE ... removes the matching rows.
+        const where = sql.match(/WHERE\s+(.+?)(?:;|$)/i);
+        if (where) {
+          const condition = where[1];
+          const eq = condition.match(/(\w+)\s*=\s*(\?|'(?:[^']*)'|"(?:[^"]*)")/i);
+          if (eq) {
+            const column = eq[1];
+            const value =
+              eq[2] === '?'
+                ? String(params[params.length - 1] ?? '')
+                : eq[2].replace(/^['"]|['"]$/g, '');
+            const kept = rows.filter((r) => String(r[column]) !== value);
+            tables.set(name, kept);
+            return { changes: rows.length - kept.length };
+          }
+        }
+
         tables.set(name, rows.filter(() => true));
         return { changes: rows.length };
       }
       return { changes: 0 };
     },
-    getAllSync: <T,>(sql: string): T[] => {
+    getAllSync: <T,>(sql: string, params: unknown[] = []): T[] => {
       const m = sql.match(/FROM (\w+)/i);
       const rows = m ? tables.get(m[1]) ?? [] : [];
-      return rows as unknown as T[];
+      return filterByWhere(rows, sql, params) as unknown as T[];
     },
-    getFirstSync: <T,>(sql: string): T | null => {
-      const all = db.getAllSync<T>(sql);
+    getFirstSync: <T,>(sql: string, params: unknown[] = []): T | null => {
+      const all = db.getAllSync<T>(sql, params);
       return all.length ? all[0] : null;
     },
     closeSync: jest.fn(),

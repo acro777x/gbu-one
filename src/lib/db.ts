@@ -30,7 +30,7 @@ let dbUnavailableWarned = false;
 // Bumped whenever the local schema changes. `PRAGMA user_version` is the
 // only migration mechanism a plain SQLite file has, and without it a schema
 // change can never reach the devices that already have the database.
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function getDb(): Db | null {
   if (!SQLite) return null;
@@ -70,12 +70,36 @@ function getDb(): Db | null {
       db.runSync(`CREATE TABLE IF NOT EXISTS kv_meta (
         key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);`);
 
+      // The question-paper library. Every other screen renders from the
+      // local cache first; this one had no cache at all.
+      db.runSync(`CREATE TABLE IF NOT EXISTS pyq_papers_cache (
+        id TEXT PRIMARY KEY,
+        school TEXT NOT NULL DEFAULT '',
+        programme_code TEXT NOT NULL DEFAULT '',
+        semester TEXT NOT NULL DEFAULT '',
+        subject_code TEXT NOT NULL DEFAULT '',
+        subject_name TEXT NOT NULL DEFAULT '',
+        year INTEGER NOT NULL DEFAULT 0,
+        exam_type TEXT NOT NULL DEFAULT 'End Sem',
+        downloads INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'approved',
+        file_url TEXT NOT NULL DEFAULT '',
+        uploader_student_id TEXT NOT NULL DEFAULT '',
+        uploader_name TEXT NOT NULL DEFAULT '',
+        cached_at INTEGER NOT NULL DEFAULT 0);`);
+
       // The two hot reads are `ORDER BY posted_at DESC` and
       // `ORDER BY start_date ASC` over the whole table. Without an index
       // both are a full scan plus a sort on every screen open.
       try {
         db.runSync('CREATE INDEX IF NOT EXISTS notices_cache_posted_at_idx ON notices_cache (posted_at DESC);');
         db.runSync('CREATE INDEX IF NOT EXISTS campus_events_cache_start_date_idx ON campus_events_cache (start_date ASC);');
+      } catch {
+        // An index is an optimisation, never a correctness requirement.
+      }
+      try {
+        db.runSync('CREATE INDEX IF NOT EXISTS pyq_papers_cache_browse_idx ON pyq_papers_cache (school, programme_code, semester);');
+        db.runSync('CREATE INDEX IF NOT EXISTS pyq_papers_cache_cached_at_idx ON pyq_papers_cache (cached_at DESC);');
       } catch {
         // An index is an optimisation, never a correctness requirement.
       }
@@ -125,7 +149,36 @@ function migrateLocalSchema(d: Db): void {
         // already there
       }
     }
-    d.runSync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+    if (version < 3) {
+    // v3: the question-paper library cache. A device that already had the
+    // database must get the new table and its indexes.
+    try {
+      d.runSync(`CREATE TABLE IF NOT EXISTS pyq_papers_cache (
+        id TEXT PRIMARY KEY,
+        school TEXT NOT NULL DEFAULT '',
+        programme_code TEXT NOT NULL DEFAULT '',
+        semester TEXT NOT NULL DEFAULT '',
+        subject_code TEXT NOT NULL DEFAULT '',
+        subject_name TEXT NOT NULL DEFAULT '',
+        year INTEGER NOT NULL DEFAULT 0,
+        exam_type TEXT NOT NULL DEFAULT 'End Sem',
+        downloads INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'approved',
+        file_url TEXT NOT NULL DEFAULT '',
+        uploader_student_id TEXT NOT NULL DEFAULT '',
+        uploader_name TEXT NOT NULL DEFAULT '',
+        cached_at INTEGER NOT NULL DEFAULT 0);`);
+    } catch {
+      // already there
+    }
+    try {
+      d.runSync('CREATE INDEX IF NOT EXISTS pyq_papers_cache_browse_idx ON pyq_papers_cache (school, programme_code, semester);');
+      d.runSync('CREATE INDEX IF NOT EXISTS pyq_papers_cache_cached_at_idx ON pyq_papers_cache (cached_at DESC);');
+    } catch {
+      // already there
+    }
+  }
+  d.runSync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
   } catch {
     // A failed migration must not stop the app from starting.
   }
@@ -259,6 +312,111 @@ export function writeCachedTimetable(classKey: string, sessionId: string, tt: Ti
       [classKey.trim().toUpperCase(), sessionId, JSON.stringify(tt), Date.now()]);
   } catch {
     // ignore
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The PYQ library.
+//
+// Every other screen in the app renders from the local cache first and
+// refreshes afterwards. The question-paper library did not: it kept its
+// cache in AsyncStorage, which is unindexed, unpruned and not transactional,
+// so after a restart the student saw only the bundled catalogue until the
+// network answered - and a student on a patchy connection in the library
+// building saw nothing at all.
+// ---------------------------------------------------------------------------
+
+/** One cached question paper. */
+export interface PyqPaperCacheRow {
+  id: string;
+  school: string;
+  programmeCode: string;
+  semester: string;
+  subjectCode: string;
+  subjectName: string;
+  year: number;
+  examType: string;
+  downloads: number;
+  status: string;
+  fileUrl: string;
+  uploaderStudentId: string;
+  uploaderName: string;
+  cachedAt: number;
+}
+
+/** The newest cached papers, newest first. */
+export function readCachedPyqPapers(limit = 300): PyqPaperCacheRow[] {
+  const d = getDb();
+  if (!d) return [];
+  try {
+    const rows = d.getAllSync<Record<string, unknown>>(
+      'SELECT * FROM pyq_papers_cache ORDER BY cached_at DESC LIMIT ?;',
+      [limit]);
+    return rows.map((r) => ({
+      id: String(r.id ?? ''),
+      school: String(r.school ?? ''),
+      programmeCode: String(r.programme_code ?? ''),
+      semester: String(r.semester ?? ''),
+      subjectCode: String(r.subject_code ?? ''),
+      subjectName: String(r.subject_name ?? ''),
+      year: Number(r.year ?? 0),
+      examType: String(r.exam_type ?? 'End Sem'),
+      downloads: Number(r.downloads ?? 0),
+      status: String(r.status ?? 'approved'),
+      fileUrl: String(r.file_url ?? ''),
+      uploaderStudentId: String(r.uploader_student_id ?? ''),
+      uploaderName: String(r.uploader_name ?? ''),
+      cachedAt: Number(r.cached_at ?? 0),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Writes the papers and keeps the newest `keep` of them. */
+export function writeCachedPyqPapers(rows: PyqPaperCacheRow[], keep = 500): void {
+  const d = getDb();
+  if (!d || rows.length === 0) return;
+  try {
+    const now = Date.now();
+    d.runSync('BEGIN IMMEDIATE TRANSACTION;');
+    try {
+      for (const r of rows) {
+        if (!r.id) continue;
+        d.runSync(
+          `INSERT INTO pyq_papers_cache
+             (id, school, programme_code, semester, subject_code, subject_name,
+              year, exam_type, downloads, status, file_url, uploader_student_id,
+              uploader_name, cached_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             school=excluded.school, programme_code=excluded.programme_code,
+             semester=excluded.semester, subject_code=excluded.subject_code,
+             subject_name=excluded.subject_name, year=excluded.year,
+             exam_type=excluded.exam_type, downloads=excluded.downloads,
+             status=excluded.status, file_url=excluded.file_url,
+             uploader_student_id=excluded.uploader_student_id,
+             uploader_name=excluded.uploader_name,
+             cached_at=excluded.cached_at;`,
+          [r.id, r.school, r.programmeCode, r.semester, r.subjectCode, r.subjectName,
+           r.year, r.examType, r.downloads, r.status, r.fileUrl, r.uploaderStudentId,
+           r.uploaderName, r.cachedAt || now]);
+      }
+      // Cache hygiene: keep only the newest `keep` papers.
+      d.runSync(`DELETE FROM pyq_papers_cache WHERE id NOT IN (
+        SELECT id FROM pyq_papers_cache ORDER BY cached_at DESC LIMIT ?
+      );`, [keep]);
+      d.runSync('COMMIT;');
+    } catch (innerErr) {
+      try {
+        d.runSync('ROLLBACK;');
+      } catch {
+        // ignore rollback error
+      }
+      throw innerErr;
+    }
+  } catch {
+    // cache writes must never crash the UI
   }
 }
 
