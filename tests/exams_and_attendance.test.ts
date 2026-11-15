@@ -10,13 +10,13 @@ import {
   calculateExamCountdown,
   examCountdownState,
   MOCK_DATESHEET,
-  MOCK_STUDENT_RESULTS,
 } from '../src/features/exams/examService';
+import { MOCK_STUDENT_RESULTS } from './fixtures/studentResultsFixture';
 import {
-  MOCK_CALENDAR_EVENTS,
   filterCalendarEvents,
   type CalendarEvent,
 } from '../src/features/calendar/calendarService';
+import { MOCK_CALENDAR_EVENTS } from './fixtures/calendarFixture';
 import { mergeCalendarEvents } from '../src/features/calendar/useCalendarQuery';
 import { OFFICIAL_ACADEMIC_EVENTS } from '../src/features/calendar/officialAcademicCalendar';
 import {

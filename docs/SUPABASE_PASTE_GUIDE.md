@@ -61,6 +61,68 @@ the two ever drift apart. So **never edit `schema.sql` by hand** — edit
 
 ---
 
+---
+
+## First: is the new schema already there?
+
+```bash
+node tools/check_schema.js
+```
+
+It is **read-only** - it only ever reads. It prints every table, function,
+column, view and bucket the schema adds, and says whether each one is live.
+It ends with one of:
+
+```
+RESULT: the new schema IS live. Nothing to do.
+```
+
+```
+RESULT: the new schema is NOT live yet - 23 thing(s) missing.
+```
+
+Run it again after the paste to confirm. It is the same check the CI pipeline
+should run against a live project.
+
+---
+
+## Two ways to apply it
+
+### Path A - paste it into the dashboard (five minutes, nothing to install)
+
+The steps below are exactly this path.
+
+### Path B - let the tooling do it (one minute, nothing to paste)
+
+`tools/apply_schema.js` runs the same file against the live database in a
+**single transaction** - so if anything fails, the database is left exactly as
+it was, which is much safer than a half-applied schema - and then verifies the
+result with the same checks.
+
+It needs the project's **database password**, which is *not* in `.env` (the app
+never needs it - it talks to Supabase over HTTP). Get it from:
+
+> Supabase dashboard -> Project Settings -> Database -> **Connection string**
+> -> URI -> the part **after the colon** and **before the `@`**
+
+Then either:
+
+```bash
+# Windows PowerShell
+$env:DATABASE_URL = "postgresql://postgres.PROJECT_REF:YOUR_PASSWORD@db.PROJECT_REF.supabase.co:5432/postgres"
+node tools/apply_schema.js
+```
+
+or, if you would rather not build the URL:
+
+```bash
+$env:SUPABASE_DB_PASSWORD = "YOUR_PASSWORD"
+node tools/apply_schema.js
+```
+
+The host and the project ref are worked out from `SUPABASE_URL` in `.env`.
+
+---
 ## Before you start: rotate the API key (this is mandatory)
 
 Right now the key in your `.env` is a **secret** key (`sb_secret_...`) used as the

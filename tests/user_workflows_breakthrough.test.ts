@@ -59,10 +59,10 @@ import { Slot } from '../src/features/timetable/timetableProvider';
 import {
   normalizeRollNumber,
   searchRollNumberResult,
-  MOCK_STUDENT_RESULTS,
   calculateExamCountdown,
   MOCK_DATESHEET,
 } from '../src/features/exams/examService';
+import { MOCK_STUDENT_RESULTS } from './fixtures/studentResultsFixture';
 import {
   moderatorStatus,
 } from '../src/features/pyq/pyqRepository';
