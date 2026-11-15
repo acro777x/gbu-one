@@ -175,6 +175,41 @@ describe('generated schema', () => {
     expect(generated).not.toMatch(/group by uploader_student_id;/);
   });
 
+  it('removes the legacy report table, which anyone could write to', () => {
+    // `public.pyq_reports` was the app's report table before the reports
+    // were moved to `public.reports`. It was still in the live database
+    // with its old policy "Anyone can report a paper" (insert to public,
+    // with check (true)) - so anybody on the internet could still write
+    // rows into it.
+    expect(generated).toContain('drop table if exists public.pyq_reports');
+    expect(generated).toContain('"Anyone can report a paper" on public.pyq_reports');
+    // It has to be inside a guard, because `drop policy ... on <table>`
+    // fails when the table is already gone and this script is run again and
+    // again.
+    expect(generated).toMatch(
+      /if to_regclass\('public\.pyq_reports'\) is not null then[\s\S]{0,600}drop table if exists public\.pyq_reports/,
+    );
+  });
+
+  it('adds every column explicitly, because create table if not exists is a no-op', () => {
+    // The live project proved it: the first paste failed with
+    // `column "change_key" does not exist` and rolled back. A table created
+    // by an older version of this script never receives the new columns.
+    expect(generated).toContain('add column if not exists');
+    for (const column of [
+      'public.timetable_changes add column if not exists change_key',
+      'public.pyq_papers add column if not exists uploader_student_id',
+      'public.pyq_papers add column if not exists file_size_bytes',
+      'public.reports add column if not exists reporter_student_id',
+      'public.reports add column if not exists reporter_email',
+      'public.reports add column if not exists status',
+      'public.results add column if not exists title',
+      'public.exam_date_slots add column if not exists class_key',
+    ]) {
+      expect(generated).toContain(column);
+    }
+  });
+
   it('makes the realtime broadcast channels moderator-only', () => {
     expect(generated).toContain('realtime.topic()');
     expect(generated).toContain("'gbu_notices'");

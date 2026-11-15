@@ -51,14 +51,23 @@ function resolveConnection(env) {
   const url = env.SUPABASE_URL || env.EXPO_PUBLIC_SUPABASE_URL || '';
   const projectRef = url.replace(/^https?:\/\//, '').split('.')[0];
   const password = process.env.SUPABASE_DB_PASSWORD || env.SUPABASE_DB_PASSWORD;
+  if (!password || !projectRef) return null;
+
+  // The pooler, not the direct host. The direct host
+  // (db.<ref>.supabase.co) resolves to an IPv6-only address on some
+  // projects, and Node fails to connect to it with ENOTFOUND - verified on
+  // this project on 2026-11-15. The pooler is IPv4 and always works.
+  //
+  // The user must be `postgres.<project-ref>` on the pooler; the bare
+  // `postgres` user is refused with "no tenant identifier provided".
+  const region = process.env.SUPABASE_DB_REGION || env.SUPABASE_DB_REGION || 'ap-south-1';
   const host =
     process.env.SUPABASE_DB_HOST ||
     env.SUPABASE_DB_HOST ||
-    (projectRef ? `db.${projectRef}.supabase.co` : '');
-  const port = process.env.SUPABASE_DB_PORT || '5432';
+    `aws-0-${region}.pooler.supabase.com`;
+  const port = process.env.SUPABASE_DB_PORT || env.SUPABASE_DB_PORT || '5432';
+  const user = process.env.SUPABASE_DB_USER || env.SUPABASE_DB_USER || `postgres.${projectRef}`;
 
-  if (!password || !host) return null;
-  const user = `postgres.${projectRef}`;
   return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(
     password,
   )}@${host}:${port}/postgres`;

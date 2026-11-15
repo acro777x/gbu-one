@@ -45,13 +45,16 @@ const TABLES = [
   'app_versions',
   'results_push_log',
 ];
+// Each function's EXACT argument list. Calling one with the wrong arguments
+// fails with "function ... does not exist", which is a different message
+// from "Could not find the function" - so the arguments matter here.
 const FUNCTIONS = [
-  'is_moderator',
-  'is_owner',
-  'claim_initial_admin',
-  'has_any_moderator',
-  'set_moderator',
-  'remove_moderator',
+  { name: 'is_moderator', args: {} },
+  { name: 'is_owner', args: {} },
+  { name: 'claim_initial_admin', args: {} },
+  { name: 'has_any_moderator', args: {} },
+  { name: 'set_moderator', args: { target_email: 'probe@example.invalid', target_role: 'moderator' } },
+  { name: 'remove_moderator', args: { target_email: 'probe@example.invalid' } },
 ];
 const COLUMNS = [
   ['pyq_papers', 'uploader_student_id'],
@@ -89,15 +92,14 @@ async function main() {
 
   console.log('\nNEW FUNCTIONS');
   for (const fn of FUNCTIONS) {
-    const { error } = await sb.rpc(
-      fn,
-      fn === 'set_moderator' || fn === 'remove_moderator'
-        ? { target_email: 'probe@example.invalid', target_role: 'moderator' }
-        : {},
+    const { error } = await sb.rpc(fn.name, fn.args);
+    const gone = Boolean(
+      error &&
+        (/Could not find the function/i.test(error.message) ||
+          /does not exist/i.test(error.message)),
     );
-    const gone = Boolean(error && /Could not find the function/i.test(error.message));
     if (gone) missing += 1;
-    console.log(`  ${gone ? 'MISSING' : 'PRESENT'}  ${fn}()`);
+    console.log(`  ${gone ? 'MISSING' : 'PRESENT'}  ${fn.name}()`);
   }
 
   console.log('\nNEW COLUMNS');
@@ -126,6 +128,51 @@ async function main() {
     const found = (buckets.data || []).find((b) => b.id === bucket);
     const flag = bucket === 'pyq-pending' ? (found?.public ? 'PUBLIC - WRONG' : 'private - correct') : '';
     if (flag) console.log(`  ${bucket}: ${flag}`);
+    if (bucket === 'pyq-pending' && found?.public) missing += 1;
+  }
+
+  // The row level security state can only be read from the database itself.
+  // If a DATABASE_URL is available, check it; otherwise report that it was
+  // not checked rather than implying it is fine.
+  const databaseUrl = process.env.DATABASE_URL;
+  if (databaseUrl) {
+    console.log('\nROW LEVEL SECURITY (read from the database)');
+    try {
+      const { Client } = require('pg');
+      const client = new Client({
+        connectionString: databaseUrl,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 15000,
+      });
+      await client.connect();
+      const result = await client.query(`
+        select c.relname as table_name,
+               c.relrowsecurity as rls,
+               (select count(*) from pg_policies p
+                 where p.schemaname = 'public' and p.tablename = c.relname) as policies
+          from pg_class c
+          join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname = 'public' and c.relkind = 'r'
+         order by c.relname`);
+      let withoutRls = 0;
+      let withoutPolicies = 0;
+      for (const row of result.rows) {
+        const flag = !row.rls ? 'NO RLS - WRONG' : row.policies === 0 ? 'no policies - locked' : '';
+        if (!row.rls) withoutRls += 1;
+        if (row.rls && row.policies === 0) withoutPolicies += 1;
+        console.log(`  ${row.table_name.padEnd(26)} rls=${String(row.rls).padEnd(5)} policies=${row.policies}${flag ? '  ' + flag : ''}`);
+      }
+      console.log(
+        `  ${withoutRls} table(s) without row level security, ${withoutPolicies} locked with no policy at all.`,
+      );
+      if (withoutRls > 0) missing += withoutRls;
+      await client.end();
+    } catch (error) {
+      console.log(`  could not read the database: ${error.message}`);
+    }
+  } else {
+    console.log('\nROW LEVEL SECURITY');
+    console.log('  not checked (set DATABASE_URL to check it)');
   }
 
   console.log('');

@@ -7,6 +7,53 @@
 -- ===========================================================================
 
 -- ---------------------------------------------------------------------------
+-- Column upgrades
+--
+-- "create table if not exists" is a NO-OP on a table that already exists, so a
+-- database created by an OLDER version of this script never receives the new
+-- columns. The live project proved it on 2026-11-15: the first paste failed
+-- with "column change_key does not exist" and rolled back.
+--
+-- Every column of every table that already existed is therefore added
+-- explicitly. "add column if not exists" is idempotent, so this block is safe on
+-- a fresh database AND on the live one, and safe to run again.
+--
+-- The tables that did not exist yet (admin_claims, campus_events, app_versions,
+-- results_push_log) are created whole by the statements above, so they need no
+-- column upgrades.
+-- ---------------------------------------------------------------------------
+
+-- timetable_changes
+alter table public.timetable_changes add column if not exists change_key text;
+
+-- results
+alter table public.results add column if not exists semester text not null default '';
+alter table public.results add column if not exists academic_year text not null default '';
+alter table public.results add column if not exists title text not null default '';
+
+-- exam_date_slots
+alter table public.exam_date_slots add column if not exists class_key text not null default '';
+alter table public.exam_date_slots add column if not exists exam_type text not null default 'end_sem';
+alter table public.exam_date_slots add column if not exists shift_time text not null default '';
+alter table public.exam_date_slots add column if not exists paper_id text not null default '';
+
+-- pyq_papers
+alter table public.pyq_papers add column if not exists uploader_student_id text not null default '';
+alter table public.pyq_papers add column if not exists uploader_name text not null default '';
+alter table public.pyq_papers add column if not exists uploader_avatar text not null default '';
+alter table public.pyq_papers add column if not exists file_size_bytes bigint not null default 0;
+alter table public.pyq_papers add column if not exists updated_at timestamptz not null default now();
+
+-- reports
+alter table public.reports add column if not exists reporter_student_id text not null default '';
+alter table public.reports add column if not exists reporter_name text not null default '';
+alter table public.reports add column if not exists reporter_email text not null default '';
+alter table public.reports add column if not exists type text not null default 'general';
+alter table public.reports add column if not exists category text not null default 'general';
+alter table public.reports add column if not exists status text not null default 'open';
+alter table public.reports add column if not exists admin_response text;
+alter table public.reports add column if not exists admin_response_at timestamptz;
+-- ---------------------------------------------------------------------------
 -- Published university data (written by the worker, read by every app)
 -- ---------------------------------------------------------------------------
 create table if not exists public.notices (
@@ -689,6 +736,36 @@ create policy "exam date slots moderator write" on public.exam_date_slots
   for all to authenticated
   using (public.is_moderator())
   with check (public.is_moderator());
+
+-- ---------------------------------------------------------------------------
+-- The legacy report table.
+--
+-- public.pyq_reports was the app's report table before the reports were
+-- moved to public.reports. The app has not written to it for a long time,
+-- but it was still in the live database with its old policy:
+--
+--   "Anyone can report a paper"  for insert to public  with check (true)
+--
+-- so ANYBODY on the internet could still write rows into it. A dead table
+-- with an open write policy is a spam vector, so the table and its policy
+-- are removed here.
+--
+-- The data in it is not lost: public.reports is the table the app uses,
+-- and the rows that were migrated still live there.
+--
+-- The whole thing is inside a DO block because "drop policy ... on <table>"
+-- fails when the table is already gone, and this script has to be safe to
+-- run again and again.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if to_regclass('public.pyq_reports') is not null then
+    execute 'drop policy if exists "Anyone can report a paper" on public.pyq_reports';
+    execute 'drop policy if exists "Uploaders can view their own reports" on public.pyq_reports';
+    execute 'drop table if exists public.pyq_reports';
+  end if;
+end;
+$$;
 
 alter table public.results enable row level security;
 drop policy if exists "results read" on public.results;

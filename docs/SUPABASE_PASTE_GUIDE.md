@@ -311,3 +311,67 @@ it again.
 5. Add `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` to the GitHub Actions
    secrets → run the workflow by hand.
 6. Rebuild the APK.
+
+---
+
+## DONE on 2026-11-15 — the schema IS live
+
+The schema was applied to the live project and **verified**, not assumed:
+
+- `node tools/check_schema.js` — every table, function, column, view and
+  bucket the schema adds is present, and `pyq-pending` is still private.
+- `node tools/rls_audit.js` — **20/20 checks pass**. The audit asks the
+  DATABASE what a real client can do, by switching to the very role
+  PostgREST uses. That is the only honest way to test a policy: the REST
+  API always goes through as the service role, which bypasses row level
+  security entirely and therefore proves nothing.
+
+| What a client tries | Result |
+|---|---|
+| anonymous: read approved papers | 80 rows - allowed |
+| anonymous: read pending papers (the moderation queue) | 0 - refused |
+| anonymous: read the moderator allowlist | 0 - refused |
+| anonymous: read student reports | 0 - refused |
+| anonymous: read the worker log / push ledger | 0 - refused |
+| anonymous: write an event, a notice, a report, a log row | refused |
+| anonymous: queue a paper as pending | allowed (that is the guest upload) |
+| anonymous: change a paper they can see | 0 rows changed |
+| signed-in student: read the allowlist / other students' reports | 0 - refused |
+| signed-in student: write an event, a notice, approve a paper, add a moderator | refused |
+| signed-in student: queue their own paper | allowed |
+
+Three real bugs were found and fixed while doing this:
+
+1. **`create table if not exists` is a no-op on an existing table**, so the
+   21 new columns were never added and the first paste failed with
+   `column "change_key" does not exist`. Every column is now added
+   explicitly with `add column if not exists`.
+2. **The dead table `public.pyq_reports` was still open to the world** — it
+   carried the old policy "Anyone can report a paper" (insert to `public`,
+   `with check (true)`), so anybody on the internet could write into it. It
+   is dropped now.
+3. The schema is now **idempotent**: it applies cleanly twice in a row.
+
+### Still yours to do
+
+1. **Seed yourself as owner.** The live `moderators` table has two `owner`
+   rows: `ashishkhola56@gmail.com` and the fabricated `admin@gbu.ac.in`
+   (which exists on no official GBU page). Edit `supabase/seed.sql`, put
+   your real address in both places, and paste it into the SQL editor.
+   Then remove the fake one:
+
+   ```sql
+   delete from public.moderators where lower(email) = 'admin@gbu.ac.in';
+   ```
+
+2. **Rotate the API key** — the client key in `.env` is still the SECRET
+   key, so a release build is refused.
+
+3. **Add the GitHub Actions secret** so the worker keeps running.
+
+4. **Re-run the audit** whenever the schema changes:
+
+   ```bash
+   set DATABASE_URL=postgresql://postgres.PROJECT_REF:PASSWORD@aws-0-ap-south-1.pooler.supabase.com:5432/postgres
+   node tools/rls_audit.js
+   ```
