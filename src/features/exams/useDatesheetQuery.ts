@@ -122,6 +122,13 @@ export async function fetchDatesheet(
 ): Promise<DatesheetResult> {
   const { canonical, base } = classKeysForStudent(programmeCode, semester, enrolledClassKey);
   const fallback = getClassDatesheet(canonical, phase);
+  // A date sheet is published PER PROGRAMME, and some universities omit the
+  // semester from the programme cell altogether (the School of ICT's sheet
+  // does). Its stored key is then just `btech_cse_cyber`, while the student
+  // knows they are in `btech_cse_cyber_sem2`. Adding the programme-only key
+  // to the query lets those rows come back; `matchClassKey` below still
+  // makes sure no other programme's exams are shown.
+  const programmeOnlyKey = canonical.split('_sem')[0];
 
   try {
     let rows: DateSlotRow[] = [];
@@ -134,7 +141,12 @@ export async function fetchDatesheet(
         let query = supabase
           .from('exam_date_slots')
           .select('*')
-          .or(`class_key.eq.${base},class_key.like.${base}*`)
+          .or(
+            `class_key.eq.${base},class_key.like.${base}*` +
+              (programmeOnlyKey && programmeOnlyKey !== base
+                ? `,class_key.eq.${programmeOnlyKey}`
+                : ''),
+          )
           .order('exam_date', { ascending: true })
           .limit(500);
         const examType = examTypeForPhase(phase);
