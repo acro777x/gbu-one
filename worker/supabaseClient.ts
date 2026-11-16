@@ -962,7 +962,19 @@ export async function recordAttachmentProcessing(
   let written = 0;
   let failed = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
-    const batch = rows.slice(i, i + BATCH).map((r) => ({
+    // A batch may not hold the same conflict key twice.
+    //
+    // Postgres refuses an "ON CONFLICT DO UPDATE" that would touch the
+    // same row twice: "21000: ON CONFLICT DO UPDATE command cannot affect
+    // row a second time". The university publishes the same PDF under
+    // several notices, so the same content hash really does come back
+    // twice in one batch - and the whole batch was refused, which is why
+    // every attachment record failed to be written.
+    const unique = new Map<string, (typeof rows)[number]>();
+    for (const row of rows.slice(i, i + BATCH)) {
+      unique.set(row.contentHash, row);
+    }
+    const batch = [...unique.values()].map((r) => ({
       content_hash: r.contentHash,
       source_id: r.sourceId,
       file_url: r.fileUrl,

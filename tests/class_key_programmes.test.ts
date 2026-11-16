@@ -19,6 +19,7 @@
  *     through to the raw text, which no student could ever pick.
  */
 import {
+  baseClassKeyOf,
   buildCanonicalClassKey,
   matchClassKey,
 } from '../src/lib/classKey';
@@ -90,6 +91,22 @@ describe('the class key of a date sheet', () => {
     expect(buildCanonicalClassKey('2024-2029 III', undefined, undefined, 'soljg')).toBe(
       'llb_sem3_2024_2029',
     );
+  });
+
+  it('does not re-read a key as prose when reducing it to a base key', () => {
+    // A canonical key without a semester is still a key. Feeding
+    // "btech_cse_ml" back through the programme rules matched the "b.tech
+    // ... cse" rule and produced "btech_cse", so a Machine Learning
+    // student was shown the plain CSE date sheet.
+    expect(baseClassKeyOf('btech_cse_ml')).toBe('btech_cse_ml');
+    expect(baseClassKeyOf('btech_cse_cyber')).toBe('btech_cse_cyber');
+    expect(baseClassKeyOf('btech_cse_sem3_2025_2029_b')).toBe('btech_cse_sem3');
+
+    // A date sheet published per programme has no semester in its key, so
+    // it has to match a student who DOES know their semester.
+    expect(matchClassKey('btech_cse_cyber_sem2', 'btech_cse_cyber')).toBe(true);
+    expect(matchClassKey('btech_cse_ml_sem3', 'btech_cse_ml')).toBe(true);
+    expect(matchClassKey('btech_cse_sem3', 'btech_cse_cyber')).toBe(false);
   });
 
   it('matches a student who knows their section to a slot published per programme', () => {

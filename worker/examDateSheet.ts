@@ -40,7 +40,127 @@ import {
   runTesseract,
 } from './ocrRunner';
 import { readFileSync } from 'fs';
-import path from 'path';
+import { execFileSync } from 'child_process';
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'fs';
+import { tmpdir } from 'os';
+import path, { join } from 'path';
+
+/**
+ * PDFium returns one piece per GLYPH. Join the glyphs of a word back
+ * together, so the existing cell grouping can treat a word as one piece.
+ *
+ * The glyphs of a table printed sideways advance down the page instead of
+ * across it, so the axis is measured from the characters themselves: the
+ * School of ICT's sheet has a nearly constant x within a word and an
+ * increasing y, while the School of Law's has the opposite.
+ */
+function groupEngineGlyphs(pieces: LaidOutText[]): LaidOutText[] {
+  if (pieces.length < 2) return pieces;
+
+  const gapsX: number[] = [];
+  const gapsY: number[] = [];
+  for (let i = 1; i < pieces.length; i += 1) {
+    const dx = pieces[i].x - pieces[i - 1].x;
+    const dy = pieces[i].y - pieces[i - 1].y;
+    if (Math.abs(dx) < 30) gapsX.push(Math.abs(dx));
+    if (Math.abs(dy) < 30) gapsY.push(Math.abs(dy));
+  }
+  const median = (values: number[]): number => {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  };
+  const dx = median(gapsX);
+  const dy = median(gapsY);
+  // Which way does the text run? The advance is the axis with the LARGER
+  // typical gap between neighbouring glyphs.
+  const alongY = dy > dx * 1.5;
+  const advance = Math.max(dx, dy, 1);
+  const perpendicular = Math.min(dx, dy);
+  const maxGap = Math.max(advance * 2.5, 6);
+  const maxPerpendicular = Math.max(perpendicular * 2.5, 3);
+
+  const words: LaidOutText[] = [];
+  let current: LaidOutText | null = null;
+  let lastAdvance = 0;
+  for (const piece of pieces) {
+    const a = alongY ? piece.y : piece.x;
+    const p = alongY ? piece.x : piece.y;
+    if (current) {
+      const lastA = alongY ? current.y : current.x;
+      const lastP = alongY ? current.x : current.y;
+      const step = a - lastA;
+      const sameWord =
+        step > 0 &&
+        step <= maxGap &&
+        Math.abs(p - lastP) <= maxPerpendicular &&
+        Math.abs(step - lastAdvance) <= Math.max(advance * 1.5, 4);
+      if (sameWord) {
+        // The position of a word is the end of its last glyph, which is
+        // where the reader expects the next piece of the same cell to be.
+        current.x = piece.x;
+        current.y = piece.y;
+        current.text += piece.text;
+        lastAdvance = step;
+        continue;
+      }
+    }
+    words.push({ ...piece });
+    current = words[words.length - 1];
+    lastAdvance = 0;
+  }
+  return words;
+}
+
+/**
+ * The worker's own PDF reader has to GUESS where a glyph was drawn: it
+ * does not track advances, and a sheet whose table is inside a rotated
+ * frame with kerning moves whole columns without telling us.
+ *
+ * PDFium (the engine behind Chrome) knows exactly where every glyph is.
+ * When the Python helper and pypdfium2 are installed, use its positions.
+ * Otherwise fall back to the reader in this file - a date sheet read by
+ * a real engine is better than a sample shown to a student.
+ */
+export function extractPdfLayoutViaEngine(
+  buffer: Buffer,
+  label: string,
+): LaidOutText[][] | null {
+  const helper = [
+    join(__dirname, '..', '..', 'tools', 'pdf_layout.py'),
+    join(process.cwd(), 'tools', 'pdf_layout.py'),
+  ].find((path) => existsSync(path));
+  if (!helper) return null;
+
+  let dir = '';
+  try {
+    dir = mkdtempSync(join(tmpdir(), 'gbu-pdfium-'));
+    const pdfPath = join(dir, `${label || 'sheet'}.pdf`);
+    writeFileSync(pdfPath, buffer);
+    const output = execFileSync(
+      process.platform === 'win32' ? 'python' : 'python3',
+      [helper, pdfPath],
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 180_000 },
+    );
+    const parsed = JSON.parse(output) as {
+      pages?: Array<Array<{ text: string; x: number; y: number }>>;
+    };
+    if (!Array.isArray(parsed.pages)) return null;
+    return parsed.pages.map((page) =>
+      groupEngineGlyphs(
+        page.map((piece) => ({
+          x: piece.x,
+          y: piece.y,
+          text: stripControlCharacters(piece.text),
+        })),
+      ),
+    );
+  } catch {
+    return null;
+  } finally {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+}
 import { fetchWithTlsTolerance } from './noticesJob';
 import {
   parseExcelDateSheet,
@@ -1267,9 +1387,22 @@ function readPageGrid(page: LaidOutText[]): Array<{
  */
 export function parseDateSheetLayout(buffer: Buffer, schoolCode: string): DateSheetSlot[] {
   const code = schoolCode.trim().toLowerCase();
-  let slots: DateSheetSlot[] = [];
 
-  for (const pages of [extractPdfLayout(buffer), extractPdfLayout(buffer, { fallbackOnly: true })]) {
+  const attempts = [
+    extractPdfLayoutViaEngine(buffer, code),
+    extractPdfLayout(buffer),
+    extractPdfLayout(buffer, { fallbackOnly: true }),
+  ];
+
+  // Several readers can produce a grid, and none of them is right for
+  // every sheet: PDFium knows where the glyphs are but sometimes glues two
+  // cells together; the reader in this file knows the sheet conventions
+  // but cannot follow a rotated table. Keep the best result, judged by
+  // the number of REAL rows it produced - not the first non-empty one.
+  let slots: DateSheetSlot[] = [];
+  let bestScore = -1;
+  for (const pages of attempts) {
+    if (!pages || pages.length === 0) continue;
     const found: DateSheetSlot[] = [];
     for (const page of pages) {
       for (const row of readPageGrid(page)) {
@@ -1286,8 +1419,17 @@ export function parseDateSheetLayout(buffer: Buffer, schoolCode: string): DateSh
         }
       }
     }
-    slots = found;
-    if (slots.length > 0) break;
+    const score =
+      found.filter(
+        (slot) => /^\d{4}-\d{2}-\d{2}$/.test(slot.date) && slot.programme.trim().length > 3,
+      ).length *
+        10 +
+      new Set(found.map((slot) => slot.date)).size * 100 +
+      new Set(found.map((slot) => slot.programme)).size * 50;
+    if (score > bestScore) {
+      bestScore = score;
+      slots = found;
+    }
   }
 
   return slots;

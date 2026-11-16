@@ -70,6 +70,16 @@ jobs:
           sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-hin poppler-utils
           tesseract --version
           pdftoppm -v 2>&1 | head -1
+      - name: Install PDFium (exact glyph positions for date sheets)
+        # The School of ICT's date sheet is drawn inside a rotated, scaled
+        # frame whose columns are moved by kerning. The worker's own PDF
+        # reader cannot follow it, so it asks PDFium (Chrome's PDF engine)
+        # for the exact position of every glyph through tools/pdf_layout.py.
+        # The worker falls back to its own reader if this step is missing.
+        run: |
+          python3 -m pip install --user pypdfium2
+          python3 tools/pdf_layout.py --help 2>/dev/null || true
+          python3 -c "import pypdfium2; print('pdfium', pypdfium2.V_PYPDFIUM2)"
       - name: Build the worker with the repo's own TypeScript
         run: |
           # tsx is NOT a dependency of this repo, so `npx tsx` used to download it

@@ -318,9 +318,12 @@ export function baseClassKeyOf(rawKey: string): string {
   const key = (rawKey ?? '').trim();
   const parts = parseCanonicalClassKey(key);
   if (parts.semester !== null) return baseClassKeyOfParts(parts);
-  // The key is not in the canonical shape (a published section code such as
-  // `BCS-III-B`, or a programme name), so it is read as text.
-  return baseClassKeyOfParts(parseClassKeyParts(key));
+  // A canonical key WITHOUT a semester is still a key: a programme slug
+  // such as `btech_cse_ml`, possibly with a batch. Re-reading it as prose
+  // used to send it through the programme rules, where "btech_cse_ml"
+  // matched the "b.tech ... cse" rule and came back as the WRONG programme
+  // `btech_cse` - a Machine Learning student was shown the CSE date sheet.
+  return normaliseProgramme(key);
 }
 
 /**
@@ -586,6 +589,19 @@ function describeClassKey(rawKey: string): ClassKeyParts {
   const text = (rawKey ?? '').trim();
   const canonical = parseCanonicalClassKey(text.toLowerCase().replace(/[\s-]+/g, '_'));
   if (canonical.semester !== null) return canonical;
+  // A slug such as `btech_cse_cyber` is already a key, not prose. Sending
+  // it through the programme rules matched the "b.tech ... cse" rule and
+  // turned it into `btech_cse`, so a Cyber Security student never matched
+  // their own date sheet. Only published codes and free text are parsed.
+  if (/^[a-z][a-z0-9_]*$/.test(text)) {
+    // The older format wrote the semester as a bare number
+    // (`btech_cse_3`); it has to keep matching `btech_cse_sem3`.
+    const legacy = /^(.+?)_(\d{1,2})$/.exec(text);
+    if (legacy) {
+      return { programme: legacy[1], semester: Number(legacy[2]) };
+    }
+    return { programme: text, semester: null };
+  }
   // Not in the canonical shape: it is a published section code or a
   // programme name, so it is read as text. The batch is still taken from
   // the canonical reading, because a published code never names one.

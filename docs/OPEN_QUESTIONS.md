@@ -103,3 +103,45 @@
    ```
 
    The two GBU hosts with expired certificates (`ohms.gbu.ac.in`, `digiforms.gbu.ac.in`) are handled correctly by the per-request agent, so nothing breaks.
+
+---
+
+26. The APK works on the emulator, but Play Store publication needs a toolchain upgrade: [OPEN - owner decision]
+
+   Verified on 2026-11-17 by installing the freshly built debug APK on
+   UnoEmulator and walking every screen: onboarding, home, notices,
+   timetable, PYQ, profile, Examination Hub, Calendar, Mail and Events all
+   render, the live worker data is visible, and the app did not crash.
+
+   Two things stop this exact artifact from being a Play Store release:
+
+   - Android reports "This app isn't 16 KB compatible" and lists 26 native
+     libraries that were linked for 4 KB pages. Google Play requires 16 KB
+     page-size support for apps that target Android 15 (API 35) or newer.
+   - The project targets API 34 (android/build.gradle), and Google Play
+     requires new apps to target API 35 or newer.
+
+   Both come from the same root cause: Expo SDK 52 / React Native 0.76.7
+   predate 16 KB support. The fix is an SDK upgrade (Expo SDK 53+ / React
+   Native 0.79+), which is a separate, substantial piece of work with its
+   own regression pass. It was NOT attempted during this production pass,
+   because guessing at it would have risked the working app.
+
+   The current APK is fine for sideloading and for testing on a phone. It is
+   not a Play Store artifact until the SDK is upgraded and the gates are run
+   again.
+
+27. The student's date sheet now has real data, but SOICT's PDF needs PDFium: [RESOLVED in the worker, owner note]
+
+   Verified on 2026-11-17. The School of ICT's date sheet draws its table
+   inside a rotated and scaled frame whose columns move through kerning.
+   The worker's own PDF reader could not read it, so SOICT students saw a
+   sample schedule. The worker now asks PDFium (Chrome's PDF engine), via
+   tools/pdf_layout.py, for the exact position of every glyph when
+   pypdfium2 is installed, and keeps the best of the available readers.
+   The cron installs pypdfium2; a worker without it falls back to the old
+   reader and simply has no SOICT rows (never wrong rows).
+
+   The live database now has 500 real date-sheet slots across seven schools,
+   including 54 SOICT slots with keys such as btech_cse_cyber and
+   btech_cse_ml, and zero unresolved general_* keys.
