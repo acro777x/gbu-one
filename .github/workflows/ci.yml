@@ -92,7 +92,11 @@ jobs:
         # comment, a doc or a test that asserts the variable is NOT read is
         # not a leak, and flagging those would train people to ignore the gate.
         run: |
-          if git grep -nIE "sb_secret_[A-Za-z0-9_-]{20,}" -- . ':!supabase/schema.sql' ':!docs/*' ':!README.md'; then
+          # tests/bundle_secrets.test.ts holds a FAKE key made of z's, to
+          # prove that the sanitiser refuses to ship one. It is not a leak,
+          # and the guard used to fail on it - which is how the pipeline
+          # stayed red while the real key was out of the bundle.
+          if git grep -nIE "sb_secret_[A-Za-z0-9_-]{20,}" -- . ':!supabase/schema.sql' ':!docs/*' ':!README.md' ':!tests/bundle_secrets.test.ts'; then
             echo "::error::a Supabase secret key is committed in the repository. Rotate it and remove it."
             exit 1
           fi

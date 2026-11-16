@@ -99,6 +99,14 @@ jobs:
         # was written and not one row appeared in worker_runs.
         #
         # A missing or empty secret must fail the job BEFORE the worker runs.
+        #
+        # The secrets are passed to THIS step as well. The guard used to
+        # check two variables that were never handed to it - they were only
+        # mapped into the "Run notices worker" step - so the guard failed on
+        # every single run, even on the days when the secrets were there.
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           if [ -z "${SUPABASE_URL:-}" ]; then
             echo "::error::SUPABASE_URL secret is missing or empty. Add it under Settings -> Secrets and variables -> Actions."; exit 1
