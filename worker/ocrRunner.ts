@@ -12,9 +12,10 @@
  * instead of crashing the worker.
  */
 import { execFile, spawnSync } from 'child_process';
-import fs from 'fs/promises';
-import os from 'os';
-import path from 'path';
+import fs, { mkdtempSync } from 'fs';
+import fsp from 'fs/promises';
+import path, { join } from 'path';
+import os, { tmpdir } from 'os';
 
 export interface OcrRunInput {
   bytes: Buffer;
@@ -44,6 +45,62 @@ export function isTesseractAvailable(): boolean {
     return result.status === 0;
   } catch {
     return false;
+  }
+}
+
+/** True when `pdftoppm` (poppler-utils) is callable. */
+export function isPdfRasteriserAvailable(): boolean {
+  try {
+    const finder = process.platform === 'win32' ? 'where' : 'which';
+    const result = spawnSync(finder, ['pdftoppm'], { stdio: 'ignore' });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Rasterises a PDF into PNG pages with `pdftoppm`.
+ *
+ * Tesseract cannot read a PDF, so a sheet that has no usable text layer -
+ * a scan, or a subsetted font without a ToUnicode CMap - has to be turned
+ * into images first.
+ *
+ * Returns the paths of the pages, or an empty array when the rasteriser is
+ * not installed or the PDF could not be read.
+ */
+export async function rasterisePdf(
+  bytes: Buffer,
+  fileName: string,
+  maxPages = 8,
+): Promise<string[]> {
+  if (!isPdfRasteriserAvailable()) return [];
+  const dir = mkdtempSync(join(tmpdir(), 'gbu-pdf-'));
+  const pdfPath = join(dir, fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`);
+  try {
+    fs.writeFileSync(pdfPath, bytes);
+  } catch {
+    return [];
+  }
+  const prefix = join(dir, 'page');
+  const code = await new Promise<number>((resolve) => {
+    const child = execFile(
+      'pdftoppm',
+      ['-png', '-r', '200', '-f', '1', '-l', String(maxPages), pdfPath, prefix],
+      { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 },
+      (error) => resolve(error ? 1 : 0),
+    );
+    child.on('error', () => resolve(1));
+  });
+  if (code !== 0) return [];
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((name) => name.startsWith('page') && name.endsWith('.png'))
+      .sort()
+      .map((name) => join(dir, name));
+  } catch {
+    return [];
   }
 }
 
@@ -83,10 +140,10 @@ export async function runTesseract(input: OcrRunInput): Promise<OcrRunnerResult>
     return { text: '', provider: 'tesseract', ok: false, reason: 'too-large' };
   }
 
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'gbu-ocr-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'gbu-ocr-'));
   const file = path.join(dir, input.fileName || 'attachment.bin');
   try {
-    await fs.writeFile(file, input.bytes);
+    await fsp.writeFile(file, input.bytes);
     const { stdout, stderr, code } = await runCommand('tesseract', [file, 'stdout']);
     if (code !== 0) {
       return {
@@ -105,7 +162,7 @@ export async function runTesseract(input: OcrRunInput): Promise<OcrRunnerResult>
       reason: err instanceof Error ? err.message : 'tesseract-unavailable',
     };
   } finally {
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
 

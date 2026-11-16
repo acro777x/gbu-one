@@ -23,6 +23,20 @@ describe('generated schema', () => {
     expect(generated).toBe(expected);
   });
 
+  it('contains no backtick inside the SQL, which would break the template literal', () => {
+    // A backtick in a SQL COMMENT ends the TypeScript template literal, and
+    // the file then fails to compile with a baffling "',' expected" error.
+    // It has happened four times.
+    const body = SCHEMA_SQL;
+    const backticks = body
+      .split('\n')
+      .map((line, index) => ({ line: index + 1, text: line }))
+      .filter((entry) => entry.text.includes('`'));
+    expect(
+      backticks.map((entry) => `line ${entry.line}: ${entry.text.trim()}`),
+    ).toEqual([]);
+  });
+
   it('carries the row level security block the app depends on', () => {
     for (const needle of [
       'create or replace function public.is_moderator()',

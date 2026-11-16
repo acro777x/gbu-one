@@ -17,13 +17,9 @@
 import {
   filterPapers,
   normalizeSemester,
-  buildCataloguePapers,
-  MOCK_PAPERS,
   FULL_CATALOGUE_PAPERS,
-  type PYQItem,
 } from '../src/features/pyq/pyqService';
 import {
-  isProbablyPdf,
   looksLikeSoft404,
   isPdfErrorPage,
   describeDownloadProblem,
@@ -39,7 +35,6 @@ import {
   slugifySegment,
   buildStoragePath,
   publicPaperUrl,
-  extensionForMimeType,
   PYQ_MAX_BYTES,
 } from '../src/features/pyq/pyqStorage';
 import {
@@ -59,8 +54,6 @@ import { Slot } from '../src/features/timetable/timetableProvider';
 import {
   normalizeRollNumber,
   searchRollNumberResult,
-  calculateExamCountdown,
-  MOCK_DATESHEET,
 } from '../src/features/exams/examService';
 import { MOCK_STUDENT_RESULTS } from './fixtures/studentResultsFixture';
 import {

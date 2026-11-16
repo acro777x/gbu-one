@@ -61,10 +61,15 @@ jobs:
             console.log("runtime ok:", process.version, "| WebSocket:", typeof WebSocket);
           '
       - name: Install Tesseract (OCR for scanned notices)
+        # poppler-utils gives the worker `pdftoppm`, which turns a PDF page
+        # into an image. Tesseract cannot read a PDF, so without it a date
+        # sheet that is a scan (or a subsetted font without a ToUnicode map)
+        # could not be read at all.
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-hin
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-hin poppler-utils
           tesseract --version
+          pdftoppm -v 2>&1 | head -1
       - name: Build the worker with the repo's own TypeScript
         run: |
           # tsx is NOT a dependency of this repo, so `npx tsx` used to download it

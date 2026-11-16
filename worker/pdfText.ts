@@ -35,7 +35,7 @@ export const WORD_SPACE_KERN = -180;
 const STREAM_RE = /stream\r?\n?([\s\S]*?)\r?\n?endstream/g;
 
 /** A parsed indirect object. */
-interface PdfObject {
+export interface PdfObject {
   number: number;
   /** The object's dictionary text (`<< ... >>`). */
   dict: string;
@@ -71,7 +71,7 @@ function precedingDictionary(source: string, streamStart: number): string {
 }
 
 /** Splits the document into its indirect objects. */
-function parseObjects(source: string): Map<number, PdfObject> {
+export function parseObjects(source: string): Map<number, PdfObject> {
   const objects = new Map<number, PdfObject>();
   const headerRe = /(\d+)\s+(\d+)\s+obj\b/g;
   let header: RegExpExecArray | null;
@@ -121,11 +121,92 @@ function parseObjects(source: string): Map<number, PdfObject> {
     headerRe.lastIndex = bodyEnd;
   }
 
+  // PDF 1.5 and later put most of the non-stream objects into COMPRESSED
+  // OBJECT STREAMS (`/Type /ObjStm`). The School of ICT's date sheet is one:
+  // every font dictionary of that PDF lives inside one, so a parser that
+  // only reads plain `N 0 obj` bodies never sees a single font - and the
+  // sheet extracts as 58 046 characters of noise.
+  for (const obj of [...objects.values()]) {
+    if (!obj.data) continue;
+    if (!/\/Type\s*\/ObjStm/.test(obj.dict)) continue;
+    // The object's data has ALREADY been inflated by the parser above, so it
+    // must not be inflated again.
+    parseObjectStream(obj.data, objects);
+  }
+
   return objects;
 }
 
+/**
+ * Reads the objects packed inside one compressed object stream.
+ *
+ * The stream starts with `N` pairs of "object number" and "offset", and the
+ * objects themselves follow.
+ *
+ * The pair table is USUALLY two binary 32-bit integers, but some producers
+ * (the PDF that iLovePDF produced the School of ICT's date sheet with, for
+ * one) write the SAME table as plain text: "9 0 13 69 12 341 ...". Both
+ * forms are accepted, because the text form is otherwise indistinguishable
+ * from a corrupted stream - and a PDF the university actually publishes is
+ * not something to refuse to read.
+ */
+function parseObjectStream(
+  data: Buffer,
+  objects: Map<number, PdfObject>,
+): void {
+  if (data.length < 8) return;
+
+  const text = data.toString('latin1');
+  const headers: Array<{ number: number; offset: number }> = [];
+
+  const looksLikeTextTable = /^\s*\d+\s+\d+(\s+\d+\s+\d+)*\s/.test(text.slice(0, 200));
+  if (looksLikeTextTable) {
+    const numbers = (text.slice(0, 4096).match(/\d+/g) ?? []).map(Number);
+    for (let i = 0; i + 1 < numbers.length; i += 2) {
+      headers.push({ number: numbers[i], offset: numbers[i + 1] });
+    }
+    // The object data starts after the pair table.
+    const tableEnd = text.slice(0, 4096).search(/[^\d\s]/);
+    parsePackedObjects(text, tableEnd < 0 ? 0 : tableEnd, headers, objects);
+    return;
+  }
+
+  const count = data.readUInt32BE(0);
+  const first = data.readUInt32BE(4);
+  if (first > data.length) return;
+
+  for (let i = 0; i < count; i += 1) {
+    const at = 8 + i * 8;
+    if (at + 8 > data.length) break;
+    headers.push({ number: data.readUInt32BE(at), offset: data.readUInt32BE(at + 4) });
+  }
+
+  parsePackedObjects(text, first, headers, objects);
+}
+
+/** Adds the objects described by a pair table to the object map. */
+function parsePackedObjects(
+  text: string,
+  dataStart: number,
+  headers: Array<{ number: number; offset: number }>,
+  objects: Map<number, PdfObject>,
+): void {
+  for (let i = 0; i < headers.length; i += 1) {
+    const entry = headers[i];
+    const start = dataStart + entry.offset;
+    if (start < 0 || start >= text.length) continue;
+    const next = i + 1 < headers.length ? dataStart + headers[i + 1].offset : text.length;
+    const body = text.slice(start, next);
+    const dictStart = body.indexOf('<<');
+    const dict = dictStart === -1 ? body : body.slice(dictStart);
+    if (!objects.has(entry.number)) {
+      objects.set(entry.number, { number: entry.number, dict, data: null });
+    }
+  }
+}
+
 /** Reads `N 0 R` references out of a dictionary. */
-function readReferences(dict: string, key: string): number[] {
+export function readReferences(dict: string, key: string): number[] {
   const re = new RegExp(`/${key}\\s*\\[([^\\]]*)\\]`, 's');
   const arrayMatch = re.exec(dict);
   if (arrayMatch) {
@@ -137,7 +218,7 @@ function readReferences(dict: string, key: string): number[] {
 }
 
 /** Resolves a value that may be inline (`<< ... >>`) or an indirect reference. */
-function resolveDict(
+export function resolveDict(
   dict: string,
   key: string,
   objects: Map<number, PdfObject>,
@@ -240,7 +321,23 @@ export function parseToUnicode(cmapText: string): CMap {
   return map;
 }
 
-function decodeLiteralString(raw: string): string {
+function decodeLiteralString(
+  raw: string,
+  codes?: CMap | null,
+  twoByte = false,
+): string {
+  // A CID font with the Identity-H encoding carries 2-byte character
+  // identifiers, so the string has to be read in pairs and looked up.
+  if (twoByte && codes && codes.size > 0) {
+    let out = '';
+    for (let i = 0; i + 1 < raw.length; i += 2) {
+      const code = (raw.charCodeAt(i) << 8) | raw.charCodeAt(i + 1);
+      const mapped = codes.get(code);
+      out += mapped ?? '';
+    }
+    if (out.length > 0) return out;
+  }
+
   let out = '';
   for (let i = 0; i < raw.length; i++) {
     const ch = raw[i];
@@ -276,7 +373,7 @@ function decodeLiteralString(raw: string): string {
 }
 
 /** Decodes a hex string, optionally through a font's Unicode mapping. */
-function decodeHexString(raw: string, cmap?: CMap | null): string {
+function decodeHexString(raw: string, cmap?: CMap | null, forceTwoByte = false): string {
   const clean = raw.replace(/[^0-9a-fA-F]/g, '');
   const bytes: number[] = [];
   for (let i = 0; i + 1 < clean.length; i += 2) {
@@ -284,8 +381,9 @@ function decodeHexString(raw: string, cmap?: CMap | null): string {
   }
 
   if (cmap && cmap.size > 0) {
-    // Try one-byte codes first, then two-byte codes.
-    if (bytes.length > 0) {
+    // A CID font with the Identity-H encoding ALWAYS uses 2-byte codes, so
+    // the one-byte attempt must be skipped for it.
+    if (!forceTwoByte && bytes.length > 0) {
       let oneByte = '';
       let matchedAll = true;
       for (const b of bytes) {
@@ -332,9 +430,20 @@ function decodeHexString(raw: string, cmap?: CMap | null): string {
  * Pulls the text-showing operators out of one decoded content stream.
  * Returns the pieces in document order.
  */
+/**
+ * The character mapping of one font.
+ *
+ * `twoByte` is true for the CID fonts that use the `Identity-H` encoding:
+ * their strings carry 2-byte character identifiers, not 1-byte codes.
+ */
+export interface FontCodeMap {
+  codes: CMap;
+  twoByte: boolean;
+}
+
 export function extractTextFromContentStream(
   stream: string,
-  fontMaps: Map<string, CMap> = new Map(),
+  fontMaps: Map<string, CMap | FontCodeMap> = new Map(),
 ): string[] {
   const pieces: string[] = [];
   let i = 0;
@@ -343,6 +452,24 @@ export function extractTextFromContentStream(
   let pendingKern = 0;
   /** The Unicode mapping of the font selected with `Tf`. */
   let currentMap: CMap | null = null;
+  /** Whether the selected font uses 2-byte character identifiers. */
+  let currentTwoByte = false;
+
+  const selectFont = (name: string): void => {
+    const entry = fontMaps.get(name);
+    if (!entry) {
+      currentMap = null;
+      currentTwoByte = false;
+      return;
+    }
+    if (entry instanceof Map) {
+      currentMap = entry;
+      currentTwoByte = false;
+    } else {
+      currentMap = entry.codes;
+      currentTwoByte = entry.twoByte;
+    }
+  };
 
   /**
    * Reads a literal string body. The opening parenthesis has already been
@@ -386,7 +513,7 @@ export function extractTextFromContentStream(
       const name = nameMatch[1];
       const after = stream.slice(i + nameMatch[0].length);
       if (/^\s+[\d.]+\s+Tf/.test(after)) {
-        currentMap = fontMaps.get(name) ?? null;
+        selectFont(name);
         i += nameMatch[0].length;
         continue;
       }
@@ -413,7 +540,7 @@ export function extractTextFromContentStream(
         // Inside a TJ array a large negative kern means the glyphs are a word
         // apart (the space glyph itself is often not encoded).
         if (arrayDepth > 0 && pendingKern <= WORD_SPACE_KERN) pieces.push(' ');
-        pieces.push(decodeLiteralString(raw));
+        pieces.push(decodeLiteralString(raw, currentMap, currentTwoByte));
       }
       pendingKern = 0;
       continue;
@@ -426,7 +553,7 @@ export function extractTextFromContentStream(
       i = end + 1;
       if (isShown()) {
         if (arrayDepth > 0 && pendingKern <= WORD_SPACE_KERN) pieces.push(' ');
-        pieces.push(decodeHexString(raw, currentMap));
+        pieces.push(decodeHexString(raw, currentMap, currentTwoByte));
       }
       pendingKern = 0;
       continue;
@@ -472,11 +599,11 @@ export function normalisePdfText(text: string): string {
 }
 
 /** Builds the font-name -> Unicode map for one page's resources. */
-function pageFontMaps(
+export function pageFontMaps(
   resourcesDict: string,
   objects: Map<number, PdfObject>,
-): Map<string, CMap> {
-  const maps = new Map<string, CMap>();
+): Map<string, FontCodeMap> {
+  const maps = new Map<string, FontCodeMap>();
   const fontsDict = resolveDict(resourcesDict, 'Font', objects);
   if (!fontsDict) return maps;
 
@@ -486,21 +613,182 @@ function pageFontMaps(
     const name = match[1];
     const fontObj = objects.get(Number(match[2]));
     if (!fontObj) continue;
+    // A CID font with the Identity-H encoding carries 2-byte character
+    // identifiers.
+    const isIdentityH = /\/Encoding\s*\/Identity-H/i.test(fontObj.dict);
     const toUnicodeRefs = readReferences(fontObj.dict, 'ToUnicode');
-    if (toUnicodeRefs.length === 0) continue;
-    const cmapObj = objects.get(toUnicodeRefs[0]);
-    if (!cmapObj || !cmapObj.data) continue;
-    const cmap = parseToUnicode(cmapObj.data.toString('latin1'));
-    if (cmap.size > 0) maps.set(name, cmap);
+    if (toUnicodeRefs.length > 0) {
+      const cmapObj = objects.get(toUnicodeRefs[0]);
+      if (cmapObj && cmapObj.data) {
+        const cmap = parseToUnicode(cmapObj.data.toString('latin1'));
+        if (cmap.size > 0) {
+          maps.set(name, { codes: cmap, twoByte: isIdentityH });
+          continue;
+        }
+      }
+    }
+    // No ToUnicode CMap. The font may still be an embedded TrueType font
+    // whose own `cmap` table maps Unicode to the glyph index - which is all a
+    // character identifier needs to become readable.
+    const embedded = embeddedFontCmap(fontObj, objects);
+    if (embedded.size > 0) maps.set(name, { codes: embedded, twoByte: true });
   }
 
   return maps;
 }
 
 /**
+ * The GID -> Unicode map of the TrueType font embedded in a CID font.
+ *
+ * The path through the PDF is: the Type0 font -> its descendant CIDFont ->
+ * that font's descriptor -> the embedded font program (FontFile2).
+ */
+function embeddedFontCmap(
+  fontObj: PdfObject,
+  objects: Map<number, PdfObject>,
+): CMap {
+  const descendantRefs = readReferences(fontObj.dict, 'DescendantFonts');
+  const descendantDict = descendantRefs.length
+    ? objects.get(descendantRefs[0])?.dict
+    : undefined;
+  if (!descendantDict) return new Map();
+
+  const descriptorRefs = readReferences(descendantDict, 'FontDescriptor');
+  const descriptorDict = descriptorRefs.length
+    ? objects.get(descriptorRefs[0])?.dict
+    : undefined;
+  if (!descriptorDict) return new Map();
+
+  const fontFileRefs = readReferences(descriptorDict, 'FontFile2');
+  const fontFileObj = fontFileRefs.length ? objects.get(fontFileRefs[0]) : undefined;
+  if (!fontFileObj || !fontFileObj.data) return new Map();
+
+  return parseEmbeddedFontCmap(fontFileObj.data);
+}
+
+/**
  * Extracts the text layer of a PDF buffer.
  * A PDF with no text-showing operators is reported as scanned.
  */
+/**
+ * Builds a GID -> Unicode map from an EMBEDDED TrueType font.
+ *
+ * Some PDFs use CID fonts with the `Identity-H` encoding and NO ToUnicode
+ * CMap. The text operators then carry 2-byte CHARACTER IDENTIFIERS, which
+ * are the glyph indices of the embedded font. The embedded font's own `cmap`
+ * table maps Unicode -> glyph index, so reversing it turns a character
+ * identifier into the character it stands for.
+ *
+ * This is what the School of ICT's date sheet needs: every one of its fonts
+ * is `Identity-H` with no ToUnicode, so without this the whole sheet
+ * extracted as 58 046 characters of noise and the school silently had no
+ * date sheet at all.
+ */
+export function parseEmbeddedFontCmap(fontData: Buffer): CMap {
+  const map: CMap = new Map();
+  if (!fontData || fontData.length < 12) return map;
+
+  // The sfnt table directory.
+  const numTables = fontData.readUInt16BE(4);
+  let cmapOffset = -1;
+  let cmapLength = 0;
+  for (let i = 0; i < numTables; i += 1) {
+    const record = 12 + i * 16;
+    if (record + 16 > fontData.length) break;
+    const tag = fontData.toString('latin1', record, record + 4);
+    if (tag === 'cmap') {
+      cmapOffset = fontData.readUInt32BE(record + 8);
+      cmapLength = fontData.readUInt32BE(record + 12);
+      break;
+    }
+  }
+  if (cmapOffset < 0 || cmapOffset + 4 > fontData.length) return map;
+
+  // The cmap table is only `cmapLength` bytes long. A font whose directory
+  // lies about that length must not be read past the end of its own table,
+  // so the table's end bounds every read below.
+  const cmapEnd = Math.min(fontData.length, cmapOffset + Math.max(cmapLength, 4));
+
+  // The cmap table holds several encodings; take the Unicode one.
+  const subtableCount = fontData.readUInt16BE(cmapOffset + 2);
+  let chosen = -1;
+  let chosenScore = -1;
+  for (let i = 0; i < subtableCount; i += 1) {
+    const record = cmapOffset + 4 + i * 8;
+    if (record + 8 > cmapEnd) break;
+    const platformId = fontData.readUInt16BE(record);
+    const encodingId = fontData.readUInt16BE(record + 2);
+    const offset = cmapOffset + fontData.readUInt32BE(record + 4);
+    if (offset + 4 > cmapEnd) continue;
+    const format = fontData.readUInt16BE(offset);
+    // (3,10) format 12 is the full Unicode range, (3,1) format 4 is the
+    // BMP, (0,x) is a Unicode platform too.
+    let score = -1;
+    if (platformId === 3 && encodingId === 10 && format === 12) score = 4;
+    else if (platformId === 3 && encodingId === 1 && format === 4) score = 3;
+    else if (platformId === 0 && format === 12) score = 2;
+    else if (platformId === 0 && format === 4) score = 1;
+    if (score > chosenScore) {
+      chosenScore = score;
+      chosen = offset;
+    }
+  }
+  if (chosen < 0) return map;
+
+  const unicodeToGid = new Map<number, number>();
+  const format = fontData.readUInt16BE(chosen);
+
+  if (format === 4) {
+    const segCount = fontData.readUInt16BE(chosen + 6) / 2;
+    const endCodes = chosen + 14;
+    const startCodes = endCodes + segCount * 2 + 2;
+    const idDeltas = startCodes + segCount * 2;
+    const idRangeOffsets = idDeltas + segCount * 2;
+    for (let seg = 0; seg < segCount; seg += 1) {
+      const end = fontData.readUInt16BE(endCodes + seg * 2);
+      const start = fontData.readUInt16BE(startCodes + seg * 2);
+      const delta = fontData.readInt16BE(idDeltas + seg * 2);
+      const rangeOffset = fontData.readUInt16BE(idRangeOffsets + seg * 2);
+      if (start > end) continue;
+      for (let code = start; code <= end && code !== 0xffff; code += 1) {
+        let gid: number;
+        if (rangeOffset === 0) {
+          gid = (code + delta) & 0xffff;
+        } else {
+          const glyphIndexAddress =
+            idRangeOffsets + seg * 2 + rangeOffset + (code - start) * 2;
+          if (glyphIndexAddress + 2 > fontData.length) continue;
+          gid = fontData.readUInt16BE(glyphIndexAddress);
+          if (gid !== 0) gid = (gid + delta) & 0xffff;
+        }
+        if (gid !== 0 && !unicodeToGid.has(code)) unicodeToGid.set(code, gid);
+      }
+    }
+  } else if (format === 12) {
+    const groupCount = fontData.readUInt32BE(chosen + 12);
+    for (let g = 0; g < groupCount; g += 1) {
+      const group = chosen + 16 + g * 12;
+      if (group + 12 > fontData.length) break;
+      const start = fontData.readUInt32BE(group);
+      const end = fontData.readUInt32BE(group + 4);
+      const startGid = fontData.readUInt32BE(group + 8);
+      for (let code = start; code <= end; code += 1) {
+        if (!unicodeToGid.has(code)) unicodeToGid.set(code, startGid + (code - start));
+      }
+    }
+  } else {
+    return map;
+  }
+
+  // Reverse it: glyph index -> the character it stands for.
+  for (const [code, gid] of unicodeToGid) {
+    if (!map.has(gid)) {
+      map.set(gid, String.fromCodePoint(code));
+    }
+  }
+  return map;
+}
+
 export function extractPdfText(buffer: Buffer): PdfTextResult {
   if (!buffer || buffer.length === 0) {
     return { text: '', decodedStreams: 0, isScanned: false };
@@ -510,7 +798,7 @@ export function extractPdfText(buffer: Buffer): PdfTextResult {
   const objects = parseObjects(source);
 
   // Build a per-page view so each content stream uses its own fonts.
-  const pages: Array<{ contents: number[]; fonts: Map<string, CMap> }> = [];
+  const pages: Array<{ contents: number[]; fonts: Map<string, FontCodeMap> }> = [];
   for (const obj of objects.values()) {
     if (!/\/Type\s*\/Page[^s]/.test(obj.dict)) continue;
     const contents = readReferences(obj.dict, 'Contents');
@@ -523,7 +811,7 @@ export function extractPdfText(buffer: Buffer): PdfTextResult {
   let decodedStreams = 0;
   const seenObjects = new Set<number>();
 
-  const decodeStream = (obj: PdfObject, fonts: Map<string, CMap>): void => {
+  const decodeStream = (obj: PdfObject, fonts: Map<string, FontCodeMap>): void => {
     if (!obj.data) return;
     const text = obj.data.toString('latin1');
     if (!/(?:Tj|TJ)\b/.test(text)) return;
@@ -564,10 +852,37 @@ export function extractPdfText(buffer: Buffer): PdfTextResult {
   }
 
   const text = normalisePdfText(pieces.join(''));
-  // A real text layer always yields letters; a scanned page yields none.
-  const isScanned = text.replace(/[^A-Za-z0-9]/g, '').length < 12;
+  // A real text layer always yields readable text; a scanned page yields
+  // none, and a subsetted font without a ToUnicode CMap yields NOISE.
+  const isScanned = !hasReadableText(text);
 
   return { text, decodedStreams, isScanned };
+}
+
+/**
+ * True when the extracted text can actually be READ.
+ *
+ * A PDF that carries a subsetted font without a ToUnicode CMap extracts as
+ * the raw GLYPH INDEXES - which look like text to a naive check (they are
+ * full of ASCII letters) but are meaningless. The School of ICT's date sheet
+ * is exactly that: the extractor returned 58 046 characters of noise, the
+ * "there are enough letters" test passed, and the sheet was silently read as
+ * having no slots at all.
+ *
+ * Real text has WORDS. Glyph-index noise does not: the runs are one or two
+ * characters long, separated by the spacing operators of the content
+ * stream.
+ */
+export function hasReadableText(text: string): boolean {
+  if (!text) return false;
+  const letters = text.replace(/[^A-Za-z0-9]/g, '').length;
+  if (letters < 12) return false;
+  // A word is a run of three or more letters. Genuine documents are full of
+  // them - the School of Law sheet has 211 of them and the School of Basic
+  // Science 220. Glyph-index noise has NONE: the School of ICT sheet
+  // produced 58 046 characters of noise and not a single three-letter run.
+  const words = text.match(/[A-Za-z]{3,}/g) ?? [];
+  return words.length >= 2;
 }
 
 /**

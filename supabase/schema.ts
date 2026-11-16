@@ -768,6 +768,32 @@ create policy "exam date slots moderator write" on public.exam_date_slots
   with check (public.is_moderator());
 
 -- ---------------------------------------------------------------------------
+-- Constraint upgrades
+--
+-- A unique constraint is as much a part of the table's shape as a column,
+-- and "create table if not exists" will not add one to an existing table
+-- either. The live project proved it: the worker's results upsert failed
+-- with
+--   42P10: there is no unique or exclusion constraint matching the ON
+--         CONFLICT specification
+-- because results.file_url was never unique, so every result sheet the
+-- worker tried to store was rejected.
+--
+-- Each index is created with "if not exists", so this block is safe on a
+-- fresh database AND on the live one.
+-- ---------------------------------------------------------------------------
+create unique index if not exists notices_source_id_key on public.notices (source_id);
+create unique index if not exists notice_threads_key_key on public.notice_threads (key);
+create unique index if not exists exam_date_slots_slot_key_key on public.exam_date_slots (slot_key);
+create unique index if not exists calendar_events_event_key_key on public.calendar_events (event_key);
+create unique index if not exists moderators_email_key on public.moderators (email);
+create unique index if not exists admin_claims_email_key on public.admin_claims (email);
+create unique index if not exists device_tokens_token_key on public.device_tokens (token);
+create unique index if not exists app_versions_platform_key on public.app_versions (platform);
+create unique index if not exists timetable_snapshots_class_key_key on public.timetable_snapshots (class_key);
+create unique index if not exists results_file_url_key on public.results (file_url);
+
+-- ---------------------------------------------------------------------------
 -- The legacy report table.
 --
 -- public.pyq_reports was the app's report table before the reports were

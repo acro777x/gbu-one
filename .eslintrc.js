@@ -25,6 +25,17 @@ module.exports = {
       },
     },
     {
+      // The tools/ scripts are Node command line programs that run against a
+      // live database: they are CommonJS by contract, exactly like the Expo
+      // config plugins. Without this override they failed the CI lint step
+      // with eleven `no-var-requires` errors and the whole pipeline was red.
+      files: ['tools/**/*.js'],
+      rules: {
+        '@typescript-eslint/no-var-requires': 'off',
+        '@typescript-eslint/no-require-imports': 'off',
+      },
+    },
+    {
       // Expo config plugins are CommonJS by contract.
       files: ['plugins/**/*.js'],
       rules: {

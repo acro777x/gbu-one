@@ -27,7 +27,20 @@
  * as an empty but successful sheet.
  */
 import zlib from 'zlib';
-import { WORD_SPACE_KERN, extractPdfText, parseToUnicode } from './pdfText';
+import {
+  WORD_SPACE_KERN,
+  extractPdfText,
+  parseToUnicode,
+  parseObjects,
+  type PdfObject,
+} from './pdfText';
+import {
+  isTesseractAvailable,
+  rasterisePdf,
+  runTesseract,
+} from './ocrRunner';
+import { readFileSync } from 'fs';
+import path from 'path';
 import { fetchWithTlsTolerance } from './noticesJob';
 import {
   parseExcelDateSheet,
@@ -43,7 +56,7 @@ import {
   type ExamDateSlot,
   type DateSheetParseOptions,
 } from '../src/features/exams/examDateSheetParser';
-import { baseClassKeyOf, buildCanonicalClassKey } from '../src/lib/classKey';
+import { baseClassKeyOf, buildCanonicalClassKey, slugForSchool } from '../src/lib/classKey';
 
 export {
   parseExcelDateSheet,
@@ -407,7 +420,13 @@ function parsePlainDateSheetText(lines: string[], schoolCode: string): DateSheet
     const codeMatch = SUBJECT_CODE.exec(text);
     if (!codeMatch) {
       // A line without a subject code is either the programme or a note.
-      if (text.length > 6 && !/^\d/.test(text)) programme = text;
+      // The LAST such line before the first subject is the programme: on the
+      // sheets that reach this fallback the programme is printed on one
+      // line, and the lines after it are subject names whose paper code
+      // sits in another cell.
+      if (text.length > 6 && !/^\d/.test(text) && !PROGRAMME_HEADER_LINE.test(text)) {
+        programme = text;
+      }
       continue;
     }
 
@@ -429,6 +448,9 @@ function parsePlainDateSheetText(lines: string[], schoolCode: string): DateSheet
   return slots;
 }
 
+/** The column headings of a date sheet, which are never a programme. */
+const PROGRAMME_HEADER_LINE = /^(programme|batch|semester|date\s*&\s*time|subject|slot|shift|particulars|seating)/i;
+
 /** Turns `08-12-2025` into `2025-12-08`. */
 function toIsoDate(value: string): string | null {
   const match = DATE_HEADER.exec(value.trim());
@@ -446,13 +468,6 @@ function toIsoDate(value: string): string | null {
 // Layout pass
 // ---------------------------------------------------------------------------
 
-/** A parsed indirect object of the PDF. */
-interface PdfObject {
-  number: number;
-  dict: string;
-  data: Buffer | null;
-}
-
 function inflate(buffer: Buffer): Buffer | null {
   const attempts: Array<() => Buffer> = [
     () => zlib.inflateSync(buffer),
@@ -467,55 +482,6 @@ function inflate(buffer: Buffer): Buffer | null {
     }
   }
   return null;
-}
-
-/** Splits the document into its indirect objects. */
-function parseObjects(source: string): Map<number, PdfObject> {
-  const objects = new Map<number, PdfObject>();
-  const headerRe = /(\d+)\s+(\d+)\s+obj\b/g;
-  let header: RegExpExecArray | null;
-
-  while ((header = headerRe.exec(source)) !== null) {
-    const number = Number(header[1]);
-    const bodyStart = header.index + header[0].length;
-    const streamIdx = source.indexOf('stream', bodyStart);
-    const endObjIdx = source.indexOf('endobj', bodyStart);
-    const hasStream =
-      streamIdx !== -1 &&
-      (endObjIdx === -1 || streamIdx < endObjIdx) &&
-      /^[^\n]*\r?\n/.test(source.slice(bodyStart, streamIdx + 6));
-
-    let bodyEnd: number;
-    let data: Buffer | null = null;
-
-    if (hasStream) {
-      const dict = source.slice(bodyStart, streamIdx);
-      const streamMatch = /stream\r?\n?/.exec(source.slice(streamIdx));
-      const dataStart = streamIdx + (streamMatch ? streamMatch[0].length : 6);
-      const endStreamIdx = source.indexOf('endstream', dataStart);
-      if (endStreamIdx === -1) {
-        bodyEnd = source.length;
-      } else {
-        bodyEnd = endStreamIdx;
-        const raw = Buffer.from(source.slice(dataStart, endStreamIdx), 'latin1');
-        if (/\/FlateDecode/.test(dict)) data = inflate(raw);
-        else if (!/\/Subtype\s*\/Image/.test(dict)) data = raw;
-      }
-    } else {
-      bodyEnd = endObjIdx === -1 ? source.length : endObjIdx;
-    }
-
-    const body = source.slice(bodyStart, bodyEnd);
-    const dictStart = body.indexOf('<<');
-    objects.set(number, {
-      number,
-      dict: dictStart === -1 ? '' : body.slice(dictStart),
-      data,
-    });
-    headerRe.lastIndex = bodyEnd;
-  }
-
-  return objects;
 }
 
 /** Reads `N 0 R` references out of a dictionary. */
@@ -1002,7 +968,24 @@ interface Cell {
 /** Groups the pieces of a page into cells. */
 function groupIntoCells(pieces: LaidOutText[]): Cell[] {
   const cells: Cell[] = [];
+  // The coordinates are normalised to the top-left of the text, because a
+  // page printed in landscape (the School of ICT's date sheet is /Rotate 90)
+  // places its text at NEGATIVE x. Every column comparison in the grid
+  // reader is a comparison of positions, so an origin at -110 silently
+  // moved every column out of the way and the sheet parsed to nothing.
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
   for (const piece of pieces) {
+    if (piece.x < minX) minX = piece.x;
+    if (piece.y < minY) minY = piece.y;
+  }
+  if (!Number.isFinite(minX)) return cells;
+  const offsetX = minX;
+  const offsetY = minY;
+
+  for (const piece of pieces) {
+    const x = piece.x - offsetX;
+    const y = piece.y - offsetY;
     // The control characters of the font encoding are dropped, but the spaces
     // are kept: they are part of the text of the cell.
     const text = stripControlCharacters(piece.text);
@@ -1013,19 +996,19 @@ function groupIntoCells(pieces: LaidOutText[]): Cell[] {
     // one cell do not start at exactly the same x.
     if (
       last &&
-      Math.abs(last.x - piece.x) < 45 &&
-      piece.y <= last.lastY + 1 &&
-      last.lastY - piece.y < 30
+      Math.abs(last.x - x) < 45 &&
+      y <= last.lastY + 1 &&
+      last.lastY - y < 30
     ) {
       // Pieces on the same line belong together without a space, pieces on
       // different lines are separated by one.
-      const sameLine = Math.abs(last.lastY - piece.y) < 1.5;
+      const sameLine = Math.abs(last.lastY - y) < 1.5;
       last.text = sameLine ? `${last.text}${text}` : `${last.text} ${text}`;
-      last.centerY = (last.centerY + piece.y) / 2;
-      last.lastY = piece.y;
+      last.centerY = (last.centerY + y) / 2;
+      last.lastY = y;
       continue;
     }
-    cells.push({ x: piece.x, y: piece.y, lastY: piece.y, centerY: piece.y, text });
+    cells.push({ x, y, lastY: y, centerY: y, text });
   }
   return cells;
 }
@@ -1051,10 +1034,28 @@ function readPageGrid(page: LaidOutText[]): Array<{
   if (dateColumns.length === 0) return [];
 
   const firstDateX = dateColumns[0].x;
-  const headerY = Math.max(...dateColumns.map((cell) => cell.y));
+  // Where is the date header - at the top of the page or at the bottom?
+  //
+  // The sheets are not printed the same way round. The School of Law's date
+  // sheet has its date row at the BOTTOM (y = 816 of a 900 point page) with
+  // the rows ABOVE it, and the School of ICT's has its date row at the TOP
+  // (y = 40) with the rows BELOW it. The grid reader used to assume the
+  // first shape, so every row of the second sheet was skipped and the
+  // biggest school in the university had no date sheet at all.
+  const pageMinY = Math.min(...cells.map((cell) => cell.y));
+  const pageMaxY = Math.max(...cells.map((cell) => cell.y));
+  const headerYMid = dateColumns.reduce((sum, cell) => sum + cell.y, 0) / dateColumns.length;
+  const headerIsAtTop = headerYMid < pageMinY + (pageMaxY - pageMinY) / 2;
+  const headerY = headerIsAtTop
+    ? Math.min(...dateColumns.map((cell) => cell.y))
+    : Math.max(...dateColumns.map((cell) => cell.y));
+  /** True when a cell is on the CONTENT side of the date header. */
+  const onContentSide = (cellY: number): boolean =>
+    headerIsAtTop ? cellY > headerY : cellY < headerY;
 
   const markers = cells.filter(
-    (cell) => isSlotMarker(cleanCellText(cell.text)) && cell.y < headerY && cell.x < firstDateX,
+    (cell) =>
+      isSlotMarker(cleanCellText(cell.text)) && onContentSide(cell.y) && cell.x < firstDateX,
   );
   const markerSet = new Set(markers);
   // The slot column separates the programme column from the date columns.
@@ -1065,7 +1066,7 @@ function readPageGrid(page: LaidOutText[]): Array<{
   const programmeCells = cells.filter(
     (cell) =>
       cell.x < slotColumnX - 5 &&
-      cell.y < headerY &&
+      onContentSide(cell.y) &&
       !isSlotMarker(cleanCellText(cell.text)) &&
       cleanCellText(cell.text).length > 0,
   );
@@ -1098,7 +1099,7 @@ function readPageGrid(page: LaidOutText[]): Array<{
   for (const cell of cells) {
     const text = cleanCellText(cell.text);
     if (!text) continue;
-    if (cell.y >= headerY) continue;
+    if (!onContentSide(cell.y)) continue;
     if (markerSet.has(cell)) {
       currentSlot = slotOfMarker(text);
       currentMarker = cell;
@@ -1202,58 +1203,165 @@ export async function fetchDateSheet(
   const session = resolveRunningDateSheetSession();
   const month = options.month ?? session.month;
   const year = options.year ?? session.year;
-  const url = buildDateSheetUrl(code, month, year);
+
+  // Which file actually exists?
+  //
+  // The academic session and the calendar year do not line up: on 15
+  // November 2026 the running session's end-semester sheet had been
+  // published in DECEMBER 2025, not December 2026 - so a single hard-coded
+  // month/year found nothing and the exam date sheet stayed empty for
+  // EVERY school.
+  //
+  // So the candidates are tried in order and the FIRST one that answers
+  // with a PDF wins. An explicit month and year are a PREFERENCE, not a
+  // restriction: the caller passes the running session, and "not published
+  // for that exact month" is a perfectly normal state.
+  //
+  // Each miss is a 404, which costs nothing.
+  const preference: Array<{ month: string; year: number }> =
+    options.month && options.year
+      ? [{ month: options.month, year: options.year }]
+      : [{ month, year }];
+  const fallbacks: Array<{ month: string; year: number }> = [
+    // The session that has just finished: its sheet is the previous
+    // December (or June).
+    { month: 'dec', year: year - 1 },
+    { month: 'jun', year: year - 1 },
+    { month: 'jun', year },
+    { month: 'dec', year: year + 1 },
+  ];
+  const candidates = [...preference];
+  for (const fallback of fallbacks) {
+    if (!candidates.some((c) => c.month === fallback.month && c.year === fallback.year)) {
+      candidates.push(fallback);
+    }
+  }
 
   const fetchImpl = options.fetchImpl ?? fetchWithTlsTolerance;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    const response = await fetchImpl(url, {
-      headers: { 'User-Agent': 'GBUOne-Worker/1.0 (student project)' },
-      signal: controller.signal,
-    });
+  let lastReason = 'not-published-yet';
+  let lastUrl = buildDateSheetUrl(code, month, year);
 
-    if (response.status === 404) {
-      return { slots: [], ok: false, url, reason: 'not-published-yet' };
-    }
-    if (!response.ok) {
-      return { slots: [], ok: false, url, reason: `http-${response.status}` };
-    }
+  for (const candidate of candidates) {
+    const url = buildDateSheetUrl(code, candidate.month, candidate.year);
+    lastUrl = url;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetchImpl(url, {
+        headers: { 'User-Agent': 'GBUOne-Worker/1.0 (student project)' },
+        signal: controller.signal,
+      });
 
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length === 0) {
-      return { slots: [], ok: false, url, reason: 'empty-response' };
-    }
-    if (bytes.length > MAX_BYTES) {
-      return { slots: [], ok: false, url, reason: 'too-large' };
-    }
-    if (!bytes.subarray(0, 1024).toString('latin1').includes('%PDF-')) {
-      return { slots: [], ok: false, url, reason: 'not-a-pdf' };
-    }
+      if (response.status === 404) {
+        lastReason = 'not-published-yet';
+        continue;
+      }
+      if (!response.ok) {
+        lastReason = `http-${response.status}`;
+        continue;
+      }
 
-    const text = extractPdfText(bytes);
-    if (text.isScanned) {
-      return { slots: [], ok: false, url, reason: 'scanned-pdf' };
-    }
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.length === 0) {
+        lastReason = 'empty-response';
+        continue;
+      }
+      if (bytes.length > MAX_BYTES) {
+        return { slots: [], ok: false, url, reason: 'too-large' };
+      }
+      if (!bytes.subarray(0, 1024).toString('latin1').includes('%PDF-')) {
+        return { slots: [], ok: false, url, reason: 'not-a-pdf' };
+      }
 
-    let slots = parseDateSheetLayout(bytes, code);
-    if (slots.length === 0) {
-      // Fall back to the plain text reading when the layout cannot be rebuilt.
-      slots = parseDateSheetText(text.text, code);
-    }
-    if (slots.length === 0) {
-      return { slots: [], ok: false, url, reason: 'no-slots-found' };
-    }
+      const text = extractPdfText(bytes);
+      if (text.isScanned) {
+        // The sheet has no usable text layer: it is a scan, or it carries a
+        // subsetted font without a ToUnicode CMap. Either way it has to be
+        // rasterised and read with OCR.
+        const ocrText = await ocrPdfText(bytes, `${code}.pdf`);
+        if (ocrText && ocrText.trim().length > 40) {
+          const ocrSlots = parseDateSheetText(ocrText, code);
+          if (ocrSlots.length > 0) {
+            return { slots: ocrSlots, ok: true, url };
+          }
+        }
+        return { slots: [], ok: false, url, reason: 'scanned-pdf' };
+      }
 
-    return { slots, ok: true, url };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : 'fetch-failed';
-    return { slots: [], ok: false, url, reason };
-  } finally {
-    clearTimeout(timer);
+      let slots = parseDateSheetLayout(bytes, code);
+      if (slots.length === 0) {
+        // Fall back to the plain text reading when the layout cannot be rebuilt.
+        slots = parseDateSheetText(text.text, code);
+      }
+      if (slots.length === 0) {
+        // Nothing could be read out of the text layer. One more chance: the
+        // sheet may be a scan, or a font without a ToUnicode map that the
+        // detector did not catch. Rasterising and reading it with OCR is
+        // slower but it is the difference between a date sheet and no date
+        // sheet for a whole school.
+        const ocrText = await ocrPdfText(bytes, `${code}.pdf`);
+        if (ocrText && ocrText.trim().length > 40) {
+          const ocrSlots = parseDateSheetText(ocrText, code);
+          if (ocrSlots.length > 0) {
+            return { slots: ocrSlots, ok: true, url };
+          }
+        }
+        return { slots: [], ok: false, url, reason: 'no-slots-found' };
+      }
+
+      return { slots, ok: true, url };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'fetch-failed';
+      // A network error on one candidate is not a reason to give up on the
+      // others, but a real failure is worth reporting.
+      lastReason = reason;
+      continue;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+
+  // No candidate answered with a sheet.
+  return { slots: [], ok: false, url: lastUrl, reason: lastReason };
+}
+
+/**
+ * Reads a PDF that has no usable text layer, by rasterising it and running
+ * Tesseract over the pages.
+ *
+ * Returns an empty string when the rasteriser or Tesseract is not installed
+ * - the worker then reports "scanned-pdf" instead of pretending the sheet
+ * has no slots.
+ */
+async function ocrPdfText(bytes: Buffer, fileName: string): Promise<string> {
+  if (!isTesseractAvailable()) return '';
+  const pages = await rasterisePdf(bytes, fileName);
+  if (pages.length === 0) return '';
+  const parts: string[] = [];
+  for (const page of pages) {
+    const result = await runTesseract({
+      bytes: readFileSync(page),
+      fileName: path.basename(page),
+      kind: 'image',
+    });
+    if (result.ok && result.text) parts.push(result.text);
+  }
+  return parts.join('\n');
+}
+
+/**
+ * True when a class key names no real programme.
+ *
+ * The key "general_sem3_2024_2029" means the sheet printed no programme name
+ * and the school does not name one either. Storing such a row would put a
+ * key in the database that no student can ever match.
+ */
+function isUnresolvedClassKey(canonicalKey: string, schoolCode: string): boolean {
+  if (!canonicalKey.startsWith('general_') && canonicalKey !== 'general') return false;
+  // A school that publishes ONE programme does not print its name.
+  return !slugForSchool(schoolCode);
 }
 
 /**
@@ -1283,7 +1391,39 @@ export function parsePdfDateSheet(
     examType = /mid\s*[- ]?sem/i.test(pdfText) ? 'mid_sem' : 'end_sem';
   }
 
-  return dateSheetSlots.map((slot) => {
+  const usable: DateSheetSlot[] = [];
+  let unresolved = 0;
+  for (const slot of dateSheetSlots) {
+    // A slot whose programme could NOT be resolved to a real programme is
+    // dropped rather than stored.
+    //
+    // The School of ICT's sheet cannot be read by the layout pass, so its
+    // plain-text fallback ends up taking SUBJECT names for programme names.
+    // Those rows would be written with nonsense class keys ("cyber_security",
+    // "programming") that no student can match - and, worse, they collide on
+    // the slot key, so the real rows for that school are overwritten and
+    // lost. A school with no readable programme is better off with no date
+    // sheet than with a wrong one.
+    const canonicalKey = buildCanonicalClassKey(
+      slot.programme,
+      undefined,
+      undefined,
+      slot.schoolCode,
+    );
+    if (isUnresolvedClassKey(canonicalKey, slot.schoolCode)) {
+      unresolved += 1;
+      continue;
+    }
+    usable.push(slot);
+  }
+  if (unresolved > 0) {
+    console.warn(
+      `Worker: ${unresolved} date sheet slot(s) of ${dateSheetSlots[0]?.schoolCode ?? '?'} ` +
+        'had no readable programme and were skipped',
+    );
+  }
+
+  return usable.map((slot) => {
     // The slot key carries the CANONICAL class key, so two cohorts of one
     // programme (`Batch 2022-2026` and `Batch 2025-2029`) are two rows and
     // never overwrite each other. The row keeps the BASE class key, because
