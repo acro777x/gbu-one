@@ -1,17 +1,20 @@
 /**
- * GBU One — Typed State-Machine Layer
+ * The canonical export for the domain state machines.
  *
- * Central export for all domain state machines:
  * - S2 Auth Machine (src/state/authMachine.ts)
- * - S8 Class Alarm Machine (src/state/alarmMachine.ts)
- * - S11 Notices Source Machine (src/state/noticesMachine.ts)
- * - S12 Timetable Source Machine (src/state/timetableMachine.ts)
- * - Results Watcher Machine (src/state/resultsMachine.ts)
+ *
+ * The other four machines were removed in November 2026. They were
+ * specifications of lifecycles that the app implements in its own modules
+ * (the class alarm in `src/features/notifications/classAlarm.ts`, the
+ * notices tiers in `src/features/notices/useNoticesQuery.ts`, the
+ * timetable tiers in `src/features/timetable/timetableStore.ts` and the
+ * results watch in `src/features/exams/resultsWatch.ts`), and nothing in
+ * the app ever imported them.
+ *
+ * `tests/state_machine_integration.test.ts` now refuses to let that happen
+ * again: every machine in `src/state` has to be imported by production
+ * code.
  */
 
 export * from './types';
 export * from './authMachine';
-export * from './alarmMachine';
-export * from './noticesMachine';
-export * from './timetableMachine';
-export * from './resultsMachine';

@@ -21,6 +21,8 @@ owner's Windows machine and inside CI.
 import os
 import re
 import shutil
+import tempfile
+from typing import Callable, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # The two app variants.
@@ -73,25 +75,61 @@ def _write(path: str, content: str) -> None:
         handle.write(content)
 
 
-def purge_admin_variant(root: str) -> None:
+def purge_admin_variant(root: str) -> Callable[[], None]:
     """Remove every trace of the admin console from a student build.
 
     The admin routes are not just hidden in a student build - they are
     deleted, and the variant is forced to ``false`` so that even a stale
     ``isAdminApp()`` call cannot reach them.
+
+    The purge used to destroy the working tree: the admin routes were gone
+    after the first student build, the layout had lost its admin stack, and
+    a later ``git add -A`` committed the deletions. The build is a build,
+    not an edit - so everything the purge touches is backed up first, and
+    the returned function puts it all back.
+
+    :returns: a function that restores the tree exactly as it was.
     """
+    backup_root = tempfile.mkdtemp(prefix='gbu-admin-backup-')
+    saved: List[Tuple[str, Optional[str]]] = []
+
+    def safe_name(relative: str) -> str:
+        # The relative path is used as a file name in the backup folder, so
+        # the path separators have to go: on Windows "app\\moderation.tsx"
+        # would name a subfolder that does not exist.
+        return re.sub(r'[^A-Za-z0-9_.-]', '_', relative)
+
+    def backup_file(relative: str) -> None:
+        path = os.path.join(root, relative)
+        if not os.path.isfile(path):
+            return
+        target = os.path.join(backup_root, safe_name(relative))
+        shutil.copy2(path, target)
+        saved.append((relative, target))
+
+    def backup_dir(relative: str) -> None:
+        path = os.path.join(root, relative)
+        if not os.path.isdir(path):
+            return
+        target = os.path.join(backup_root, safe_name(relative))
+        shutil.copytree(path, target)
+        saved.append((relative, target))
+
     admin_dir = os.path.join(root, ADMIN_ROUTE_DIR)
     if os.path.isdir(admin_dir):
+        backup_dir(ADMIN_ROUTE_DIR)
         shutil.rmtree(admin_dir, ignore_errors=True)
         print('Purged app/admin from student public APK build.')
 
     moderation_file = os.path.join(root, ADMIN_ROUTE_FILE)
     if os.path.isfile(moderation_file):
+        backup_file(ADMIN_ROUTE_FILE)
         os.remove(moderation_file)
         print('Purged app/moderation.tsx from student public APK build.')
 
     layout_file = os.path.join(root, LAYOUT_FILE)
     if os.path.isfile(layout_file):
+        backup_file(LAYOUT_FILE)
         content = _read(layout_file)
         # The admin stack is registered behind `isAdminApp() ? (...) : null`.
         content = re.sub(r'\{isAdminApp\(\)\s*\?[\s\S]*?: null\}', '', content)
@@ -100,15 +138,17 @@ def purge_admin_variant(root: str) -> None:
 
     variant_file = os.path.join(root, VARIANT_FILE)
     if os.path.isfile(variant_file):
+        backup_file(VARIANT_FILE)
         _write(variant_file, "export function isAdminApp(): boolean { return false; }\n")
         print('Configured appVariant to strictly false for student public APK.')
 
     app_json = os.path.join(root, APP_JSON)
     if os.path.isfile(app_json):
-        content = _read(app_json)
+        backup_file(APP_JSON)
         # The package name has to be the STUDENT one, whatever the source
         # tree happened to hold. The quotes anchor the replacement, so
         # "in.gbu.one.admin" is never turned into "in.gbu.one.admin.admin".
+        content = _read(app_json)
         content = content.replace(
             '"package": "%s"' % ADMIN_PACKAGE, '"package": "%s"' % STUDENT_PACKAGE
         )
@@ -117,6 +157,24 @@ def purge_admin_variant(root: str) -> None:
         )
         _write(app_json, content)
         print('Configured app.json for %s student package.' % STUDENT_PACKAGE)
+
+    def restore() -> None:
+        """Puts every file the purge touched back, exactly as it was."""
+        for relative, target in saved:
+            if target is None:
+                continue
+            path = os.path.join(root, relative)
+            if os.path.isdir(target):
+                shutil.rmtree(path, ignore_errors=True)
+                shutil.copytree(target, path)
+            else:
+                shutil.copy2(target, path)
+        if saved:
+            print('Restored %d file(s) the student build had purged.' % len(saved))
+        shutil.rmtree(backup_root, ignore_errors=True)
+
+    return restore
+
 
 
 def configure_admin_variant(root: str) -> None:

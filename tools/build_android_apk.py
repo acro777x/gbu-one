@@ -24,6 +24,7 @@ import sys
 import time
 import hashlib
 import re
+from typing import Callable, Optional
 
 SOURCE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 BUILD = os.environ.get('GBU_BUILD_DIR', r'C:\gbuone-build')
@@ -215,7 +216,7 @@ def prepare_client_tree(
     release: bool,
     allow_secret_anon: bool,
     is_admin: bool = False,
-) -> None:
+) -> Callable[[], None]:
     """Apply the prepare step to a tree IN PLACE.
 
     This is the whole "what is inside the artifact" decision:
@@ -227,8 +228,14 @@ def prepare_client_tree(
     The local build applies it to the space-free copy; the EAS prebuild
     hook applies it to the checked-out project. One implementation, two
     callers - which is the whole point.
+
+    :returns: a function that puts the tree back exactly as it was.
     """
     env_file = os.path.join(root, '.env')
+    saved_env: Optional[str] = None
+    if os.path.exists(env_file):
+        with open(env_file, 'r', encoding='utf-8') as f:
+            saved_env = f.read()
     clean_env = ''
     if os.path.exists(env_file):
         with open(env_file, 'r', encoding='utf-8') as f:
@@ -265,15 +272,33 @@ def prepare_client_tree(
         # The dedicated admin APK keeps the moderation console and switches
         # the variant on.
         build_config.configure_admin_variant(root)
+        restore_purge: Callable[[], None] = lambda: None
     else:
         # STRICT PUBLIC APK PURGE: Exclude all admin routes, moderation tools,
         # and credentials. The implementation is shared with the EAS prebuild
         # hook (tools/build_config.py), so the hosted build purges exactly the
         # same files as this one.
-        build_config.purge_admin_variant(root)
+        restore_purge = build_config.purge_admin_variant(root)
+
+    def restore() -> None:
+        """Puts the tree back exactly as it was before the prepare step.
+
+        A build is not an edit. The prepare step used to leave the working
+        tree without the admin routes, with a sanitised .env (the owner's
+        real keys gone) and with the layout's admin stack removed - and a
+        later `git add -A` committed the deletions.
+        """
+        try:
+            restore_purge()
+        except Exception as err:  # noqa: BLE001 - a restore must not mask the real error
+            print(f'  NOTE: could not restore the purged files: {err}')
+        if saved_env is not None:
+            with open(env_file, 'w', encoding='utf-8') as f:
+                f.write(saved_env)
+            print('Restored .env.')
 
     if not release:
-        return
+        return restore
 
     # A release without a backend does not crash: the app starts, finds no
     # backend and runs OFFLINE FOREVER, with no error anywhere. That is why
@@ -290,6 +315,8 @@ def prepare_client_tree(
             '  Set them in .env (see .env.example) or, for an EAS build, in\n'
             '  the env block of the profile in eas.json.\n'
         )
+
+    return restore
 
 
 def assert_release_keystore() -> None:
@@ -410,7 +437,7 @@ def main() -> None:
         # path's business.
         with open(os.path.join(SOURCE, '.env'), 'r', encoding='utf-8') as f:
             src_env = f.read()
-        prepare_client_tree(
+        restore = prepare_client_tree(
             SOURCE,
             release=release,
             allow_secret_anon=allow_secret_anon,
@@ -418,8 +445,16 @@ def main() -> None:
         )
         print('Prepare-only: the client bundle is sanitised and the variant is set.')
         print('  variant :', 'admin' if is_admin else 'public')
+        # In an EAS build the purge has to STAY: EAS builds the artifact from
+        # this very checkout, after the hook has finished. Everywhere else
+        # the prepare step is a dry run, and the tree is put back: a build
+        # is not an edit, and the owner's .env and admin routes have to be
+        # there when the build is over.
+        if os.environ.get('EAS_BUILD_PROFILE'):
+            print('  EAS build: the purge stays in place for the hosted build.')
+        else:
+            restore()
         return
-
     os.makedirs(BUILD, exist_ok=True)
     sync(is_admin=is_admin, release=release, allow_secret_anon=allow_secret_anon)
 

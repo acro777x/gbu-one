@@ -1,21 +1,23 @@
 /**
  * The typed state machines must not rot.
  *
- * `src/state/*` holds six state machines that model the app's implicit
- * lifecycles. Five of them were, for a long time, modules that nothing
- * imported: they had their own passing tests, which made it look as if the
- * app ran on them. It did not.
+ * `src/state/*` holds the state machines that model the app's explicit
+ * lifecycles. Four of them used to be modules that nothing imported: they
+ * had their own passing tests, which made it look as if the app ran on
+ * them. It did not.
  *
  * This test makes the situation explicit and keeps it honest:
  *
- *  - a machine that declares itself INTEGRATED must really be imported by
- *    at least one production module, or this test fails;
- *  - a machine that declares itself NOT WIRED IN must really have no
- *    production importer, so nobody can "wire it in" without also
- *    updating the declaration and the tests that go with it.
+ *  - every machine in `src/state` has to be imported by at least one
+ *    production module, or this test fails.
  *
- * The point is not to force every machine to be integrated today. It is to
- * make the gap visible instead of hiding it behind a green test run.
+ * A machine that is not wired in is dead code: it is a specification that
+ * nothing reads, and the lifecycle it describes is implemented somewhere
+ * else (or nowhere at all). There used to be a second state -
+ * "NOT YET WIRED IN" - for those, and it is gone: four machines sat in
+ * that state for weeks, together 1,850 lines of code and 33 KB of tests
+ * that proved nothing about the running app. They were deleted, and the
+ * lifecycles they described live in the feature modules today.
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
@@ -48,27 +50,12 @@ const productionFiles = [
 
 describe('typed state machines', () => {
   it('there is at least one machine to check', () => {
-    expect(machines.length).toBeGreaterThanOrEqual(5);
+    expect(machines.length).toBeGreaterThanOrEqual(1);
   });
 
   it.each(machines.map((m) => [m.file, m] as const))(
-    '%s declares its integration status, and the declaration is true',
+    '%s is imported by the app that runs',
     (_file, machine) => {
-      const declaredIntegrated = /INTEGRATION STATUS:\s*\*\*WIRED IN\.\*\*/.test(
-        machine.source,
-      );
-      const declaredNotWired =
-        /INTEGRATION STATUS:\s*\*\*NOT YET WIRED IN\.\*\*/.test(machine.source);
-
-      expect(
-        declaredIntegrated || declaredNotWired,
-      ).toBe(true);
-      if (!declaredIntegrated && !declaredNotWired) {
-        throw new Error(
-          `${machine.file} must declare "INTEGRATION STATUS: **WIRED IN.**" or "**NOT YET WIRED IN.**"`,
-        );
-      }
-
       // Is any production module importing it?
       const moduleName = machine.file.replace(/\.ts$/, '');
       const importers = productionFiles.filter((p) => {
@@ -79,23 +66,29 @@ describe('typed state machines', () => {
         );
       });
 
-      if (declaredIntegrated) {
-        expect(importers.length).toBeGreaterThan(0);
-        if (importers.length === 0) {
-          throw new Error(
-            `${machine.file} says it is WIRED IN, but no production module imports it`,
-          );
-        }
-      } else {
-        expect(importers).toEqual([]);
-        if (importers.length > 0) {
-          throw new Error(
-            `${machine.file} says it is NOT YET WIRED IN, but ${importers
-              .map((p) => relative(ROOT, p))
-              .join(', ')} imports it. Update the declaration and the tests that go with it.`,
-          );
-        }
+      expect(importers.length).toBeGreaterThan(0);
+      if (importers.length === 0) {
+        throw new Error(
+          `${machine.file} is imported by nothing: it is dead code. Wire it into the ` +
+            'app, or delete it - a machine that nothing reads only pretends to be ' +
+            'a feature.',
+        );
       }
     },
   );
+
+  it('no machine may declare itself as not wired in', () => {
+    const unwired = machines.filter((machine) =>
+      /INTEGRATION STATUS:\s*\*\*NOT YET WIRED IN\.\*\*/.test(machine.source),
+    );
+    expect(unwired.map((machine) => machine.file)).toEqual([]);
+  });
+
+  it('the auth machine is the one the app runs', () => {
+    const auth = machines.find((machine) => machine.file === 'authMachine.ts');
+    expect(auth).toBeDefined();
+    expect(
+      /INTEGRATION STATUS:\s*\*\*WIRED IN\.\*\*/.test(auth?.source ?? ''),
+    ).toBe(true);
+  });
 });
