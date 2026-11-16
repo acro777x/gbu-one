@@ -145,3 +145,25 @@
    The live database now has 500 real date-sheet slots across seven schools,
    including 54 SOICT slots with keys such as btech_cse_cyber and
    btech_cse_ml, and zero unresolved general_* keys.
+28. Resolved on 2026-11-17: the student's date sheet now shows REAL data on the emulator.
+
+   After rebuilding and installing the APK on `UnoEmulator`, the Examination
+   Hub for CSE-Cyber Semester II shows `BTECH_CSE_CYBER_SEM2`,
+   `10 papers` and real subjects such as CS401 Internet of Things with a
+   room and a time. The "Sample schedule" banner is gone. Screenshot:
+   `docs/qa/release/22-exams-final.png`.
+
+   Three more bugs stood between the worker's correct data and the
+   student's screen, and all are fixed with regression tests:
+   - published section codes with a hyphen (`CSE-CS-II`) were not mapped
+     to the programme `btech_cse_cyber`;
+   - a canonical key without a semester (`btech_cse_ml`) was re-read as
+     prose and became `btech_cse`;
+   - the app's query asked only for the full key, so a date sheet stored
+     per programme was never found.
+
+   Known limitation, honestly displayed: the rows come from the December
+   2025 sheet (the newest the university publishes); the headline above
+   them comes from the 2026 academic calendar. The app labels the dates
+   correctly, but the two sessions differ until the university publishes
+   the 2026 date sheet.
