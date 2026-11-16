@@ -93,6 +93,19 @@ describe('the class key of a date sheet', () => {
     );
   });
 
+  it('reads the hyphenated class codes the university actually publishes', () => {
+    // "CSE-CS-II" is the Cyber Security section, but the published-section
+    // pattern did not allow a hyphen in the code, so the app asked the
+    // database for "cse_cs_ii" and showed a sample date sheet instead.
+    expect(buildCanonicalClassKey('CSE-CS-II')).toBe('btech_cse_cyber_sem2');
+    expect(buildCanonicalClassKey('CSE-DS-III')).toBe('btech_cse_ds_sem3');
+    expect(buildCanonicalClassKey('BEC-AI-III')).toBe('btech_ece_sem3');
+    expect(buildCanonicalClassKey('MCA-AI-II')).toBe('mca_ai_sem2');
+    // The codes without a hyphen still work.
+    expect(buildCanonicalClassKey('BCS-III-B')).toBe('btech_cse_sem3_b');
+    expect(buildCanonicalClassKey('BAI-III-B')).toBe('btech_ai_sem3_b');
+  });
+
   it('does not re-read a key as prose when reducing it to a base key', () => {
     // A canonical key without a semester is still a key. Feeding
     // "btech_cse_ml" back through the programme rules matched the "b.tech

@@ -162,7 +162,7 @@ export interface ClassKeyParts {
  * `Ph.D. Biotechnology` (which has no year at all).
  */
 const PUBLISHED_SECTION_RE =
-  /^([A-Za-z][A-Za-z0-9.&]*?)[-\s]+([IVX]{1,5})(?:[-\s]+([A-Za-z]))?$/;
+  /^([A-Za-z][A-Za-z0-9.&-]*?)[-\s]+([IVX]{1,5})(?:[-\s]+([A-Za-z]))?$/;
 
 /**
  * The batch a cohort belongs to, e.g. `Batch (2025-2029)`.
