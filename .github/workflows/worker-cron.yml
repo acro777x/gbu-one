@@ -78,8 +78,8 @@ jobs:
         # The worker falls back to its own reader if this step is missing.
         run: |
           python3 -m pip install --user pypdfium2
-          python3 tools/pdf_layout.py --help 2>/dev/null || true
-          python3 -c "import pypdfium2; print('pdfium', pypdfium2.V_PYPDFIUM2)"
+          python3 tools/pdf_layout.py /dev/null >/dev/null 2>&1 || true
+          python3 -c "import pypdfium2; print('pdfium import ok')"
       - name: Build the worker with the repo's own TypeScript
         run: |
           # tsx is NOT a dependency of this repo, so `npx tsx` used to download it
