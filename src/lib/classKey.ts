@@ -372,20 +372,44 @@ export function parseClassKeyParts(
     // 3. Determine programme prefix from a full programme name.
     if (/int(?:egrated)?\s*\.?\s*b\.?\s*tech.*m\.?\s*tech.*cse/i.test(text)) {
       progSlug = 'int_btech_mtech_cse';
+    } else if (/cyber\s*security/i.test(text)) {
+      // "Cyber Security" has to be read before the "engineering" rules, and
+      // before the Information Technology rule: the word "security" contains
+      // the letters "it", which used to send a Cyber Security student to
+      // the Information Technology date sheet.
+      progSlug = 'btech_cse_cyber';
+    } else if (/data\s*science/i.test(text)) {
+      progSlug = 'btech_cse_ds';
+    } else if (/machine\s*learning|\bml\b/i.test(text)) {
+      progSlug = 'btech_cse_ml';
+    } else if (/b\.?\s*tech.*\(?\bds\b\)?/i.test(text)) {
+      // "B. Tech. (DS)" is the School of ICT's Data Science programme.
+      progSlug = 'btech_cse_ds';
+    } else if (/b\.?\s*tech.*\(?\bml\b\)?/i.test(text)) {
+      progSlug = 'btech_cse_ml';
+    } else if (/b\.?\s*tech.*\(?\bec\b\)?/i.test(text)) {
+      // "B. Tech. (EC)" is the School of ICT's Electronics programme.
+      progSlug = 'btech_ece';
     } else if (/b\.?\s*tech.*ai/i.test(text) || /\b(cai)\b/i.test(text)) {
       progSlug = 'btech_ai';
-    } else if (/b\.?\s*tech.*(?:it|inf(?:ormation)?\s*tech)/i.test(text)) {
+    } else if (/b\.?\s*tech.*\b(?:it|information\s*tech)\b/i.test(text)) {
       progSlug = 'btech_it';
     } else if (/b\.?\s*tech.*(?:cse|cs|comp)/i.test(text) || /\bbcs\b/i.test(text)) {
       progSlug = 'btech_cse';
     } else if (/b\.?\s*tech.*ece/i.test(text)) {
       progSlug = 'btech_ece';
+    } else if (/b\.?\s*tech.*civil/i.test(text)) {
+      // Civil Engineering has to be read BEFORE the generic "engineering"
+      // rules: "Civil Engineering" contains the letters "ee", so the old
+      // order gave a Civil student the key of an Electrical student, and
+      // both programmes shared one date sheet.
+      progSlug = 'btech_ce';
+    } else if (/b\.?\s*tech.*mechanical/i.test(text)) {
+      progSlug = 'btech_me';
+    } else if (/b\.?\s*tech.*electrical/i.test(text)) {
+      progSlug = 'btech_ee';
     } else if (/b\.?\s*tech.*ee/i.test(text)) {
       progSlug = 'btech_ee';
-    } else if (/b\.?\s*tech.*me/i.test(text)) {
-      progSlug = 'btech_me';
-    } else if (/b\.?\s*tech.*civil/i.test(text)) {
-      progSlug = 'btech_ce';
     } else if (/b\.?\s*tech.*biotech/i.test(text)) {
       progSlug = 'btech_bt';
     } else if (/mca.*ai/i.test(text)) {
@@ -445,7 +469,11 @@ export function parseClassKeyParts(
     const semMatch =
       text.match(/(\d+)(?:st|nd|rd|th)?\s*(?:sem|semester)/i) ||
       text.match(/(?:sem|semester)\s*[-:_]?\s*(\d+|[ivx]+)/i) ||
-      text.match(/(?:_|-|\s)(\d+)$/) ||
+      // A bare number at the end of the text is a semester - but only a
+      // one- or two- or three-digit one. The School of Law publishes its
+      // date sheet with an empty programme column ("2024-2029"), and the
+      // year range was read as "semester 2029", which no student can match.
+      text.match(/(?:_|-|\s)(\d{1,3})$/) ||
       text.match(/\b(i|ii|iii|iv|v|vi|vii|viii|ix|x)\b/i);
 
     if (semMatch) {

@@ -43,3 +43,5 @@ install_pg.log
 # local backups of .env (they carry real keys)
 .env*.bak
 .env.local
+dist_old/
+worker-run.log

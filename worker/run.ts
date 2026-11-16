@@ -18,6 +18,7 @@
 import 'dotenv/config';
 import { NoticesWorkerJob, fetchWithTlsTolerance } from './noticesJob';
 import { collectCalendarRows } from './calendarJob';
+import { DATE_SHEET_SCHOOL_CODES } from './examDateSheet';
 import { runResultsStage } from './resultsJob';
 import {
   checkSchema,
@@ -632,7 +633,14 @@ async function runCalendarStage(failures: StageFailures): Promise<void> {
       list.push(slot.slot_key);
       slotsBySchool.set(slot.school_code, list);
     }
-    for (const [schoolCode, keepKeys] of slotsBySchool) {
+    // EVERY school that publishes a date sheet is cleaned, not only the ones
+    // that produced a usable row this time.
+    //
+    // A school whose sheet could not be read produces no rows at all, so it
+    // was missing from the map - and its old, unreadable rows stayed in the
+    // database for ever, where a student could still find them.
+    for (const schoolCode of DATE_SHEET_SCHOOL_CODES) {
+      const keepKeys = slotsBySchool.get(schoolCode) ?? [];
       const deleted = await deleteStaleExamDateSlots(schoolCode, keepKeys);
       if (deleted.failed > 0) {
         failures.record('calendar', `${deleted.failed} stale date slot(s) could not be deleted`);

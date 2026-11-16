@@ -643,13 +643,37 @@ function decodeLiteralString(raw: string): string {
 }
 
 /**
+ * Multiplies two affine matrices.
+ *
+ * `a x b` is the matrix product: the point is transformed by `b` first and
+ * by `a` second.
+ */
+function multiplyMatrices(a: number[], b: number[]): number[] {
+  return [
+    a[0] * b[0] + a[1] * b[2],
+    a[0] * b[1] + a[1] * b[3],
+    a[2] * b[0] + a[3] * b[2],
+    a[2] * b[1] + a[3] * b[3],
+    a[4] * b[0] + a[5] * b[2] + b[4],
+    a[4] * b[1] + a[5] * b[3] + b[5],
+  ];
+}
+
+/**
  * Walks a content stream and returns every piece of text with the position
  * it was drawn at.
+ *
+ * @param rotate The page's `/Rotate` value, in degrees. The positions are
+ *   returned in the space the reader SEES: a page that is stored portrait
+ *   and printed landscape (`/Rotate 90`) has its columns and its rows on
+ *   swapped axes, and every comparison in the grid reader is a comparison
+ *   of positions.
  */
 function extractWithPositions(
   stream: string,
   fontMaps: Map<string, Map<number, string>>,
   globalCmaps: Array<Map<number, string>> = [],
+  rotate = 0,
 ): LaidOutText[] {
   const out: LaidOutText[] = [];
   let index = 0;
@@ -658,16 +682,40 @@ function extractWithPositions(
   let pendingKern = 0;
   let textMatrix = [1, 0, 0, 1, 0, 0];
   let lineMatrix = [1, 0, 0, 1, 0, 0];
+  /**
+   * The current transformation matrix.
+   *
+   * It used to be folded into the text matrix, which lost the rotation of
+   * every `cm`. The School of ICT's date sheet draws its whole table inside
+   * a rotated and scaled frame, and dropping that frame moved every cell
+   * out of its column: the sheet parsed to nothing.
+   */
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const ctmStack: number[][] = [];
   let font: Map<number, string> | null = null;
 
-  const translate = (a: number[], b: number[]): number[] => [
-    a[0] * b[0] + a[1] * b[2],
-    a[0] * b[1] + a[1] * b[3],
-    a[2] * b[0] + a[3] * b[2],
-    a[2] * b[1] + a[3] * b[3],
-    a[4] * b[0] + a[5] * b[2] + b[4],
-    a[4] * b[1] + a[5] * b[3] + b[5],
-  ];
+  const translate = (a: number[], b: number[]): number[] =>
+    multiplyMatrices(a, b);
+
+  /**
+   * The position of the text in the page's own coordinate system.
+   *
+   * The origin of the text is the translation of "text matrix x CTM".
+   *
+   * The page's `/Rotate` is NOT applied here. The rotation of the PAGE and
+   * the rotation of the CONTENT are two different things: the School of
+   * ICT's sheet is stored portrait, printed landscape AND drawn inside a
+   * rotated frame, and the three of them cancel out. Applying `/Rotate` on
+   * top of that turned the School of Law's perfectly ordinary landscape
+   * sheet upside down and lost its semester column.
+   *
+   * The grid reader works out the orientation of the table on its own (see
+   * `readPageGrid`), which is the only way that works for both shapes.
+   */
+  const devicePosition = (): { x: number; y: number } => {
+    const m = multiplyMatrices(textMatrix, ctm);
+    return { x: m[4], y: m[5] };
+  };
 
   const readBalanced = (): string | null => {
     let depth = 1;
@@ -711,9 +759,10 @@ function extractWithPositions(
         // Inside a TJ array a large negative kern means the glyphs are a word
         // apart: the space glyph itself is often not encoded.
         const space = arrayDepth > 0 && pendingKern <= WORD_SPACE_KERN ? ' ' : '';
+        const at = devicePosition();
         out.push({
-          x: textMatrix[4],
-          y: textMatrix[5],
+          x: at.x,
+          y: at.y,
           text: space + decodeLiteralString(raw),
         });
       }
@@ -728,9 +777,10 @@ function extractWithPositions(
       index = end + 1;
       if (isShown()) {
         const space = arrayDepth > 0 && pendingKern <= WORD_SPACE_KERN ? ' ' : '';
+        const at = devicePosition();
         out.push({
-          x: textMatrix[4],
-          y: textMatrix[5],
+          x: at.x,
+          y: at.y,
           text: space + decodeHexString(raw, [font, ...globalCmaps]),
         });
       }
@@ -778,7 +828,19 @@ function extractWithPositions(
 
     let match: RegExpExecArray | null;
     if ((match = /^([-+.\d]+)\s+([-+.\d]+)\s+([-+.\d]+)\s+([-+.\d]+)\s+([-+.\d]+)\s+([-+.\d]+)\s+Tm/.exec(rest))) {
-      textMatrix = [1, 0, 0, 1, Number(match[5]), Number(match[6])];
+      // The WHOLE matrix is kept. The old code kept only the translation,
+      // which threw away the rotation and the scale of every text run: the
+      // offsets of a `Td` are given in TEXT space, so without the rotation
+      // they were applied to the wrong axis and every cell of the table
+      // landed in the wrong column.
+      textMatrix = [
+        Number(match[1]),
+        Number(match[2]),
+        Number(match[3]),
+        Number(match[4]),
+        Number(match[5]),
+        Number(match[6]),
+      ];
       lineMatrix = textMatrix.slice();
       index += match[0].length;
       continue;
@@ -802,7 +864,7 @@ function extractWithPositions(
       continue;
     }
     if ((match = /^([-+.\d]+)\s+([-+.\d]+)\s+([-+.\d]+)\s+([-+.\d]+)\s+([-+.\d]+)\s+([-+.\d]+)\s+cm/.exec(rest))) {
-      textMatrix = translate(
+      ctm = translate(
         [
           Number(match[1]),
           Number(match[2]),
@@ -811,9 +873,21 @@ function extractWithPositions(
           Number(match[5]),
           Number(match[6]),
         ],
-        textMatrix,
+        ctm,
       );
       index += match[0].length;
+      continue;
+    }
+    if (/^q(?![a-zA-Z])/.test(rest)) {
+      // Push the graphics state.
+      ctmStack.push(ctm.slice());
+      index += 1;
+      continue;
+    }
+    if (/^Q(?![a-zA-Z])/.test(rest)) {
+      // Pop the graphics state.
+      ctm = ctmStack.pop() ?? [1, 0, 0, 1, 0, 0];
+      index += 1;
       continue;
     }
     if (/^BT/.test(rest)) {
@@ -902,7 +976,7 @@ export function extractPdfLayout(
   const globalCmaps = collectGlobalCmaps(objects);
   const globalFonts = collectGlobalFontMaps(objects);
 
-  const pages: Array<{ contents: number[]; fonts: Map<string, Map<number, string>> }> = [];
+  const pages: Array<{ contents: number[]; fonts: Map<string, Map<number, string>>; rotate: number }> = [];
   if (!options.fallbackOnly) {
     for (const object of objects.values()) {
       if (!/\/Type\s*\/Page[^s]/.test(object.dict)) continue;
@@ -914,7 +988,10 @@ export function extractPdfLayout(
       for (const [name, cmap] of globalFonts) {
         if (!fonts.has(name)) fonts.set(name, cmap);
       }
-      pages.push({ contents, fonts });
+      // The page's own rotation decides which way the table is printed.
+      const rotateMatch = /\/(?:Rotate)\s+(-?\d+)/.exec(object.dict);
+      const rotate = rotateMatch ? Number(rotateMatch[1]) : 0;
+      pages.push({ contents, fonts, rotate });
     }
   }
 
@@ -925,7 +1002,12 @@ export function extractPdfLayout(
       const object = objects.get(ref);
       if (!object || !object.data) continue;
       pieces.push(
-        ...extractWithPositions(object.data.toString('latin1'), page.fonts, globalCmaps),
+        ...extractWithPositions(
+          object.data.toString('latin1'),
+          page.fonts,
+          globalCmaps,
+          page.rotate,
+        ),
       );
     }
     result.push(pieces);
@@ -953,6 +1035,14 @@ export function extractPdfLayout(
   }
 
   return result;
+}
+
+/**
+ * How far apart the values are, from the smallest to the largest.
+ */
+function spread(values: number[]): number {
+  if (values.length < 2) return 0;
+  return Math.max(...values) - Math.min(...values);
 }
 
 /** A group of text pieces that were drawn together (one table cell). */
@@ -1028,10 +1118,38 @@ function readPageGrid(page: LaidOutText[]): Array<{
   if (cells.length === 0) return [];
 
   // The header row holds the date columns.
-  const dateColumns = cells
+  let dateColumns = cells
     .filter((cell) => DATE_HEADER.test(cleanCellText(cell.text)))
     .sort((a, b) => a.x - b.x);
   if (dateColumns.length === 0) return [];
+
+  // Which way round is the table?
+  //
+  // A date sheet is a table: the dates are its COLUMNS. Some sheets are
+  // drawn the other way round - the School of ICT's sheet is drawn inside a
+  // rotated frame, so its columns run along the page's vertical axis - and
+  // the grid reader would then see one very wide column and no rows at all.
+  //
+  // The dates themselves say which way the table runs: if they are spread
+  // along the horizontal axis, the table is the normal way round; if they
+  // are spread along the vertical axis, the whole page is turned by 90
+  // degrees before the grid is read.
+  const dateSpreadX = spread(dateColumns.map((cell) => cell.x));
+  const dateSpreadY = spread(dateColumns.map((cell) => cell.y));
+  if (dateSpreadY > dateSpreadX) {
+    for (const cell of cells) {
+      const x = cell.x;
+      cell.x = cell.y;
+      cell.y = x;
+      const lastY = cell.lastY;
+      cell.lastY = cell.centerY;
+      cell.centerY = lastY;
+    }
+    dateColumns = cells
+      .filter((cell) => DATE_HEADER.test(cleanCellText(cell.text)))
+      .sort((a, b) => a.x - b.x);
+    if (dateColumns.length === 0) return [];
+  }
 
   const firstDateX = dateColumns[0].x;
   // Where is the date header - at the top of the page or at the bottom?
@@ -1365,6 +1483,61 @@ function isUnresolvedClassKey(canonicalKey: string, schoolCode: string): boolean
 }
 
 /**
+ * True when the "programme" of a row is really a SUBJECT name.
+ *
+ * The School of ICT's date sheet cannot be rebuilt into a grid (it is drawn
+ * in a rotated and scaled frame whose glyph positions are only known to a
+ * real PDF engine), so its plain-text fallback reads the subject names as
+ * programme names: "Cyber Security", "Cloud Computing", "(Back Paper)".
+ *
+ * Such a row is worse than no row at all: the key it produces names a
+ * programme nobody studies, and two of those rows collide on the slot key,
+ * so the real rows of that school are overwritten and lost. A school whose
+ * programme cannot be read is better off with no date sheet than with a
+ * wrong one.
+ */
+function looksLikeSubjectName(programme: string): boolean {
+  const text = programme.trim();
+  if (!text) return true;
+  // A programme always names a cohort, a semester or a degree.
+  if (/\d{4}\s*[-–—]\s*\d{4}/.test(text)) return false;
+  if (/\b(?:batch|semester|sem)\b/i.test(text)) return false;
+  if (/\b(?:b\.?\s*tech|b\.?\s*a\.?|m\.?\s*a\.?|m\.?\s*tech|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|ll\.?\s*b|bca|mca|mba|ph\.?\s*d|diploma|bachelor|master)\b/i.test(text)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * True when a date-sheet row may be stored.
+ *
+ * A row is only worth storing when the sheet named a PROGRAMME. A row whose
+ * "programme" is really a subject name ("Cyber Security", "(Back Paper)")
+ * or nothing at all ("2025-2030") produces a class key no student can
+ * match - and, worse, such rows collide on the slot key, so the real rows
+ * of that school are overwritten and lost.
+ *
+ * A school whose programme cannot be read is better off with no date sheet
+ * than with a wrong one.
+ *
+ * This is the ONE place that decides, so the calendar job and the PDF
+ * reader cannot disagree about it.
+ */
+export function isStorableDateSheetSlot(slot: {
+  programme: string;
+  schoolCode: string;
+}): boolean {
+  const canonicalKey = buildCanonicalClassKey(
+    slot.programme,
+    undefined,
+    undefined,
+    slot.schoolCode,
+  );
+  if (isUnresolvedClassKey(canonicalKey, slot.schoolCode)) return false;
+  return !looksLikeSubjectName(slot.programme);
+}
+
+/**
  * Reads date sheet slots from a PDF buffer and maps to ExamDateSlot[].
  */
 export function parsePdfDateSheet(
@@ -1411,6 +1584,10 @@ export function parsePdfDateSheet(
       slot.schoolCode,
     );
     if (isUnresolvedClassKey(canonicalKey, slot.schoolCode)) {
+      unresolved += 1;
+      continue;
+    }
+    if (looksLikeSubjectName(slot.programme)) {
       unresolved += 1;
       continue;
     }

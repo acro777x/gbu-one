@@ -538,26 +538,44 @@ export async function deleteStaleExamDateSlots(
   try {
     const { data, error } = await sb
       .from('exam_date_slots')
-      .select('slot_key')
+      .select('id, slot_key')
       .eq('school_code', schoolCode);
     if (error) {
       console.warn('Worker: stale date slot read failed:', describeError(error));
       return { written: 0, failed: 1 };
     }
     const keep = new Set(keepKeys);
-    const stale = ((data ?? []) as Array<{ slot_key: string }>)
-      .map((row) => row.slot_key)
-      .filter((key) => key && !keep.has(key));
-    if (stale.length === 0) return { written: 0, failed: 0 };
-    const { error: deleteError } = await sb
-      .from('exam_date_slots')
-      .delete()
-      .in('slot_key', stale);
-    if (deleteError) {
-      console.warn('Worker: stale date slot delete failed:', describeError(deleteError));
-      return { written: 0, failed: stale.length };
+    // The rows are deleted BY THEIR ID, not by their slot key.
+    //
+    // A slot key carries the subject name, and a subject name carries
+    // commas ("Applied Mathematics-I, Part A"). PostgREST's `in` filter
+    // separates its values with commas, so a key with a comma in it makes
+    // the whole filter invalid and the delete fails with a bare
+    // "Bad Request" - which left 269 unreadable rows in the database
+    // forever, because the worker could not clean up what it had written.
+    // A uuid never contains a comma, so it is safe.
+    const staleIds = ((data ?? []) as Array<{ id: string; slot_key: string }>)
+      .filter((row) => row.slot_key && !keep.has(row.slot_key))
+      .map((row) => row.id);
+    if (staleIds.length === 0) return { written: 0, failed: 0 };
+
+    let written = 0;
+    let failed = 0;
+    // In batches, so the query stays small enough for the API.
+    for (let i = 0; i < staleIds.length; i += 100) {
+      const batch = staleIds.slice(i, i + 100);
+      const { error: deleteError } = await sb
+        .from('exam_date_slots')
+        .delete()
+        .in('id', batch);
+      if (deleteError) {
+        console.warn('Worker: stale date slot delete failed:', describeError(deleteError));
+        failed += batch.length;
+        continue;
+      }
+      written += batch.length;
     }
-    return { written: stale.length, failed: 0 };
+    return { written, failed };
   } catch (err) {
     console.warn(
       'Worker: stale date slot delete threw:',

@@ -18,6 +18,7 @@ import { fetchAcademicCalendar, type AcademicEvent } from './academicCalendar';
 import {
   fetchDateSheet,
   DATE_SHEET_SCHOOL_CODES,
+  isStorableDateSheetSlot,
   resolveRunningDateSheetSession,
 } from './examDateSheet';
 import {
@@ -246,6 +247,8 @@ export async function collectCalendarRows(
   const year = options.dateSheetYear ?? session.year;
   if (month && year) {
     let published = 0;
+  /** Rows whose programme could not be read, and that are therefore not stored. */
+  let unreadable = 0;
     for (const schoolCode of DATE_SHEET_SCHOOL_CODES) {
       const sheet = await fetchDateSheet(schoolCode, { month, year });
       if (!sheet.ok) {
@@ -254,10 +257,30 @@ export async function collectCalendarRows(
       }
       published += 1;
       for (const slot of sheet.slots) {
+        // A row whose programme could not be read is dropped, not stored.
+        // The School of ICT's sheet cannot be rebuilt into a grid, so its
+        // plain-text fallback reads the SUBJECT names as programme names
+        // ("Cyber Security", "(Back Paper)"). Those rows produce a class
+        // key no student can match, and they collide on the slot key, so
+        // the real rows of that school were overwritten and lost.
+        if (!isStorableDateSheetSlot(slot)) {
+          unreadable += 1;
+          continue;
+        }
         // The slot key carries the CANONICAL class key, so two cohorts of
         // one programme are two rows; the row keeps the BASE class key,
         // because that is the value the database is filtered on.
-        const canonicalKey = buildCanonicalClassKey(slot.programme);
+        //
+        // The school code is passed because the School of Law publishes its
+        // date sheet with an EMPTY programme column - the cell holds only
+        // "2024-2029 II" - so the school is the only thing that names the
+        // programme.
+        const canonicalKey = buildCanonicalClassKey(
+          slot.programme,
+          undefined,
+          undefined,
+          slot.schoolCode,
+        );
         const classKey = baseClassKeyOf(canonicalKey);
         const shiftTime =
           slot.slot === 'morning' ? '09:30 AM - 12:30 PM' : '02:00 PM - 05:00 PM';
@@ -286,6 +309,14 @@ export async function collectCalendarRows(
     }
     if (published === 0) {
       reasons.push('datesheet: no school has published a sheet for that session yet');
+    }
+    if (unreadable > 0) {
+      // Said out loud, so a school whose sheet cannot be read is visible in
+      // the worker's log instead of quietly showing nothing.
+      reasons.push(`datesheet: ${unreadable} row(s) had no readable programme`);
+      console.warn(
+        `Worker: ${unreadable} date sheet row(s) had no readable programme and were not stored`,
+      );
     }
   }
 
