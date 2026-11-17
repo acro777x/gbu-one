@@ -8,7 +8,7 @@ The declared stack below now **matches the shipped stack**:
 | Expo + TS strict, Expo Router | `app/` + `src/`, typecheck/lint/tests green in CI |
 | Zustand | `src/store/*`, `src/features/*`; **attendance + mail now persisted** via `zustand/persist` (MMKV → AsyncStorage fallback) |
 | TanStack Query | `@tanstack/react-query` installed; `QueryClientProvider` in `app/_layout.tsx`; `useNoticesQuery` implements cached-then-refresh |
-| expo-sqlite + MMKV | `expo-sqlite@15`, `react-native-mmkv@2.12` installed (SDK 52 pinned); `src/lib/db.ts` (notices/timetable/kv caches), `src/lib/storage.ts` (MMKV with AsyncStorage fallback) |
+| expo-sqlite + AsyncStorage | `expo-sqlite@16` (SDK 54); `src/lib/db.ts` (notices/timetable/kv caches), `src/lib/storage.ts` (AsyncStorage). MMKV was removed in Nov 2026: it was the last 4 KB-linked native library in the APK and only a fast key/value store. |
 | Supabase | `src/lib/supabase.ts` (app, anon), `worker/supabaseClient.ts` (worker, service-role) |
 | FCM push | `worker/pushSender.ts` via Expo Push API (FCM under the hood), deduped per notice |
 | Node worker on GitHub Actions cron | `worker/run.ts` + `.github/workflows/worker-cron.yml` (15 min 01:30–16:30 UTC, hourly otherwise) |

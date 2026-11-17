@@ -25,7 +25,7 @@ You are building **GBU One**, a student companion app for Gautam Buddha Universi
 ---
 
 ## Stack (fixed unless the owner changes it)
-- Expo (React Native SDK 52) + TypeScript (strict), Expo Router
+- Expo (React Native SDK 54 / React Native 0.81) + TypeScript (strict), Expo Router
 - State: Zustand; data fetching: TanStack Query; local storage: expo-sqlite + MMKV (AsyncStorage fallback)
 - Backend: Supabase (auth for the app account, Postgres, Storage for PYQ files)
 - Push: Firebase Cloud Messaging via expo-notifications and Expo Push API
