@@ -460,18 +460,38 @@ def main() -> None:
 
     install_dependencies()
 
-    # Always prebuild: the signing plugin writes the GBU_ANDROID_* values into
-    # android/gradle.properties, so a prebuild that is skipped would leave the
-    # release build on the debug key.
+    # Always prebuild from a FRESH native directory. Expo's prebuild patches
+    # an existing tree in place; with an SDK jump (52 -> 54) it puts new
+    # imports ABOVE the Kotlin package declaration, which Kotlin rejects.
+    # The native directory is generated output, never source: the config
+    # plugins rebuild everything, including our signing plugin.
     android = os.path.join(BUILD, 'android')
+    if os.path.isdir(android):
+        shutil.rmtree(android, ignore_errors=True)
     # The notification sounds are copied into res/raw by the config plugin.
     # A sound that is no longer listed would still be there from the last
     # build, and two files with the same name are a duplicate-resource error.
-    raw = os.path.join(android, 'app', 'src', 'main', 'res', 'raw')
-    if os.path.isdir(raw):
-        for name in os.listdir(raw):
-            os.remove(os.path.join(raw, name))
     run(['npx', 'expo', 'prebuild', '--platform', 'android', '--no-install'], BUILD)
+
+    # Google Play requires new apps to target Android 15 (API 35) or newer,
+    # and every native library must be linked for 16 KB pages. Prebuild
+    # regenerates gradle.properties from its template (which still carries
+    # the older project's targetSdk 34), so the requirements are written
+    # AFTER prebuild, on every build, through the local path and the EAS
+    # hook alike.
+    gradle_props = os.path.join(BUILD, 'android', 'gradle.properties')
+    with open(gradle_props, 'r', encoding='utf-8') as f:
+        props_text = f.read()
+    for line in ('android.targetSdkVersion=35', 'android.pageSize=16384'):
+        name = line.split('=', 1)[0]
+        if not any(
+            existing.split('=', 1)[0].strip() == name
+            for existing in props_text.splitlines()
+        ):
+            props_text += '\n# Required for a Google Play release\n' + line + '\n'
+    with open(gradle_props, 'w', encoding='utf-8') as f:
+        f.write(props_text)
+    print('Configured targetSdk 35 and 16 KB page size for Play.')
 
     # Ensure build.gradle namespace and applicationId match is_admin
     build_gradle_path = os.path.join(android, 'app', 'build.gradle')

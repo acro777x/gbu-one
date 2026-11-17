@@ -29,8 +29,9 @@
  *
  * The plugin also pins the NDK to r27 and enables the CMake flexible page
  * sizes, so the native libraries this project compiles itself are 16 KB
- * aligned for Android 15+. The prebuilt React Native 0.76 binaries still are
- * not - see docs/OPEN_QUESTIONS.md #13.
+ * aligned for Android 15+. With Expo SDK 54 / React Native 0.81 the
+ * prebuilt libraries (Hermes, React Native, Expo modules) are 16 KB
+ * aligned too - see tools/build_android_apk.py's build.gradle property.
  */
 const fs = require('fs');
 const path = require('path');
@@ -78,7 +79,10 @@ const RELEASE_BLOCK = `        release {
                 throw new GradleException("REFUSING TO BUILD: a release build must be signed with the owner keystore. Set GBU_ANDROID_KEYSTORE_PATH, GBU_ANDROID_KEYSTORE_PASSWORD, GBU_ANDROID_KEY_ALIAS and GBU_ANDROID_KEY_PASSWORD (see docs/RELEASE.md), or use EAS managed signing.")
             }
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
-            minifyEnabled enableProguardInReleaseBuilds
+            // Read the flag directly: the SDK 52 template used to declare a
+            // 'def enableProguardInReleaseBuilds' variable, which SDK 54 no
+            // longer writes, so naming it here broke every APK build.
+            minifyEnabled (findProperty('android.enableProguardInReleaseBuilds')?.toBoolean() ?: false)
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
         }

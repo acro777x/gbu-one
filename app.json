@@ -67,7 +67,9 @@
           ]
         }
       ],
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      "expo-asset",
+      "expo-sqlite"
     ],
     "scheme": "gbuone",
     "extra": {

@@ -458,31 +458,6 @@ jest.mock('expo-sqlite', () => {
   return { openDatabaseSync: jest.fn(() => db), __esModule: true };
 });
 
-// MMKV is a native module; without it `src/lib/storage.ts` silently fell
-// back to AsyncStorage and its sync path lost every read.
-jest.mock('react-native-mmkv', () => {
-  const store = new Map<string, string>();
-  return {
-    __esModule: true,
-    default: class MMKV {
-      getString(key: string) {
-        return store.get(key);
-      }
-      set(key: string, value: string) {
-        store.set(key, value);
-      }
-      delete(key: string) {
-        store.delete(key);
-      }
-      clearAll() {
-        store.clear();
-      }
-      getAllKeys() {
-        return Array.from(store.keys());
-      }
-    },
-  };
-});
 
 jest.mock('expo-document-picker', () => ({
   getDocumentAsync: jest.fn().mockResolvedValue({ canceled: true, assets: null }),

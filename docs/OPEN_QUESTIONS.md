@@ -167,3 +167,21 @@
    them comes from the 2026 academic calendar. The app labels the dates
    correctly, but the two sessions differ until the university publishes
    the 2026 date sheet.
+---
+
+29. Resolved on 2026-11-17: Actions secrets, the publishable key, the TLS variable and the cron.
+
+   - The repository now holds SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and
+     WORKER_CONTACT_EMAIL as Actions secrets, set through the API by
+     `tools/set_github_secrets.py`. The owner supplied a `sb_publishable_...`
+     client key in `.env`, verified with RLS: `pyq_papers` returns 80
+     approved rows to an anonymous caller and `moderators` returns none.
+   - `NODE_TLS_REJECT_UNAUTHORIZED` is removed from both the User and the
+     Machine registry scopes. This harness process still carries it in its
+     inherited environment, so a terminal restart is needed to see it gone.
+   - The worker cron now completes with ALL STEPS PASSED on three
+     consecutive GitHub Actions runs (43947324781, 43983185752,
+     43991995333). The earlier failures were the missing secrets, a guard
+     step that never received them, a bulk upsert with duplicate conflict
+     keys and a version check that used a removed PDFium attribute - all
+     fixed and verified in the real workflow.

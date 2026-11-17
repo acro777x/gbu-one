@@ -41,7 +41,11 @@ export function configureNotificationHandler(): void {
   if (Platform.OS === 'web') return;
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
+      // expo-notifications 0.32 (SDK 54) split "showAlert" into a banner
+      // and a notification-centre entry. Keeping both true preserves the
+      // behaviour the old `shouldShowAlert: true` had.
+      shouldShowBanner: true,
+      shouldShowList: true,
       shouldPlaySound: true,
       shouldSetBadge: false,
     }),
