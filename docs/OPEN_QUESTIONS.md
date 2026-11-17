@@ -185,3 +185,23 @@
      step that never received them, a bulk upsert with duplicate conflict
      keys and a version check that used a removed PDFium attribute - all
      fixed and verified in the real workflow.
+30. Resolved on 2026-11-17: the owner rotated the Supabase service-role key.
+
+   The cron failed with "401 Unregistered API key" until the Actions secret
+   was refreshed with `python tools/set_github_secrets.py`. The publishable
+   key in the APK is the new `sb_publishable_...` value, verified with RLS
+   (80 approved papers visible to an anonymous caller, zero moderators).
+   A scan of the shipped JS bundle finds no 41-character `sb_secret_...`
+   key; only the publishable key is present.
+31. Resolved on 2026-11-17: the cron's 401 after the key rotation.
+
+   The owner rotated the Supabase keys but placed the new service-role key
+   in `SUPABASE_ANON_KEY`, leaving the stale one in
+   `SUPABASE_SERVICE_ROLE_KEY`. The worker then failed with "401
+   Unregistered API key". Both `.env` and the GitHub Actions secret were
+   refreshed with the current key. Verified: the local worker exits 0, and
+   the publishable key in the APK is a separate `sb_publishable_...` value.
+
+   For future rotations, `python tools/set_github_secrets.py` copies the
+   current `.env` values into the repository secrets; keep
+   `SUPABASE_SERVICE_ROLE_KEY` in sync with the dashboard's service-role key.
