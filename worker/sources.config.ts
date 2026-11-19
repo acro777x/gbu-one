@@ -14,6 +14,8 @@
  *    day, so the worker skips it until the interval has elapsed.
  */
 
+import { WORKER_USER_AGENT } from '../src/lib/contact';
+
 export interface WorkerSourceConfig {
   name: string;
   url: string;
@@ -26,7 +28,7 @@ export interface WorkerSourceConfig {
 }
 
 export const WORKER_CONFIG = {
-  userAgent: 'GBUOne-Worker/1.0 (student project; contact: student.gbuone@gmail.com)',
+  userAgent: WORKER_USER_AGENT,
   sources: {
     mainNotices: {
       name: 'GBU Main Notices',

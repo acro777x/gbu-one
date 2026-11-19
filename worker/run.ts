@@ -20,6 +20,7 @@ import { NoticesWorkerJob, fetchWithTlsTolerance } from './noticesJob';
 import { collectCalendarRows } from './calendarJob';
 import { DATE_SHEET_SCHOOL_CODES } from './examDateSheet';
 import { runResultsStage } from './resultsJob';
+import { WORKER_CONFIG } from './sources.config';
 import {
   checkSchema,
   upsertNotices,
@@ -291,7 +292,7 @@ async function runAttachmentStage(failures: StageFailures): Promise<void> {
     await politeWait(url, 1500);
     const res = await fetchWithRetry(
       url,
-      { headers: { 'User-Agent': 'GBUOne-Worker/1.0 (student project; contact: student.gbuone@gmail.com)' } },
+      { headers: { 'User-Agent': WORKER_CONFIG.userAgent } },
       {
         attempts: 2,
         baseDelayMs: 2000,

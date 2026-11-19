@@ -27,12 +27,15 @@ import { OfficialSeal } from '../src/components/brand/OfficialSeal';
 import { LogoMark } from '../src/components/brand/LogoMark';
 import { useAppTheme } from '../src/lib/ThemeContext';
 import { theme } from '../src/lib/theme';
+import { SUPPORT_EMAIL } from '../src/lib/contact';
 
 export default function AboutScreen() {
   const { colors, isDark } = useAppTheme();
 
   const handleEmailContact = () => {
-    Linking.openURL('mailto:student.gbuone@gmail.com?subject=GBU%20One%20Inquiry').catch(() => {});
+    Linking.openURL(
+      `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('GBU One Inquiry')}`,
+    ).catch(() => {});
   };
 
   // Corrections to MIRRORED university documents must reach the university,
@@ -175,7 +178,7 @@ export default function AboutScreen() {
             the university cannot answer), contact the maintainer team:
           </Text>
           <PillButton
-            label="student.gbuone@gmail.com"
+            label={SUPPORT_EMAIL}
             onPress={handleEmailContact}
             variant="outline"
             size="sm"
