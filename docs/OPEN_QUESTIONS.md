@@ -205,3 +205,30 @@
    For future rotations, `python tools/set_github_secrets.py` copies the
    current `.env` values into the repository secrets; keep
    `SUPABASE_SERVICE_ROLE_KEY` in sync with the dashboard's service-role key.
+
+---
+
+32. Resolved on 2026-11-19: alarm Dismiss and the status-bar overlap.
+
+   - Tapping "Dismiss" on a class alarm used to DELETE the stored reminder
+     and cancel every OS alarm for that slot, so the class never rang again.
+     Dismiss now acknowledges only that one ring; the weekly alarm stays
+     armed and the next app start advances it. To remove an alarm for good,
+     use the explicit "Cancel alarm" button in the Alarms screen or the
+     timetable slot.
+   - The shade notification is dismissed FIRST, before the store write, so
+     an Android background task that gets stopped mid-write cannot leave the
+     notification on screen. Both action buttons now bring the app forward.
+   - Onboarding, class setup and dev/motion imported SafeAreaView from
+     'react-native' (a no-op on Android). With targetSdk 35's edge-to-edge,
+     the logo and "Skip" were drawn over the status bar. Fixed by using
+     react-native-safe-area-context; a guard test prevents a regression.
+   - Dumps and screenshots of every screen are in docs/qa/release/ (audit-*
+     and 30-onboarding-fixed.png). UI dumps take a steady ~2s; no lag or
+     corruption was seen after the safe-area fix.
+
+   NOTE: an alarm needs POST_NOTIFICATIONS. If the student chose "Don't
+   allow" during onboarding, no alarm can ever appear; the Alarms screen
+   shows "Notification Permission: Refused / Blocked" with a Try again
+   button. The emulator demonstrated both states: refused = silent,
+   granted = the test alarm rang and appeared in the shade.
