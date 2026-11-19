@@ -3,11 +3,11 @@ import {
   StyleSheet,
   View,
   Text,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, CheckCircle2, CloudOff } from 'lucide-react-native';
 import { Chip, PillButton, GlassCard, Skeleton } from '../src/components/ui';
 import { useAuthStore, ClassSelection } from '../src/store/useAuthStore';
@@ -314,7 +314,7 @@ export default function ClassSetupScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
+    <SafeAreaView edges={['top']} style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={styles.topHeader}>
         <TouchableOpacity
           onPress={() => (step > 1 ? setStep(((step - 1) as Step)) : router.back())}

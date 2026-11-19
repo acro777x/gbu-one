@@ -3,7 +3,6 @@ import {
   StyleSheet,
   View,
   Text,
-  SafeAreaView,
   Dimensions,
   FlatList,
   Pressable,
@@ -15,6 +14,7 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { Bell, Calendar, BookOpen, User, Sparkles, ChevronRight } from 'lucide-react-native';
@@ -204,7 +204,7 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
+    <SafeAreaView edges={['top']} style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Top Header with Skip button */}
       <View style={styles.topBar}>
         <View style={styles.brandRow}>

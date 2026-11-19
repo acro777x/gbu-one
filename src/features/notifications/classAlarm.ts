@@ -157,7 +157,9 @@ export function ensureClassReminderChannel(): Promise<ClassChannelStatus> {
             identifier: SNOOZE_ACTION_ID,
             buttonTitle: 'Snooze (+10m)',
             options: {
-              opensAppToForeground: false,
+              // Bring the app forward so the answer is always processed,
+              // even when Android stops background tasks aggressively.
+              opensAppToForeground: true,
             },
           },
           {
@@ -165,7 +167,7 @@ export function ensureClassReminderChannel(): Promise<ClassChannelStatus> {
             buttonTitle: 'Dismiss',
             options: {
               isDestructive: true,
-              opensAppToForeground: false,
+              opensAppToForeground: true,
             },
           },
         ]);

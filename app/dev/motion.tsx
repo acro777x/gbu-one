@@ -18,11 +18,11 @@ import {
   View,
   Text,
   ScrollView,
-  SafeAreaView,
   TouchableOpacity,
   Switch,
 } from 'react-native';
 import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, RotateCcw } from 'lucide-react-native';
 import { AnimatedLogo } from '../../src/components/brand/AnimatedLogo';
 import {

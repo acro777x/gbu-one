@@ -1,0 +1,9 @@
+  onboarding: dump=2.17s, 12 labels :: GBU  | One | Skip | SMART NOTICES | Every  | GBU  | notice,  | sorted  | for  | you 
+  after-next: dump=2.09s, 10 labels :: GBU  | One | Skip | LIVE TIMETABLE | Your  | timetable,  | always  | current  | Automatic synchronization with room changes and schedule shifts, cached completely offline
+  class-setup: dump=2.09s, 10 labels :: GBU  | One | Skip | LIVE TIMETABLE | Your  | timetable,  | always  | current  | Automatic synchronization with room changes and schedule shifts, cached completely offline
+  home: could not find/tap 'Complete Setup'
+  home: dump=2.13s, 10 labels :: GBU  | One | Skip | LIVE TIMETABLE | Your  | timetable,  | always  | current  | Automatic synchronization with room changes and schedule shifts, cached completely offline
+  tab Timetable: dump=2.07s :: GBU  | One | Skip | LIVE TIMETABLE | Your  | timetable,  | always  | current 
+  tab Notices: NOT FOUND
+  tab PYQ: NOT FOUND
+  tab Profile: NOT FOUND

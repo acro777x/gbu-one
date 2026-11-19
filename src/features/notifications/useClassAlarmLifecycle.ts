@@ -33,7 +33,6 @@ import {
 } from './useNotificationPreferences';
 import {
   cancelAlarmsThatHavePassed,
-  cancelClassAlarmsForSlot,
   dismissNotification,
   getExactAlarmCapability,
   getScheduledClassAlarmsForSlot,
@@ -149,6 +148,12 @@ export async function handleSnoozeAction(
   const slotId = (data.slotId ?? '').trim();
 
   try {
+    // Clear the shade FIRST. An action-button tap on Android runs in a
+    // background task; if the task is stopped while the store is being
+    // written, a notification dismissed last would stay on screen.
+    const delivered = data.notificationId ?? undefined;
+    if (delivered) await dismissNotification(delivered);
+
     const reminder = slotId ? await store.getReminder(slotId) : undefined;
 
     const title =
@@ -162,12 +167,11 @@ export async function handleSnoozeAction(
 
     const fireAt = new Date(now.getTime() + SNOOZE_MINUTES * 60 * 1000);
 
-    // The snooze that is already pending is cancelled first, so tapping
-    // snooze twice does not leave two alarms behind.
+    // The alarm that just rang is already out of the shade (above); the
+    // previous snooze is cancelled so nothing is stacked.
     const pending = reminder?.notificationId;
-    if (pending) {
+    if (pending && pending !== delivered) {
       await cancelScheduledNotification(pending);
-      await dismissNotification(pending);
     }
 
     const identifier = await snoozeClassAlarm({
@@ -180,13 +184,6 @@ export async function handleSnoozeAction(
       title,
       body,
     });
-
-    // The alarm that rang is taken out of the shade; its weekly repeat is
-    // left alone, so the class still rings next week.
-    const delivered = data.notificationId ?? reminder?.notificationId;
-    if (delivered && delivered !== pending) {
-      await dismissNotification(delivered);
-    }
 
     if (slotId) {
       await store.updateReminder(slotId, {
@@ -202,10 +199,16 @@ export async function handleSnoozeAction(
 }
 
 /**
- * Clears an alarm the student does not want.
+ * Answers ONE ringing of a class alarm.
  *
- * The stored record and the OS alarm are both removed *before* the prompt
- * is released, so the prompt cannot come straight back.
+ * "Dismiss" means "I heard this one" - NOT "never ring for this class
+ * again". The weekly alarm and the stored reminder stay, so the class rings
+ * next week. A student who wants to remove the alarm altogether uses the
+ * "Cancel alarm" button in the Alarms screen or the timetable slot.
+ *
+ * This used to delete the stored reminder and cancel every OS alarm of the
+ * slot. One tap on Dismiss therefore killed the alarm for the whole semester
+ * - which is why a class alarm could stop ringing for good.
  */
 export async function handleDismissAction(
   data: ClassAlarmData,
@@ -213,13 +216,22 @@ export async function handleDismissAction(
 ): Promise<AlarmActionResult> {
   const slotId = (data.slotId ?? '').trim();
   try {
-    const reminder = slotId ? await store.getReminder(slotId) : undefined;
-    if (slotId) {
-      await cancelClassAlarmsForSlot(slotId);
-      await store.removeReminder(slotId);
-    }
-    const delivered = data.notificationId ?? reminder?.notificationId;
+    // Clear the shade FIRST: on Android an action-button tap runs in a
+    // background task, and the OS can stop it while the store is being
+    // written. Dismissing last left the notification on screen.
+    const delivered = data.notificationId ?? undefined;
     if (delivered) await dismissNotification(delivered);
+
+    const reminder = slotId ? await store.getReminder(slotId) : undefined;
+    if (slotId && reminder) {
+      // Keep the weekly OS alarm. Only acknowledge THIS occurrence: the
+      // in-app prompt reads reminderState(), which returns 'acknowledged'
+      // from now on, and the next start advances the alarm to next week.
+      await store.updateReminder(slotId, {
+        acknowledgedAt: new Date().toISOString(),
+        firedAt: undefined,
+      });
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, error: errorMessage(error, 'The alarm could not be cleared') };

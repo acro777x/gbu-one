@@ -35,6 +35,7 @@ import {
   type AlarmActionStore,
 } from '../src/features/notifications/useClassAlarmLifecycle';
 import {
+  advanceRepeatingReminders,
   nextWeeklyFireAt,
   parseStoredReminders,
   reminderState,
@@ -125,8 +126,8 @@ beforeEach(async () => {
   mockedNotifications.setNotificationChannelAsync.mockResolvedValue(undefined);
 });
 
-describe('dismissing an alarm from the notification shade', () => {
-  it('removes the stored reminder so the prompt cannot come back', async () => {
+describe('answering one ring of an alarm from the notification shade', () => {
+  it('keeps the weekly alarm but acknowledges this ring so the prompt cannot come back', async () => {
     const { list, store } = makeStore([makeReminder({ fireAt: '2026-11-09T08:59:00.000Z' })]);
 
     const response = shadeResponse(DISMISS_ACTION_ID, {
@@ -138,9 +139,16 @@ describe('dismissing an alarm from the notification shade', () => {
     const result = await routeNotificationResponse(response, store);
 
     expect(result?.ok).toBe(true);
-    // The record is gone, so there is nothing left that could ring.
-    expect(list).toHaveLength(0);
-    expect(list.some((entry) => reminderState(entry, NOW) === 'ringing')).toBe(false);
+    // Dismissing ONE ring used to delete the whole alarm, so the class never
+    // rang again. The weekly record has to survive.
+    expect(list).toHaveLength(1);
+    expect(reminderState(list[0], NOW)).toBe('acknowledged');
+    expect(list[0].acknowledgedAt).toBeTruthy();
+    // Advancing on the next start clears the acknowledgement and the class
+    // rings next week.
+    const advanced = advanceRepeatingReminders(list, NOW);
+    expect(advanced[0].acknowledgedAt).toBeUndefined();
+    expect(reminderState(advanced[0], NOW)).toBe('armed');
   });
 
   it('takes the notification out of the shade as well', async () => {
@@ -159,15 +167,8 @@ describe('dismissing an alarm from the notification shade', () => {
     );
   });
 
-  it('cancels the OS alarms of that slot', async () => {
-    mockedNotifications.getAllScheduledNotificationsAsync.mockResolvedValue([
-      {
-        identifier: 'os-alarm-1',
-        content: { data: { type: CLASS_ALARM_DATA_TYPE, slotId: 'mock-BCS-II B-1-1' } },
-        trigger: { type: 'date', date: new Date(NOW.getTime() + 60_000) },
-      },
-    ]);
-    const { store } = makeStore([makeReminder()]);
+  it('leaves the repeating OS alarm armed', async () => {
+    const { list, store } = makeStore([makeReminder()]);
 
     await routeNotificationResponse(
       shadeResponse(DISMISS_ACTION_ID, {
@@ -177,12 +178,13 @@ describe('dismissing an alarm from the notification shade', () => {
       store,
     );
 
-    expect(mockedNotifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith(
-      'os-alarm-1',
-    );
+    // The weekly OS alarm is the only thing that will ring next week without
+    // the app running. Dismissing one ring must never cancel it.
+    expect(mockedNotifications.cancelScheduledNotificationAsync).not.toHaveBeenCalled();
+    expect(list).toHaveLength(1);
   });
 
-  it('never re-opens the prompt: the record is gone before the prompt is', async () => {
+  it('never re-opens the prompt: this ring is acknowledged before the prompt closes', async () => {
     const { list, store } = makeStore([makeReminder({ fireAt: '2026-11-09T08:59:00.000Z' })]);
 
     await handleDismissAction(
@@ -193,9 +195,9 @@ describe('dismissing an alarm from the notification shade', () => {
       store,
     );
 
-    // The "just rang" matcher looks at the STORED list. With the record
-    // removed there is nothing to match, so the prompt cannot come back.
-    expect(list).toHaveLength(0);
+    // The "just rang" matcher reads the STORED list, and an acknowledged
+    // reminder is not 'ringing', so the prompt cannot come back.
+    expect(reminderState(list[0], NOW)).toBe('acknowledged');
   });
 });
 
