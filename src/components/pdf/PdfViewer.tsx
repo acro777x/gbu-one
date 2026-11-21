@@ -189,13 +189,28 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         path: target,
         overwrite: true,
         timeout: DOWNLOAD_TIMEOUT_MS,
-        // exams.gbu.ac.in (and a few other GBU hosts) serve their PDFs with
-        // an EXPIRED TLS certificate. The worker already tolerates exactly
-        // those hosts; the app must too, or a real date sheet is reported as
-        // "not a PDF / connection is not secure" and never opens. This is
-        // scoped to GBU's own hosts only, not a global TLS downgrade.
-        // react-native-blob-util calls this option `trusty`.
-        trusty: isGbuDocumentHost(url),
+        // Some Android devices cannot complete GBU's Let's Encrypt chain, so
+        // a real date sheet fails with "connection is not secure". The chain
+        // is bundled in res/raw by plugins/withGbuCerts.js and trusted ONLY
+        // for GBU's hosts - every other host uses the platform trust store.
+        ...(isGbuDocumentHost(url)
+          ? {
+              customCACerts: [
+                'gbu_exams_ca_0',
+                'gbu_exams_ca_1',
+                'gbu_exams_ca_2',
+                'gbu_exams_ca_3',
+              ],
+              pinnedHosts: [
+                'exams.gbu.ac.in',
+                'www.gbu.ac.in',
+                'gbu.ac.in',
+                'gbuexam.in',
+                'mygbu.in',
+              ],
+              trustSystemCerts: true,
+            }
+          : {}),
       }).fetch('GET', url, REQUEST_HEADERS);
 
       if (watchdogRef.current) clearTimeout(watchdogRef.current);

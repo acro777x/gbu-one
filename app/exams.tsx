@@ -563,7 +563,10 @@ export default function ExamsScreen() {
                       {enrolledClassKey.toUpperCase()} • {examPhase === 'mid' ? 'MID SEMESTER' : examPhase === 'end' ? 'END SEMESTER' : examPhase === 'practicals' ? 'PRACTICALS' : 'BACK PAPERS'}
                     </Text>
                   </View>
-                  <Text style={[styles.countdownTitle, { color: colors.textPrimary }]}>
+                  <Text
+                    numberOfLines={2}
+                    style={[styles.countdownTitle, { color: colors.textPrimary, flexShrink: 1 }]}
+                  >
                     {examPhase === 'end'
                       ? 'End Semester Theory Exams'
                       : examPhase === 'practicals'
