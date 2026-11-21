@@ -132,6 +132,27 @@ export function describeDownloadProblem(
  * path, a `javascript:` payload, a `content://` handle — is refused before a
  * single byte is fetched.
  */
+/**
+ * True for the GBU hosts whose TLS certificates have expired. The worker
+ * tolerates these hosts with a per-request agent; the viewer needs the same
+ * narrow exception, and it must NOT be applied to any other host.
+ */
+export function isGbuDocumentHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host === 'gbu.ac.in' ||
+      host.endsWith('.gbu.ac.in') ||
+      host === 'gbuexam.in' ||
+      host.endsWith('.gbuexam.in') ||
+      host === 'mygbu.in' ||
+      host.endsWith('.mygbu.in')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function isSafePdfUrl(url: string): boolean {
   if (!url) return false;
   const trimmed = url.trim();

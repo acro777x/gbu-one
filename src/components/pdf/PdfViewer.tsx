@@ -22,6 +22,7 @@ import {
   buildCacheFileName,
   describeDownloadProblem,
   isPdfErrorPage,
+  isGbuDocumentHost,
   isProbablyDoc,
   isProbablyImage,
   isProbablyPdf,
@@ -188,6 +189,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         path: target,
         overwrite: true,
         timeout: DOWNLOAD_TIMEOUT_MS,
+        // exams.gbu.ac.in (and a few other GBU hosts) serve their PDFs with
+        // an EXPIRED TLS certificate. The worker already tolerates exactly
+        // those hosts; the app must too, or a real date sheet is reported as
+        // "not a PDF / connection is not secure" and never opens. This is
+        // scoped to GBU's own hosts only, not a global TLS downgrade.
+        // react-native-blob-util calls this option `trusty`.
+        trusty: isGbuDocumentHost(url),
       }).fetch('GET', url, REQUEST_HEADERS);
 
       if (watchdogRef.current) clearTimeout(watchdogRef.current);

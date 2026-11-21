@@ -1,0 +1,33 @@
+# GBU One release verification — 2026-11-21
+
+## Student · onboarding  (dump 3.51s, 26 labels)
+GBU  | One | CAMPUS IDENTITY | Claim Your GBU Identity | Choose your academic avatar and student alias. Works 100% offline. | GBU-0BTUD2 | STUDENT NAME | Student | SELECT AVATAR PERSONA | All | SOICT | SOE | SOBT | SOM
+  class setup present
+  could not find 'Continue to Programme'
+
+## Student · home (live notices)  (dump 3.92s, 31 labels)
+GBU  | One | Everything GBU. One app. | 2 | EVENT | Deadline: 15 Nov | Abhivyanjana 2026 Campus Cultural Fest: Core Student Committee Nominations Open | View details | GBU Mail | Schedule | Exam Hub | Calendar | Events | Attendance Battery
+
+## Student · tab Notices  (dump 4.83s, 33 labels)
+Notices | Live from gbu.ac.in and exams.gbu.ac.in • auto-updated every 15 min | Search notices, exams, fee dates... | For me | Date Sheet | Fees | Scholarship | Hostel | DATESHEET | Date Sheet back paper December2026 | EXAMS • 18 Nov 2026 | OTHER | Deadline | 30-09-2026 Notice for Gandhi Jayanti View Attachment
+
+## Student · tab Timetable  (dump 2.88s, 4 labels)
+Date Sheet back paper December2026 | exams.gbu.ac.in | Downloading the document | 44% downloaded
+
+## tab PYQ: NOT FOUND
+
+## tab Profile: NOT FOUND
+
+## Student · notice detail  (dump 2.14s, 6 labels)
+Date Sheet back paper December2026 | exams.gbu.ac.in | This document could not be opened | The downloaded file is not a PDF — the portal returned a web page instead of the document. | Open in another app | Try again
+
+## Student · PDF opened after View PDF  (dump 2.60s, 1 labels)
+exams.gbu.ac.in/admin/public/uploads/notices/Date_Sheet_backpaper.pdf. Connection is not secure
+
+## Student · alarms + custom ringtone  (dump 2.24s, 21 labels)
+Class Alarms &amp; Reminders | Official Gautam Buddha University class ringtones | Alarm System Status | Class alarms use the official 29-second university sound with vibration pattern and snooze capability. | Notification Permission | Active and ready to trigger on schedule | Active | Sound Channel | res/raw/class_alarm.mp3 • High Priority Alarm | Ready | Test Alarm Sound (Fire Immediately) | Arm 5-Second Test Alarm (Background Test) | Test immediately to hear the official university ringtone, or arm for 5 seconds to test lockscreen / background wake. | Custom ringtone (while the app is open)
+
+## Admin · sign-in gate  (dump 2.25s, 4 labels)
+Android App Compatibility | This app isn’t 16 KB compatible. ELF alignment check failed. This app will be run using page size compatible mode. For best compatibility, please recompile the application with 16 KB support. For more information, see https://developer.android.com/16kb-page-size &#10;&#10;The following libraries are not 16 KB aligned: &#10;&#10;• lib/x86_64/libworklets.so : LOAD segment not aligned&#10;• lib/x86_64/libappmodules.so : Unknown error&#10;• lib/x86_64/libexpo-sqlite.so : LOAD segment not aligned&#10;• lib/x86_64/libexpo-modules-core.so : LOAD segment not aligned&#10;• lib/x86_64/libreactnative.so : LOAD segment not aligned&#10;• lib/x86_64/libreactnativemmkv.so : LOAD segment not aligned&#10;• lib/x86_64/libnative-filters.so : LOAD segment not aligned&#10;• lib/x86_64/libreact_codegen_rnsvg.so : Unknown error&#10;• lib/x86_64/libhermestooling.so : LOAD segment not aligned&#10;• lib/x86_64/libpdfiumandroid.so : Unknown error&#10;• lib/x86_64/libc++_shared.so : Unknown error&#10;• lib/x86_64/libimagepipeline.so : LOAD segment not aligned&#10;• lib/x86_64/libfbjni.so : LOAD segment not aligned&#10;• lib/x86_64/libandroidx.graphics.path.so : Unknown error&#10;• lib/x86_64/librnscreens.so : LOAD segment not aligned&#10;• lib/x86_64/libreact_codegen_safeareacontext.so : Unknown error&#10;• lib/x86_64/libreact_codegen_rnscreens.so : Unknown error&#10;• lib/x86_64/libstatic-webp.so : LOAD segment not aligned&#10;• lib/x86_64/libgifimage.so : LOAD segment not aligned&#10;• lib/x86_64/libpdfium.so : Unknown error&#10;• lib/x86_64/libcrsqlite.so : LOAD segment not aligned&#10;• lib/x86_64/libgesturehandler.so : LOAD segment not aligned&#10;• lib/x86_64/libreanimated.so : LOAD segment not aligned&#10;• lib/x86_64/libjsi.so : LOAD segment not aligned&#10;• lib/x86_64/libhermes.so : LOAD segment not aligned&#10;• lib/x86_64/libnative-imagetranscoder.so : LOAD segment not aligned&#10; | OK | Don't Show Again
+
+Admin: RLS audit is run separately with tools/rls_audit.js (20/20 checks).
