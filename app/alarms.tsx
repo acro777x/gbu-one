@@ -44,6 +44,13 @@ import {
 } from 'lucide-react-native';
 import { GlassCard, PillButton, Toast, EmptyState } from '../src/components/ui';
 import {
+  clearCustomRingtone,
+  getCustomRingtoneUri,
+  pickCustomRingtone,
+  startRingtone,
+  stopRingtone,
+} from '../src/features/notifications/customRingtone';
+import {
   ensureClassReminderChannel,
   scheduleTestAlarm,
   cancelClassAlarmsForSlot,
@@ -90,6 +97,7 @@ export default function AlarmsScreen() {
   const [exactAlarm, setExactAlarm] = useState<ExactAlarmCapability>('unknown');
   const [channelStatus, setChannelStatus] = useState<ClassChannelStatus | null>(null);
   const [testingAlarm, setTestingAlarm] = useState(false);
+  const [customRingtone, setCustomRingtone] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
 
@@ -127,7 +135,28 @@ export default function AlarmsScreen() {
 
   useEffect(() => {
     void loadDiagnostics();
+    void getCustomRingtoneUri().then(setCustomRingtone);
+    return () => stopRingtone();
   }, [loadDiagnostics]);
+
+  const handlePickRingtone = async () => {
+    try {
+      const picked = await pickCustomRingtone();
+      if (picked) {
+        setCustomRingtone(picked.uri);
+        startRingtone(picked.uri);
+        showToast(`Playing the first 30 seconds of ${picked.name} on repeat.`);
+      }
+    } catch {
+      showToast('Could not open that audio file. Try an MP3 or M4A from your phone.');
+    }
+  };
+
+  const handleClearRingtone = async () => {
+    await clearCustomRingtone();
+    setCustomRingtone(null);
+    showToast('Back to the official GBU alarm sound.');
+  };
 
   /**
    * Asks the OS for the notification permission.
@@ -419,6 +448,32 @@ export default function AlarmsScreen() {
             <Text style={[styles.testHint, { color: colors.textTertiary, marginTop: 8 }]}>
               Test immediately to hear the official university ringtone, or arm for 5 seconds to test lockscreen / background wake.
             </Text>
+          </View>
+
+          {/* Custom in-app ringtone (the OS alarm stays on the bundled sound) */}
+          <View style={styles.testBtnBox}>
+            <Text style={[styles.diagLabel, { color: colors.textPrimary, marginBottom: 6 }]}>
+              Custom ringtone (while the app is open)
+            </Text>
+            <Text style={[styles.diagSub, { color: colors.textSecondary, marginBottom: 10 }]}>
+              Pick a song from your phone. The first 30 seconds play on repeat when a class alarm rings in the app. When GBU One is closed, Android plays the official university alarm - a picked song cannot become an Android notification sound.
+            </Text>
+            <View style={{ gap: 10 }}>
+              <PillButton
+                label={customRingtone ? 'Change custom ringtone' : 'Choose a song'}
+                onPress={() => void handlePickRingtone()}
+                variant="outline"
+                size="md"
+              />
+              {customRingtone ? (
+                <PillButton
+                  label="Use official GBU alarm instead"
+                  onPress={() => void handleClearRingtone()}
+                  variant="outline"
+                  size="sm"
+                />
+              ) : null}
+            </View>
           </View>
         </GlassCard>
 

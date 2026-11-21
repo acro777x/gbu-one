@@ -32,6 +32,11 @@ import {
   useNotificationPreferences,
 } from './useNotificationPreferences';
 import {
+  getCustomRingtoneUri,
+  startRingtone,
+  stopRingtone,
+} from './customRingtone';
+import {
   cancelAlarmsThatHavePassed,
   dismissNotification,
   getExactAlarmCapability,
@@ -371,6 +376,23 @@ export function useClassAlarmLifecycle(): ClassAlarmLifecycle {
   const handledResponses = useRef<Set<string>>(new Set());
 
   const ringedAlarm = queue.length > 0 ? queue[0] : null;
+
+  // A student-picked song plays ONLY while the app is open. The OS alarm is
+  // unchanged and still rings when the app is closed (see customRingtone.ts).
+  useEffect(() => {
+    if (!ringedAlarm) {
+      stopRingtone();
+      return;
+    }
+    let cancelled = false;
+    void getCustomRingtoneUri().then((uri) => {
+      if (!cancelled && uri) startRingtone(uri);
+    });
+    return () => {
+      cancelled = true;
+      stopRingtone();
+    };
+  }, [ringedAlarm]);
 
   // Sweep the alarms that have gone by, notice the ones that rang, and move
   // the weekly alarms on to their next occurrence.

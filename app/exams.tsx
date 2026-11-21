@@ -106,6 +106,20 @@ export default function ExamsScreen() {
     .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
   const nextExam = upcomingExams[0];
 
+  // The newest sheet the university publishes can be for a PREVIOUS session
+  // (the live rows are from December 2025 while the app is used in November
+  // 2026). Every date is then in the past, which used to produce a confident
+  // "DONE / COMPLETED" that was simply false. An old sheet is OUTDATED, not
+  // completed - say so instead of inventing a result.
+  const latestExamTime = activeDatesheet.reduce((latest, entry) => {
+    const value = new Date(entry.examDate).getTime();
+    return Number.isFinite(value) ? Math.max(latest, value) : latest;
+  }, 0);
+  const sheetIsStale =
+    activeDatesheet.length > 0 &&
+    !isSampleDatesheet &&
+    latestExamTime < Date.now() - 30 * 24 * 60 * 60 * 1000;
+
   const countdownDays = nextExam ? calculateExamCountdown(nextExam.examDate) : 0;
   const countdownState = nextExam ? examCountdownState(nextExam.examDate) : null;
 
@@ -113,6 +127,13 @@ export default function ExamsScreen() {
     const state = examCountdownState(examDateStr);
     const examDay = new Date(examDateStr).setHours(0, 0, 0, 0);
     const today = new Date().setHours(0, 0, 0, 0);
+    if (sheetIsStale) {
+      return {
+        text: 'PAST SESSION',
+        color: colors.warning,
+        bg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+      };
+    }
     if (examDay < today || state.state === 'past') {
       return { text: 'COMPLETED', color: colors.textTertiary, bg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' };
     }
@@ -552,7 +573,9 @@ export default function ExamsScreen() {
                           : 'Mid Semester Examinations'}
                   </Text>
                   <Text style={[styles.countdownSub, { color: colors.textSecondary }]}>
-                    {nextExam
+                    {sheetIsStale
+                      ? `The newest published sheet is from ${new Date(latestExamTime).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })} - the university has not published exams for this session yet.`
+                      : nextExam
                       ? `${new Date(nextExam.examDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} • ${nextExam.shift} Shift (${nextExam.examTime})`
                       : examPhase === 'end'
                         ? 'Starts Monday, 14 Dec 2026 • GBU Academic Calendar'
@@ -582,7 +605,12 @@ export default function ExamsScreen() {
                     },
                   ]}
                 >
-                  {nextExam ? (
+                  {sheetIsStale ? (
+                    <>
+                      <Text style={[styles.countdownNumber, { color: colors.warning, fontSize: 18 }]}>NO EXAM</Text>
+                      <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>OUTDATED SHEET</Text>
+                    </>
+                  ) : nextExam ? (
                     countdownState && countdownState.state === 'past' ? (
                       <>
                         <Text style={[styles.countdownNumber, { color: colors.textTertiary, fontSize: 18 }]}>DONE</Text>
@@ -603,8 +631,8 @@ export default function ExamsScreen() {
                     )
                   ) : (
                     <>
-                      <Text style={[styles.countdownNumber, { color: colors.success, fontSize: 18 }]}>DONE</Text>
-                      <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>COMPLETED</Text>
+                      <Text style={[styles.countdownNumber, { color: colors.textTertiary, fontSize: 18 }]}>NONE</Text>
+                      <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>NO DATES PUBLISHED</Text>
                     </>
                   )}
                 </View>

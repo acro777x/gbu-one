@@ -45,8 +45,11 @@ export default function NoticesScreen() {
 
   // Where the list on screen came from. The app says so out loud rather than
   // passing the bundled archive off as the university's live notices.
-  const noticeStatus = useNoticesStatusStore((state) => state);
-  const isLive = noticeStatus.source === 'live';
+  // Select only the field used here: subscribing to the whole store makes
+  // every status write re-render this screen.
+  const noticeSource = useNoticesStatusStore((state) => state.source);
+  const isLive = noticeSource === 'live';
+  const noticeReason = useNoticesStatusStore((state) => state.reason);
 
   const availableSchools = useMemo(() => {
     const schools = new Set<string>();
@@ -106,14 +109,14 @@ export default function NoticesScreen() {
 
   const headerSubtitle = useMemo(() => {
     if (isFetching) return 'Syncing official GBU sources…';
-    if (noticeStatus.source === 'live') {
+    if (noticeSource === 'live') {
       return 'Live from gbu.ac.in and exams.gbu.ac.in • auto-updated every 15 min';
     }
-    if (noticeStatus.source === 'cache') {
+    if (noticeSource === 'cache') {
       return 'Showing the copy saved on this phone • pull to refresh';
     }
     return 'Bundled archive — the university pages could not be reached';
-  }, [isFetching, noticeStatus.source]);
+  }, [isFetching, noticeSource]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
@@ -129,10 +132,10 @@ export default function NoticesScreen() {
         <View style={[styles.sampleBanner, { backgroundColor: colors.warningSoft, borderColor: colors.warning }]}>
           <Info size={15} color={colors.warning} style={{ marginRight: 8 }} />
           <Text style={[styles.sampleBannerText, { color: colors.textPrimary }]}>
-            {noticeStatus.source === 'sample'
+            {noticeSource === 'sample'
               ? 'These notices come from the archive bundled with the app. They were captured earlier and were not fetched from the university just now. Pull to refresh once you are online.'
               : 'These notices come from the copy saved on this phone. Pull to refresh to fetch the latest from the university.'}
-            {noticeStatus.reason ? ` (${noticeStatus.reason})` : ''}
+            {noticeReason ? ` (${noticeReason})` : ''}
           </Text>
         </View>
       ) : null}

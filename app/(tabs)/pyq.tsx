@@ -868,13 +868,19 @@ export default function PYQScreen() {
         <View style={styles.leaderboardBannerHeader}>
           <View style={styles.leaderboardBannerTitleRow}>
             <Trophy size={16} color="#F59E0B" />
-            <Text style={[styles.leaderboardBannerTitle, { color: colors.textPrimary }]}>
-              🏆 GBU Contributor Leaderboard
+            <Text
+              numberOfLines={1}
+              style={[styles.leaderboardBannerTitle, { color: colors.textPrimary }]}
+            >
+              GBU Contributor Leaderboard
             </Text>
           </View>
           <View style={styles.leaderboardBannerAction}>
-            <Text style={[styles.leaderboardBannerActionText, { color: colors.accent }]}>
-              View Full Leaderboard →
+            <Text
+              numberOfLines={1}
+              style={[styles.leaderboardBannerActionText, { color: colors.accent }]}
+            >
+              Full Leaderboard →
             </Text>
           </View>
         </View>
@@ -1662,19 +1668,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    // Without minWidth the flex slot keeps its intrinsic size and the title
+    // runs into the link on narrow phones.
+    minWidth: 0,
     gap: 6,
   },
   leaderboardBannerTitle: {
     fontFamily: 'Poppins-Bold',
     fontSize: 13,
+    // Let the title truncate instead of overlapping "Full Leaderboard".
+    flexShrink: 1,
   },
   leaderboardBannerAction: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
+    marginLeft: 8,
   },
   leaderboardBannerActionText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 11,
+    flexShrink: 0,
   },
   leaderboardEmpty: {
     fontFamily: 'Inter-Regular',

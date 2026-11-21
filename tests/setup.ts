@@ -1,3 +1,32 @@
+// expo-audio / expo-document-picker / expo-file-system ship ESM, which this
+// ts-jest config does not transform. The ringtone module is pure glue around
+// them, so a small explicit mock keeps the alarm lifecycle tests runnable.
+jest.mock('expo-audio', () => ({
+  createAudioPlayer: jest.fn(() => ({
+    play: jest.fn(),
+    pause: jest.fn(),
+    remove: jest.fn(),
+    seekTo: jest.fn(),
+    currentTime: 0,
+    loop: false,
+  })),
+  setAudioModeAsync: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('expo-document-picker', () => ({
+  getDocumentAsync: jest.fn().mockResolvedValue({ canceled: true }),
+}));
+
+jest.mock('expo-file-system', () => {
+  class File {
+    constructor(public uri: string) {}
+    create() {}
+    copy() {}
+    delete() {}
+  }
+  return { File, Paths: { document: 'file:///documents/' } };
+});
+
 // ---------------------------------------------------------------------------
 // Jest environment for GBU One.
 //

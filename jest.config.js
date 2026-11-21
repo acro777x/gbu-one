@@ -27,6 +27,6 @@ module.exports = {
   // "Cannot use import statement outside a module", which made
   // `src/lib/pushNotifications.ts` impossible to test at all.
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg))',
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|expo-audio|expo-document-picker|expo-file-system|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg))',
   ],
 };

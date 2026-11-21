@@ -48,7 +48,12 @@ export const CountUp: React.FC<CountUpProps> = ({
       // ease out cubic
       const eased = 1 - Math.pow(1 - progress, 3);
       const nextVal = start + (value - start) * eased;
-      setCurrent(nextVal);
+      // Only re-render when the STRING changes. On a 120 Hz screen this
+      // used to call setState 120 times a second for a number that shows
+      // at most a few dozen distinct values.
+      setCurrent((previous) =>
+        previous.toFixed(decimals) === nextVal.toFixed(decimals) ? previous : nextVal,
+      );
 
       if (progress < 1) {
         requestAnimationFrame(animate);

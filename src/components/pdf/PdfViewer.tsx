@@ -47,6 +47,13 @@ const HEAD_WINDOW = 2048;
 
 /** The university server is slow on a good day; give it a generous budget. */
 const DOWNLOAD_TIMEOUT_MS = 45000;
+/**
+ * A hard deadline for the WHOLE download. The blob-util `timeout` only
+ * bounds a socket read: a server that keeps trickling bytes (or holds the
+ * connection open after 99%) left the viewer stuck for ever. The watchdog
+ * cancels the task and gives the student a retryable error.
+ */
+const DOWNLOAD_WATCHDOG_MS = 120000;
 
 /**
  * Some university front-ends reject requests without a browser-ish user agent,
@@ -93,23 +100,20 @@ const readDownloadFacts = async (
   }
 
   try {
-    const raw: unknown = await ReactNativeBlobUtil.fs.readFile(path, 'ascii');
-    if (typeof raw === 'string') {
-      return { head: raw.slice(0, HEAD_WINDOW), size };
+    // Read ONLY the first HEAD_WINDOW bytes. The old code called readFile()
+    // on the whole 16 MB date-sheet PDF just to check its magic bytes, which
+    // marshals a 16-million-character string across the React Native bridge
+    // and froze the app right when the download bar showed 99%.
+    const headPath = path + '.head';
+    await ReactNativeBlobUtil.fs.slice(path, headPath, 0, HEAD_WINDOW);
+    try {
+      const raw: unknown = await ReactNativeBlobUtil.fs.readFile(headPath, 'ascii');
+      return { head: typeof raw === 'string' ? raw : '', size };
+    } finally {
+      await removeCachedFile(headPath);
     }
   } catch {
-    // Fallback to slice
-  }
-
-  const headPath = path + '.head';
-  try {
-    await ReactNativeBlobUtil.fs.slice(path, headPath, 0, HEAD_WINDOW);
-    const raw: unknown = await ReactNativeBlobUtil.fs.readFile(headPath, 'ascii');
-    return { head: typeof raw === 'string' ? raw : '', size };
-  } catch {
     return { head: '', size };
-  } finally {
-    await removeCachedFile(headPath);
   }
 };
 
@@ -148,6 +152,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
   // Guards every state update against a run that has already been replaced.
   const runIdRef = useRef(0);
   const mountedRef = useRef(true);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startDownload = useCallback(async () => {
     const runId = runIdRef.current + 1;
@@ -185,6 +190,20 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         timeout: DOWNLOAD_TIMEOUT_MS,
       }).fetch('GET', url, REQUEST_HEADERS);
 
+      if (watchdogRef.current) clearTimeout(watchdogRef.current);
+      watchdogRef.current = setTimeout(() => {
+        if (!isCurrent()) return;
+        try {
+          task.cancel();
+        } catch {
+          // The task may already have settled.
+        }
+        setPhase({
+          status: 'error',
+          message: 'The university server stopped responding before the download finished. Tap Retry to try again.',
+        });
+      }, DOWNLOAD_WATCHDOG_MS);
+
       task.progress({ interval: 250 }, (received, total) => {
         if (!isCurrent()) return;
         // The native module reports the byte counts as numbers on some
@@ -197,6 +216,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         setPhase({ status: 'downloading', progress: percent });
       });
 
+      if (watchdogRef.current) {
+        clearTimeout(watchdogRef.current);
+        watchdogRef.current = null;
+      }
       const response = await task;
       const status = response.info().status;
       const { head, size } = await readDownloadFacts(target);
@@ -230,11 +253,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
           return;
         }
       } else {
-        // A real document starts with the PDF magic and is big enough to be one.
-        // Tolerates fs.slice issues if size is valid, URL is PDF, and not an error page.
-        const validPdf =
-          isProbablyPdf(head) ||
-          (size >= MIN_PDF_BYTES && (looksLikePdfUrl(url) || !head) && !looksLikeSoft404(head) && !isPdfErrorPage(head));
+        // A real document starts with the PDF magic. An empty head is a
+        // READ FAILURE, not a valid PDF: accepting one used to send an HTML
+        // error page to react-native-pdf and show a blank viewer.
+        const validPdf = isProbablyPdf(head);
         if (!validPdf || size < MIN_PDF_BYTES) {
           await removeCachedFile(target);
           setPhase({ status: 'error', message: describeDownloadProblem(status, head, size) });
@@ -267,6 +289,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         message:
           'Could not reach the university server. Check your connection and try again — you can also open the original link in another app.',
       });
+    } finally {
+      if (watchdogRef.current) {
+        clearTimeout(watchdogRef.current);
+        watchdogRef.current = null;
+      }
     }
   }, [url]);
 
@@ -274,6 +301,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (watchdogRef.current) {
+        clearTimeout(watchdogRef.current);
+        watchdogRef.current = null;
+      }
       const path = filePathRef.current;
       filePathRef.current = null;
       void removeCachedFile(path);

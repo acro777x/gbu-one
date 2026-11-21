@@ -346,6 +346,11 @@ export async function scheduleClassAlarm(
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: request.fireAt,
       channelId: channel.channelId,
+      // setAlarmClock() instead of the generic AlarmManager path: not
+      // delayed by Doze, and Android shows an alarm icon so the student
+      // can trust that the class alarm will fire even when the app is gone.
+      // Requires SCHEDULE_EXACT_ALARM; expo falls back gracefully without.
+      ...({ delivery: 'alarmClock' } as Record<string, string>),
     },
   });
 }
@@ -402,6 +407,7 @@ export async function scheduleRepeatingClassAlarm(
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: request.fireAt,
         channelId: channel.channelId,
+        ...({ delivery: 'alarmClock' } as Record<string, string>),
       },
     });
     return { identifier, mode: 'once', channelId: channel.channelId };

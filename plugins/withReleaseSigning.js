@@ -276,23 +276,44 @@ function withAndroidSigningFiles(config) {
         }
       }
 
-      // 5. MainActivity.kt: unlock 120Hz high refresh rate and hardware acceleration
-      const mainActivityPath = path.join(
+      // 5. MainActivity.kt: unlock 120Hz high refresh rate and hardware acceleration.
+      // The path has to come from the generated package: the admin variant is
+      // `in.gbu.one.admin`, so its MainActivity lives one directory deeper.
+      // Hardcoding `in/gbu/one/MainActivity.kt` silently skipped the admin APK.
+      const androidPackage = String(
+        (cfg.android && cfg.android.package) || 'in.gbu.one',
+      ).split('.');
+      let mainActivityPath = path.join(
         androidRoot,
         'app',
         'src',
         'main',
         'java',
-        'in',
-        'gbu',
-        'one',
+        ...androidPackage,
         'MainActivity.kt',
       );
+      if (!fs.existsSync(mainActivityPath)) {
+        const javaRoot = path.join(androidRoot, 'app', 'src', 'main', 'java');
+        const findActivity = (dir) => {
+          if (!fs.existsSync(dir)) return null;
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+              const found = findActivity(full);
+              if (found) return found;
+            } else if (entry.name === 'MainActivity.kt') {
+              return full;
+            }
+          }
+          return null;
+        };
+        mainActivityPath = findActivity(javaRoot) || mainActivityPath;
+      }
       if (fs.existsSync(mainActivityPath)) {
         let code = fs.readFileSync(mainActivityPath, 'utf8');
         if (!code.includes('enableHighRefreshRate')) {
           const target = 'super.onCreate(null)';
-          const replacement = `super.onCreate(null)\n    enableHighRefreshRate()\n  }\n\n  override fun onWindowFocusChanged(hasFocus: Boolean) {\n    super.onWindowFocusChanged(hasFocus)\n    if (hasFocus) {\n      enableHighRefreshRate()\n    }\n  }\n\n  private fun enableHighRefreshRate() {\n    try {\n      window.setFlags(\n        android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,\n        android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED\n      )\n      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {\n        val currentDisplay = display\n        val modes = currentDisplay?.supportedModes\n        val highestMode = modes?.maxByOrNull { it.refreshRate }\n        if (highestMode != null && highestMode.refreshRate > 60f) {\n          window.attributes.preferredDisplayModeId = highestMode.modeId\n        }\n        window.attributes.preferredRefreshRate = 120f\n      } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {\n        @Suppress("DEPRECATION")\n        val wm = getSystemService(android.content.Context.WINDOW_SERVICE) as? android.view.WindowManager\n        @Suppress("DEPRECATION")\n        val display = wm?.defaultDisplay\n        @Suppress("DEPRECATION")\n        val modes = display?.supportedModes\n        val highestMode = modes?.maxByOrNull { it.refreshRate }\n        if (highestMode != null && highestMode.refreshRate > 60f) {\n          val params = window.attributes\n          params.preferredDisplayModeId = highestMode.modeId\n          window.attributes = params\n        }\n      }\n    } catch (_: Exception) {}\n  `;
+          const replacement = `super.onCreate(null)\n    enableHighRefreshRate()\n  }\n\n  override fun onWindowFocusChanged(hasFocus: Boolean) {\n    super.onWindowFocusChanged(hasFocus)\n    if (hasFocus) {\n      enableHighRefreshRate()\n    }\n  }\n\n  private fun enableHighRefreshRate() {\n    try {\n      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {\n        val highest = display?.supportedModes?.maxByOrNull { it.refreshRate }\n        if (highest != null && highest.refreshRate > 60f) {\n          val params = window.attributes\n          params.preferredDisplayModeId = highest.modeId\n          if (android.os.Build.VERSION.SDK_INT >= 33) {\n            params.preferredMinRefreshRate = highest.refreshRate\n            params.preferredMaxRefreshRate = highest.refreshRate\n          }\n          // getAttributes() returns a COPY. Without assigning it back the\n          // WindowManager never sees the new mode, so the old code was a\n          // no-op on every 120 Hz phone (all of them run this branch).\n          window.attributes = params\n        }\n      } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {\n        @Suppress("DEPRECATION")\n        val wm = getSystemService(android.content.Context.WINDOW_SERVICE) as? android.view.WindowManager\n        @Suppress("DEPRECATION")\n        val highest = wm?.defaultDisplay?.supportedModes?.maxByOrNull { it.refreshRate }\n        if (highest != null && highest.refreshRate > 60f) {\n          val params = window.attributes\n          params.preferredDisplayModeId = highest.modeId\n          window.attributes = params\n        }\n      }\n    } catch (_: Exception) {}\n  }\n`;
           code = code.replace(target, replacement);
           fs.writeFileSync(mainActivityPath, code, 'utf8');
         }
