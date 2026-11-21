@@ -195,11 +195,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ url, onClose, title, subti
         // for GBU's hosts - every other host uses the platform trust store.
         ...(isGbuDocumentHost(url)
           ? {
+              // These names are the res/raw file names written by
+              // plugins/withGbuCerts.js from assets/certs/gbu_chain_*.pem.
               customCACerts: [
-                'gbu_exams_ca_0',
-                'gbu_exams_ca_1',
-                'gbu_exams_ca_2',
-                'gbu_exams_ca_3',
+                'gbu_chain_0',
+                'gbu_chain_1',
+                'gbu_chain_2',
+                'gbu_chain_3',
               ],
               pinnedHosts: [
                 'exams.gbu.ac.in',
